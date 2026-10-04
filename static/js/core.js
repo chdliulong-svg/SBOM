@@ -44,6 +44,7 @@
         // Safe Fetch Helper: handles non-JSON / HTML 404 / 500 error gracefully
         async function safeFetchJson(url, options = {}) {
             const res = await fetch(url, options);
+
             const text = await res.text();
             let data = null;
             try {
@@ -55,7 +56,11 @@
                 throw new Error('服务器返回了无法解析的非JSON数据');
             }
             if (!res.ok) {
-                throw new Error(data.error || `请求失败 (HTTP ${res.status})`);
+                const err = new Error(data.error || `请求失败 (HTTP ${res.status})`);
+                err.data = data;
+                err.status = res.status;
+
+                throw err;
             }
             return data;
         }

@@ -8,8 +8,10 @@ echo ======================================================================
 echo.
 
 cd /d "%~dp0"
+set "SBOM_AUTH=off"
 
 :: 检查 Python 运行环境
+
 set "PYTHON_CMD="
 if exist ".venv\Scripts\python.exe" (
     set "PYTHON_CMD=.venv\Scripts\python.exe"

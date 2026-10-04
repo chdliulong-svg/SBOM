@@ -521,9 +521,13 @@ def generate_offline_package(project_id):
 ========================================================================
 """
 
-    # Assemble ZIP in-memory
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+    # Assemble ZIP directly to disk file (零内存开销，彻底防止局域网并发导出时 OOM 崩溃)
+    out_dir = os.path.join(BASE_DIR, 'exports')
+    os.makedirs(out_dir, exist_ok=True)
+    zip_filename = f"SBOM_离线运维资料包_{safe_code}_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    zip_path = os.path.join(out_dir, zip_filename)
+
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         # 1. Excel SBOM
         if os.path.exists(excel_path):
             zf.write(excel_path, f"1_标准清单_SBOM/{excel_filename}")
@@ -550,6 +554,5 @@ def generate_offline_package(project_id):
     except:
         pass
 
-    zip_buffer.seek(0)
-    zip_filename = f"SBOM_离线运维资料包_{safe_code}_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-    return zip_buffer, zip_filename
+    return zip_path, zip_filename
+

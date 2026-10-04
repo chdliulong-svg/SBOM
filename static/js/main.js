@@ -7,6 +7,8 @@
             loadProjects();
             loadMasterMaterials();
             initTableColumnResizing('bomTable');
+
+
             initTableColumnResizing('masterTable');
             initModalImgDragAndDrop();
             if (typeof initMmAttachmentListeners === 'function') initMmAttachmentListeners();

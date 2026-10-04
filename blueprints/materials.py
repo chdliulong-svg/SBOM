@@ -219,6 +219,11 @@ def save_material():
         UPDATE bom_items
         SET unit = ?, notes = ?, substitute = ?, drawing_no = CASE WHEN ? != '/' THEN ? ELSE drawing_no END
         WHERE material_no = ?
+          AND subsystem_id IN (
+              SELECT s.id FROM subsystems s
+              JOIN projects p ON s.project_id = p.id
+              WHERE p.is_locked = 0
+          )
         ''', (unit, notes, substitute, drawing_no, drawing_no, mat_no))
         synced_rows_count = cursor.rowcount
 
@@ -248,30 +253,43 @@ def delete_material():
     return jsonify({'success': True, 'message': f'物料 [{mat_no}] 已成功从全局通用物料主库中移除！'})
 
 
-@materials_bp.route('/api/materials/clear', methods=['POST'])
-def clear_materials():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) FROM materials')
-    mat_count = cursor.fetchone()[0]
-    cursor.execute('SELECT COUNT(*) FROM material_structures')
-    struct_count = cursor.fetchone()[0]
+@materials_bp.route('/api/materials/batch-delete', methods=['POST'])
+def batch_delete_materials():
+    data = request.json or {}
+    mat_nos = data.get('material_nos', [])
+    if not isinstance(mat_nos, list) or not mat_nos:
+        return jsonify({'error': '未提供待删除的物料号列表'}), 400
+
+    clean_nos = [str(x).strip() for x in mat_nos if str(x).strip()]
+    if not clean_nos:
+        return jsonify({'error': '待删除物料号列表为空'}), 400
 
     try:
-        create_backup_snapshot(reason='clear_master', note=f'清空全局物料主库前自动备份（原含 {mat_count} 个物料）')
+        create_backup_snapshot(reason='batch_delete_materials', note=f'批量删除 {len(clean_nos)} 个通用物料前自动备份')
     except Exception as e_snap:
-        print("Auto-backup before clear materials warning:", e_snap)
+        print("Auto-backup before batch delete materials warning:", e_snap)
 
-    cursor.execute('DELETE FROM material_structures')
-    cursor.execute('DELETE FROM materials')
+    conn = get_db()
+    cursor = conn.cursor()
+    placeholders = ','.join(['?'] * len(clean_nos))
+    cursor.execute(f'DELETE FROM material_structures WHERE parent_material_no IN ({placeholders}) OR child_material_no IN ({placeholders})', clean_nos + clean_nos)
+    cursor.execute(f'DELETE FROM materials WHERE material_no IN ({placeholders})', clean_nos)
+    deleted_count = cursor.rowcount
     conn.commit()
     conn.close()
     return jsonify({
         'success': True,
-        'deleted_materials_count': mat_count,
-        'deleted_structures_count': struct_count,
-        'message': f'全局通用物料主库已成功清空（共清除 {mat_count} 项物料，{struct_count} 项总成层级关系）！'
+        'deleted_count': deleted_count,
+        'message': f'成功从物料主库中批量删除 {len(clean_nos)} 项物料！'
     })
+
+
+@materials_bp.route('/api/materials/clear', methods=['POST'])
+def clear_materials():
+    return jsonify({
+        'success': False,
+        'error': '清空物料主库功能已被系统彻底禁用并移除，以防止不可逆数据丢失！'
+    }), 403
 
 
 @materials_bp.route('/api/material/<path:material_no>/usage', methods=['GET'])

@@ -66,34 +66,118 @@ def get_project_detail(project_id):
     return jsonify(project_dict)
 
 
-# ----------------- Project Lock & Unlock -----------------
-@projects_bp.route('/api/project/<int:project_id>/unlock', methods=['POST'])
-def unlock_project_api(project_id):
+# ----------------- Operator Identity Helper -----------------
+def get_client_identity():
+    """局域网内直接使用客户端 IP 地址作为协同身份标识。"""
+    return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
+
+
+
+def check_and_expire_lease(cursor, project_row):
+    """
+    检查工程锁是否已过期（超过 180 秒无心跳）。
+    若过期则自动置为锁定保护（释放占用），避免工程师关机/休眠后导致死锁。
+    返回最新的 (is_locked, locked_by)。
+    """
+    import datetime
+    if not project_row or project_row['is_locked'] == 1:
+        return 1, ''
+    locked_at_str = project_row['locked_at']
+    if not locked_at_str:
+        return 0, project_row['locked_by'] or ''
+    try:
+        t_str = str(locked_at_str).split('.')[0]
+        locked_time = datetime.datetime.strptime(t_str, '%Y-%m-%d %H:%M:%S')
+        now = datetime.datetime.now()
+        if (now - locked_time).total_seconds() > 180:
+            cursor.execute("UPDATE projects SET is_locked = 1, locked_by = '', locked_at = NULL WHERE id = ?", (project_row['id'],))
+            return 1, ''
+    except Exception:
+        pass
+    return project_row['is_locked'], project_row['locked_by'] or ''
+
+
+# ----------------- Project Lock, Heartbeat & Unlock -----------------
+@projects_bp.route('/api/project/<int:project_id>/heartbeat', methods=['POST'])
+def heartbeat_project_api(project_id):
+    """
+    心跳续租接口：由持有锁的前端页面每 30 秒自动调用一次，
+    刷新 locked_at 时间戳以维持工程编辑租约。
+    """
+    client_tag = get_client_identity()
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('SELECT id, code, system_name, name FROM projects WHERE id = ?', (project_id,))
+        cursor.execute('SELECT id, is_locked, locked_by FROM projects WHERE id = ?', (project_id,))
+        p = cursor.fetchone()
+        if not p:
+            return jsonify({'success': False, 'error': '工程不存在'}), 404
+
+        if p['is_locked'] == 0:
+            # 刷新租约
+            cursor.execute("UPDATE projects SET locked_at = datetime('now', 'localtime') WHERE id = ?", (project_id,))
+            conn.commit()
+            return jsonify({'success': True, 'renewed': True, 'locked_by': p['locked_by']})
+        return jsonify({'success': True, 'renewed': False, 'is_locked': p['is_locked']})
+    finally:
+        conn.close()
+
+
+@projects_bp.route('/api/project/<int:project_id>/unlock', methods=['POST'])
+def unlock_project_api(project_id):
+    data = request.get_json(silent=True) or {}
+    force = bool(data.get('force', False))
+    client_tag = get_client_identity()
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('SELECT id, code, system_name, name, is_locked, locked_by, locked_at FROM projects WHERE id = ?', (project_id,))
         p = cursor.fetchone()
         if not p:
             return jsonify({'success': False, 'error': '工程不存在或已被删除'}), 404
 
-        # Automatically lock all non-current projects, unlock this project
-        cursor.execute('UPDATE projects SET is_locked = 1 WHERE id != ?', (project_id,))
-        cursor.execute('UPDATE projects SET is_locked = 0 WHERE id = ?', (project_id,))
+        p_name = p['system_name'] or p['code'] or p['name']
+        curr_locked, curr_user = check_and_expire_lease(cursor, p)
+        curr_time = p['locked_at'] or ''
+
+        # 若工程当前已解锁，且被其他同事占用，且不是强制接管请求
+        if curr_locked == 0 and curr_user and curr_user != client_tag and not force:
+            return jsonify({
+                'success': False,
+                'need_confirm': True,
+                'locked_by': curr_user,
+                'locked_at': curr_time,
+                'error': f'工程【{p_name}】当前正由同事 [{curr_user}] 于 {curr_time} 解锁占用编辑中！\n是否确认强制接管该工程的编辑权限？'
+            }), 409
+
+        # 解锁当前工程并登记占用人（独立项目锁：完全不影响其他工程状态！）
+        cursor.execute('''
+            UPDATE projects 
+            SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime')
+            WHERE id = ?
+        ''', (client_tag, project_id))
         conn.commit()
 
-        p_name = p['system_name'] or p['code'] or p['name']
         return jsonify({
             'success': True,
             'project_id': project_id,
             'is_locked': 0,
-            'message': f'工程【{p_name}】已成功解锁并激活编辑状态，其他所有工程已自动锁定保护！'
+            'locked_by': client_tag,
+            'message': f'工程【{p_name}】已成功解锁并激活编辑状态！'
         })
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'解锁工程失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 
 
 @projects_bp.route('/api/project/<int:project_id>/lock', methods=['POST'])
@@ -106,7 +190,8 @@ def lock_project_api(project_id):
         if not p:
             return jsonify({'success': False, 'error': '工程不存在或已被删除'}), 404
 
-        cursor.execute('UPDATE projects SET is_locked = 1 WHERE id = ?', (project_id,))
+        # 锁定当前工程并清空占用人（完全不影响其他工程）
+        cursor.execute("UPDATE projects SET is_locked = 1, locked_by = '', locked_at = NULL WHERE id = ?", (project_id,))
         conn.commit()
 
         p_name = p['system_name'] or p['code'] or p['name']
@@ -114,13 +199,20 @@ def lock_project_api(project_id):
             'success': True,
             'project_id': project_id,
             'is_locked': 1,
+            'locked_by': '',
             'message': f'工程【{p_name}】已设置为锁定保护状态（只读）！'
         })
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'锁定工程失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 # ----------------- Project Save, Rename, Copy & Delete -----------------
@@ -143,14 +235,15 @@ def save_project():
     if not code:
         code = system_name if system_name else 'EW-DEFAULT'
 
+    if project_id:
+        is_ok, err_msg = check_project_unlocked(project_id=project_id)
+        if not is_ok:
+            return jsonify({'success': False, 'error': err_msg}), 403
+
     conn = get_db()
     cursor = conn.cursor()
     try:
         if project_id:
-            is_ok, err_msg = check_project_unlocked(project_id=project_id)
-            if not is_ok:
-                return jsonify({'success': False, 'error': err_msg}), 403
-
             cursor.execute('SELECT id FROM projects WHERE code = ? AND id != ?', (code, project_id))
             if cursor.fetchone():
                 return jsonify({'success': False, 'error': f'机型/项目代号 "{code}" 已被其他项目占用，请更换代号'}), 400
@@ -174,19 +267,19 @@ def save_project():
                     suffix += 1
                     continue
                 try:
+                    client_tag = get_client_identity()
                     cursor.execute('''
-                    INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company, is_locked)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                    INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'))
                     ''', (candidate_code, name, system_name,
                           data.get('doc_no', ''), data.get('ecn_no', ''),
-                          data.get('form_no', 'FDJL-JS-037'), data.get('company', '上海电气风电集团股份有限公司')))
+                          data.get('form_no', 'FDJL-JS-037'), data.get('company', '上海电气风电集团股份有限公司'),
+                          client_tag))
                     project_id = cursor.lastrowid
                     code = candidate_code
                     inserted = True
                 except sqlite3.IntegrityError:
                     suffix += 1
-
-            cursor.execute('UPDATE projects SET is_locked = 1 WHERE id != ?', (project_id,))
 
             default_subs = ['SBOM']
             tpl_path = find_template_path()
@@ -207,10 +300,16 @@ def save_project():
         conn.commit()
         return jsonify({'success': True, 'id': project_id, 'name': name, 'system_name': system_name, 'code': code})
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'保存项目失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 @projects_bp.route('/api/project/rename', methods=['POST'])
@@ -249,10 +348,16 @@ def rename_project():
         conn.commit()
         return jsonify({'success': True, 'id': project_id, 'name': final_name, 'system_name': new_system_name, 'code': final_code})
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'重命名项目失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 @projects_bp.route('/api/project/copy', methods=['POST'])
@@ -346,8 +451,8 @@ def copy_project():
                 VALUES (?, ?, ?, ?, ?)
             ''', (new_project_id, e['ecn_no'] or '', e['change_desc'] or '', e['changer'] or '', e['change_date'] or ''))
 
-        cursor.execute('UPDATE projects SET is_locked = 1 WHERE id != ?', (new_project_id,))
-        cursor.execute('UPDATE projects SET is_locked = 0 WHERE id = ?', (new_project_id,))
+        client_tag = get_client_identity()
+        cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, new_project_id))
 
         conn.commit()
         return jsonify({
@@ -359,10 +464,16 @@ def copy_project():
             'message': f'项目已成功完整复制为【{user_system_name}】！'
         })
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'复制项目失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 @projects_bp.route('/api/project/delete', methods=['POST'])
@@ -407,18 +518,24 @@ def delete_project():
             'message': f"项目【{proj_code} {proj_name}】已成功永久删除！"
         })
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'删除项目失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 # ----------------- Project ECN & Signatures APIs -----------------
 @projects_bp.route('/api/project/<int:project_id>/ecn', methods=['GET', 'POST'])
 def project_ecn_api(project_id):
-    conn = get_db()
-    cursor = conn.cursor()
     if request.method == 'GET':
+        conn = get_db()
+        cursor = conn.cursor()
         cursor.execute('SELECT * FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
         records = [dict(r) for r in cursor.fetchall()]
         conn.close()
@@ -426,7 +543,6 @@ def project_ecn_api(project_id):
 
     is_ok, err_msg = check_project_unlocked(project_id=project_id)
     if not is_ok:
-        conn.close()
         return jsonify({'success': False, 'error': err_msg}), 403
 
     data = request.get_json(silent=True) or {}
@@ -436,9 +552,10 @@ def project_ecn_api(project_id):
     change_date = (data.get('change_date') or '').strip()
 
     if not ecn_no and not change_desc:
-        conn.close()
         return jsonify({'success': False, 'error': 'ECN号和更改内容描述不能同时为空'}), 400
 
+    conn = get_db()
+    cursor = conn.cursor()
     try:
         cursor.execute('''
         INSERT INTO ecn_records (project_id, ecn_no, change_desc, changer, change_date)
@@ -459,10 +576,16 @@ def project_ecn_api(project_id):
             }
         })
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'添加失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 @projects_bp.route('/api/project/<int:project_id>/ecn/<int:ecn_id>', methods=['PUT', 'DELETE'])
@@ -498,10 +621,16 @@ def project_ecn_item_api(project_id, ecn_id):
         conn.commit()
         return jsonify({'success': True, 'message': '修改记录已更新'})
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'操作失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 @projects_bp.route('/api/project/<int:project_id>/signatures/save', methods=['POST'])
@@ -529,10 +658,16 @@ def save_project_signatures(project_id):
         conn.commit()
         return jsonify({'success': True, 'message': '签字信息保存成功'})
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'保存签字失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 
@@ -943,8 +1078,8 @@ def execute_open_project_api():
             opened_id = res.get('id')
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute('UPDATE projects SET is_locked = 1 WHERE id != ?', (opened_id,))
-            cursor.execute('UPDATE projects SET is_locked = 0 WHERE id = ?', (opened_id,))
+            client_tag = get_client_identity()
+            cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, opened_id))
             conn.commit()
             conn.close()
         return jsonify(res)
@@ -1110,10 +1245,16 @@ def copy_subsystem():
             'message': f'已成功复制 Sheet【{new_name}】，包含 {len(items)} 条物料记录！'
         })
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'error': f'复制Sheet失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 # ----------------- Project Exports (Excel SBOM & Offline Field ZIP) -----------------

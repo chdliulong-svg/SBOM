@@ -4,6 +4,8 @@ Common utilities, directory paths, and database helpers shared across blueprints
 """
 
 import os
+import re
+from flask import has_request_context
 from services.database import get_db
 
 # Base Directories
@@ -20,18 +22,107 @@ for d in [IMAGES_DIR, MANUALS_DIR, UPLOAD_DIR, EXPORT_DIR, BACKUP_DIR, DATA_DIR]
     os.makedirs(d, exist_ok=True)
 
 
-def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None):
+# ----------------- 上传文件名安全工具 -----------------
+# 只保留安全字符集，彻底阻断 ../ ..\ 盘符( C: )、UNC( \\server\share ) 等路径穿越写法
+_UNSAFE_NAME_CHARS = re.compile(r'[^A-Za-z0-9._-]')
+_RESERVED_WINDOWS_NAMES = {
+    'CON', 'PRN', 'AUX', 'NUL',
+    *(f'COM{i}' for i in range(1, 10)),
+    *(f'LPT{i}' for i in range(1, 10)),
+}
+
+
+def sanitize_asset_name(value, max_len=80, fallback='unnamed'):
+    """
+    把任意用户输入（物料号、文件名）清洗为可安全用于磁盘写入的文件名主干。
+    - 移除非 [A-Za-z0-9._-] 的一切字符（含反斜杠 / 冒号 / 星号等）
+    - 折叠连续的点以阻断 '..' 相对路径
+    - 去除首尾的点与连字符，避免隐藏文件与参数注入
+    - 排除 Windows 保留设备名（CON、NUL、COM1 等）
+    """
+    raw = '' if value is None else str(value)
+    cleaned = _UNSAFE_NAME_CHARS.sub('_', raw)
+    cleaned = re.sub(r'\.{2,}', '.', cleaned)
+    cleaned = cleaned.strip().strip('._-')[:max_len].strip('._-')
+
+    if not cleaned or cleaned.upper() in _RESERVED_WINDOWS_NAMES:
+        cleaned = fallback
+    return cleaned
+
+
+def safe_path_under(base_dir, filename):
+    """
+    在 base_dir 下拼接文件名，并校验解析后的真实路径仍位于 base_dir 内。
+    这是防路径穿越的最后一道防线：即使上游清洗被绕过，也不会写到目录之外。
+    返回绝对路径；若越界则返回 None。
+    """
+    base_real = os.path.realpath(base_dir)
+    target_real = os.path.realpath(os.path.join(base_real, filename))
+    if target_real == base_real or target_real.startswith(base_real + os.sep):
+        return os.path.join(base_dir, filename)
+    return None
+
+
+def validate_upload_stream(file_obj, ext):
+    """
+    按文件真实内容（magic bytes）校验类型，不只看扩展名。
+    返回 (is_valid, error_message)。
+    """
+    ext = (ext or '').lower()
+    try:
+        pos = file_obj.tell()
+        file_obj.seek(0)
+        head = file_obj.read(8)
+        file_obj.seek(pos)
+    except Exception:
+        return False, '无法读取上传文件内容'
+
+    if ext == '.pdf':
+        if not head.startswith(b'%PDF-'):
+            return False, '文件内容不是有效的 PDF 手册'
+        return True, ''
+
+    if ext in ('.png', '.jpg', '.jpeg', '.webp'):
+        try:
+            from PIL import Image
+            file_obj.seek(0)
+            img = Image.open(file_obj)
+            img.verify()
+        except Exception:
+            return False, '文件内容不是有效的图片（或已损坏）'
+        finally:
+            try:
+                file_obj.seek(pos)
+            except Exception:
+                pass
+        return True, ''
+
+    if ext == '.emf':
+        # Windows 图元文件，Pillow 无法解析，仅按扩展名放行
+        return True, ''
+
+    return False, f'不支持的文件类型: {ext}'
+
+
+def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None, conn=None):
     """
     Checks if the project associated with the given project_id, subsystem_id,
     or bom_item_id is unlocked (is_locked == 0).
     Returns (True, None) if allowed, or (False, error_message) if locked.
     """
-    conn = get_db()
+    should_close = False
+    if conn is None:
+        if has_request_context():
+            conn = get_db()
+            should_close = False
+        else:
+            conn = get_db()
+            should_close = True
     cursor = conn.cursor()
     try:
         if bom_item_id:
             cursor.execute('''
-                SELECT p.id, p.code, p.system_name, p.name, p.is_locked
+                SELECT p.id, p.code, p.system_name, p.name, p.is_locked, p.locked_by
                 FROM bom_items b
                 JOIN subsystems s ON b.subsystem_id = s.id
                 JOIN projects p ON s.project_id = p.id
@@ -39,13 +130,13 @@ def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None)
             ''', (bom_item_id,))
         elif subsystem_id:
             cursor.execute('''
-                SELECT p.id, p.code, p.system_name, p.name, p.is_locked
+                SELECT p.id, p.code, p.system_name, p.name, p.is_locked, p.locked_by
                 FROM subsystems s
                 JOIN projects p ON s.project_id = p.id
                 WHERE s.id = ?
             ''', (subsystem_id,))
         elif project_id:
-            cursor.execute('SELECT id, code, system_name, name, is_locked FROM projects WHERE id = ?', (project_id,))
+            cursor.execute('SELECT id, code, system_name, name, is_locked, locked_by FROM projects WHERE id = ?', (project_id,))
         else:
             return True, None
 
@@ -57,7 +148,11 @@ def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None)
             return False, f"工程【{name}】当前处于【锁定保护】状态，禁止修改！如需编辑请先在顶部操作栏点击【解锁】。"
         return True, None
     finally:
-        conn.close()
+        if should_close:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def compute_bom_hierarchy_numbers(items, mode='dotted'):

@@ -242,10 +242,16 @@ def batch_add_bom_items():
             'message': msg
         })
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({'success': False, 'error': f'批量导入失败: {str(e)}'}), 500
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 @bom_bp.route('/api/bom/update', methods=['POST'])

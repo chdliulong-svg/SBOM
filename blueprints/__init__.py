@@ -4,6 +4,7 @@ Blueprints package initialization for Service BOM application.
 Registers all modular domain blueprints onto the Flask application.
 """
 
+from .auth import auth_bp
 from .projects import projects_bp
 from .bom import bom_bp
 from .materials import materials_bp
@@ -18,6 +19,7 @@ def register_blueprints(app):
     All routes keep their exact root /api path without prefix changes, ensuring
     100% backward compatibility with all frontend scripts.
     """
+    app.register_blueprint(auth_bp)
     app.register_blueprint(projects_bp)
     app.register_blueprint(bom_bp)
     app.register_blueprint(materials_bp)

@@ -1,4 +1,5 @@
 import os
+import io
 import zipfile
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -293,7 +294,26 @@ def export_project_sbom(project_id, output_path):
                             new_w = max(1, int(orig_w * scale))
                             new_h = max(1, int(orig_h * scale))
 
-                        excel_img = OpenpyxlImage(full_img_path)
+                            # 优化嵌入体积：若原图分辨率过大，进行 Retina 双倍清晰度优化压缩（彻底解决 26MB+ 巨型 Excel 膨胀与内存爆满）
+                            retina_w = max(new_w * 2, 260)
+                            retina_h = max(new_h * 2, 180)
+                            file_size = os.path.getsize(full_img_path)
+                            if (orig_w > retina_w or orig_h > retina_h or file_size > 150 * 1024):
+                                thumb_img = pil_img.copy()
+                                thumb_img.thumbnail((retina_w, retina_h), PILImage.Resampling.LANCZOS)
+                                if thumb_img.mode in ('RGBA', 'P', 'LA'):
+                                    bg = PILImage.new('RGB', thumb_img.size, (255, 255, 255))
+                                    if thumb_img.mode == 'P':
+                                        thumb_img = thumb_img.convert('RGBA')
+                                    bg.paste(thumb_img, mask=thumb_img.split()[-1] if 'A' in thumb_img.mode else None)
+                                    thumb_img = bg
+                                img_bio = io.BytesIO()
+                                thumb_img.save(img_bio, format='JPEG', quality=84, optimize=True)
+                                img_bio.seek(0)
+                                excel_img = OpenpyxlImage(img_bio)
+                            else:
+                                excel_img = OpenpyxlImage(full_img_path)
+
                         excel_img.width = new_w
                         excel_img.height = new_h
 
@@ -312,6 +332,7 @@ def export_project_sbom(project_id, output_path):
                         ws.add_image(excel_img)
                     except Exception as e:
                         print(f"Warning: failed to add image for {item['material_no']}: {e}")
+
 
     # ================= 4. Cleanup and Reorder Sheets =================
     # Remove any extra template sample BOM sheets that are not in the current project's subsystems

@@ -63,7 +63,7 @@
 
         // Master Materials Table Configurations
         const DEFAULT_MASTER_COLUMN_WIDTHS = {
-            mm_actions: 185,
+            mm_select: 42,
             mm_mat_no: 140,
             mm_name: 160,
             mm_projects: 170,
@@ -77,7 +77,7 @@
         };
 
         const MIN_MASTER_COLUMN_WIDTHS = {
-            mm_actions: 145,
+            mm_select: 42,
             mm_mat_no: 90,
             mm_name: 80,
             mm_projects: 85,
@@ -91,7 +91,7 @@
         };
 
         const MASTER_COLUMN_TITLES = {
-            mm_actions: '操作管理',
+            mm_select: '选择',
             mm_mat_no: '物料号',
             mm_name: '元器件名称',
             mm_projects: '引用项目',
@@ -113,7 +113,7 @@
                     mins: MIN_MASTER_COLUMN_WIDTHS,
                     titles: MASTER_COLUMN_TITLES,
                     storageKey: STORAGE_KEY_MASTER_COL_WIDTHS,
-                    skipCols: []
+                    skipCols: ['mm_select']
                 };
             }
             return {
@@ -133,6 +133,7 @@
                     const parsed = JSON.parse(raw);
                     if (parsed && typeof parsed === 'object') {
                         delete parsed.action;
+                        delete parsed.mm_actions;
                         return Object.assign({}, cfg.defaults, parsed);
                     }
                 }
@@ -304,10 +305,15 @@
             m_desc: '物料完整描述',
             m_model: '型号/规格',
             m_mfr: '制造商',
-            qty: '单机数量'
+            qty: '单机数量',
+            unit: '单位',
+            manual_path: '技术手册',
+            image_path: '实物图片',
+            drawing_no: '图纸/代号',
+            notes: '补充说明'
         };
 
-        function resetTableSort() {
+        function resetSortIconsOnly() {
             currentSortField = null;
             currentSortDir = 'none';
             document.querySelectorAll('.sort-icon').forEach(icon => {
@@ -318,21 +324,37 @@
             if (statusSpan) statusSpan.textContent = '';
             const resetBtn = document.getElementById('resetSortBtn');
             if (resetBtn) resetBtn.style.display = 'none';
+        }
+
+        function resetTableSort() {
+            resetSortIconsOnly();
 
             if (defaultBomItemsOrder && defaultBomItemsOrder.length > 0) {
                 currentBomItems = JSON.parse(JSON.stringify(defaultBomItemsOrder));
+                computeBomHierarchyNumbers(currentBomItems, 'dotted');
                 renderBomTable(currentBomItems);
 
+                if (currentProjectData && currentProjectData.is_locked == 1) {
+                    showToast('已恢复默认排版视图（当前工程已锁定，未修改工程数据库）', 'info');
+                    return;
+                }
+
                 const itemIds = currentBomItems.map(it => it.id);
-                fetch('/api/bom/reorder', {
+                safeFetchJson('/api/bom/reorder', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ subsystem_id: currentSubsystemId, item_ids: itemIds })
+                }).then(() => {
+                    showToast('已恢复默认排版顺序并保存', 'info');
+                }).catch(err => {
+                    console.error("恢复默认排版异常:", err);
                 });
             } else {
-                loadBomItems(currentSubsystemId);
+                if (currentSubsystemId) {
+                    loadBomItems(currentSubsystemId);
+                }
+                showToast('已恢复默认排版顺序', 'info');
             }
-            showToast('已恢复默认排版顺序', 'info');
         }
 
         function handleTableSort(field) {
@@ -368,10 +390,11 @@
                 icon.classList.add('active');
             }
 
+            const isLocked = Boolean(currentProjectData && currentProjectData.is_locked == 1);
             const statusSpan = document.getElementById('currentSortStatusSpan');
             const label = sortFieldLabels[field] || field;
             if (statusSpan) {
-                statusSpan.textContent = `[按 ${label} ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'}（树状层级整组协同）]`;
+                statusSpan.textContent = `[按 ${label} ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'}（树状层级整组协同）${isLocked ? ' - 只读预览' : ''}]`;
             }
             const resetBtn = document.getElementById('resetSortBtn');
             if (resetBtn) resetBtn.style.display = 'inline-flex';
@@ -412,10 +435,28 @@
                         if (valB === undefined || valB === null) valB = '';
 
                         let res = 0;
-                        const numA = parseFloat(valA);
-                        const numB = parseFloat(valB);
-                        if (!isNaN(numA) && !isNaN(numB) && String(valA).trim() !== '' && String(valB).trim() !== '') {
-                            res = numA - numB;
+                        if (fieldName === 'seq_num') {
+                            res = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
+                        } else if (fieldName === 'qty' || fieldName === 'row_num') {
+                            const numA = parseFloat(valA);
+                            const numB = parseFloat(valB);
+                            if (!isNaN(numA) && !isNaN(numB)) {
+                                res = numA - numB;
+                            } else {
+                                res = String(valA).localeCompare(String(valB), 'zh-CN', { numeric: true, sensitivity: 'base' });
+                            }
+                        } else if (fieldName === 'manual_path' || fieldName === 'image_path') {
+                            const hasA = valA ? 1 : 0;
+                            const hasB = valB ? 1 : 0;
+                            res = hasB - hasA; // 有附件排前
+                        } else if (fieldName === 'drawing_no') {
+                            const dwgA = (a.item.drawing_no && a.item.drawing_no !== '/') ? a.item.drawing_no : (a.item.m_drawing_no || '');
+                            const dwgB = (b.item.drawing_no && b.item.drawing_no !== '/') ? b.item.drawing_no : (b.item.m_drawing_no || '');
+                            res = String(dwgA).localeCompare(String(dwgB), 'zh-CN', { numeric: true, sensitivity: 'base' });
+                        } else if (fieldName === 'unit') {
+                            const uA = a.item.unit || a.item.m_unit || '';
+                            const uB = b.item.unit || b.item.m_unit || '';
+                            res = String(uA).localeCompare(String(uB), 'zh-CN', { numeric: true, sensitivity: 'base' });
                         } else {
                             res = String(valA).localeCompare(String(valB), 'zh-CN', { numeric: true, sensitivity: 'base' });
                         }
@@ -454,8 +495,8 @@
             renderBomTable(sortedItems);
 
             // Persist order to database (if unlocked)
-            if (currentProjectData && currentProjectData.is_locked == 1) {
-                showToast(`已按 [${label}] 视图排列（当前工程已锁定，排序仅供临时预览，未修改工程数据）`, 'info');
+            if (isLocked) {
+                showToast(`已按 [${label}] 视图排列（当前工程已锁定，排序仅供临时预览，未修改工程数据库）`, 'info');
                 return;
             }
 
@@ -466,7 +507,7 @@
                 body: JSON.stringify({ subsystem_id: currentSubsystemId, item_ids: itemIds })
             }).then(res => {
                 if (res.success) {
-                    showToast(`已按 [${label}] ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'} 重新排列，所有子层级零部件紧密跟随！`, 'success');
+                    showToast(`已按 [${label}] ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'} 重新排列，顺序已自动保存至数据库！`, 'success');
                 }
             }).catch(err => {
                 console.error("保存排序异常:", err);

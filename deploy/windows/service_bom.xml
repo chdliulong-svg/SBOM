@@ -1,0 +1,16 @@
+<service>
+  <id>ServiceBOMServer</id>
+  <name>风电机组 Service BOM 协同管理服务</name>
+  <description>提供风电机组运维备件 Service BOM 局域网协同维护、主物料库及手册离线检索服务</description>
+  <env name="HOST" value="0.0.0.0" />
+  <env name="PORT" value="8000" />
+  <env name="HEADLESS" value="true" />
+  <executable>%BASE%\..\..\.venv\Scripts\python.exe</executable>
+  <arguments>%BASE%\..\..\app.py</arguments>
+  <workingdirectory>%BASE%\..\..</workingdirectory>
+  <logmode>roll</logmode>
+  <logpath>%BASE%\..\..\logs</logpath>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="10 sec" />
+</service>

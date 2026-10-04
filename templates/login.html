@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 · 风电机组 Service BOM</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #f1f5f9 0%, #e0f2fe 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            padding: 32px 30px 26px;
+        }
+        .login-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+        .login-brand svg { color: #0284c7; flex-shrink: 0; }
+        .login-title { font-size: 19px; font-weight: 700; color: #0f172a; }
+        .login-sub { font-size: 12px; color: #64748b; margin-bottom: 22px; }
+        .login-label { font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 6px; display: block; }
+        .login-input {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            letter-spacing: 1px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .login-input:focus { border-color: #0284c7; box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15); }
+        .login-btn {
+            width: 100%;
+            margin-top: 16px;
+            padding: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            background: #0284c7;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .login-btn:hover { background: #0369a1; }
+        .login-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .login-error {
+            display: none;
+            margin-top: 12px;
+            padding: 8px 12px;
+            font-size: 12px;
+            color: #b91c1c;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 6px;
+        }
+        .login-hint {
+            margin-top: 18px;
+            padding-top: 14px;
+            border-top: 1px dashed #e2e8f0;
+            font-size: 11.5px;
+            line-height: 1.7;
+            color: #64748b;
+        }
+        .login-hint code {
+            background: #f1f5f9;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 11px;
+            color: #0f172a;
+        }
+        .login-badge {
+            display: inline-block;
+            margin-bottom: 16px;
+            padding: 2px 9px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #15803d;
+            background: #dcfce7;
+            border: 1px solid #86efac;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-brand">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2v6"></path>
+                <path d="M12 22a8 8 0 0 0 8-8"></path>
+                <path d="M4 14a8 8 0 0 0 8 8"></path>
+                <path d="M9.5 8.5a2.5 2.5 0 1 1 5 0c0 1.5-2.5 2-2.5 4"></path>
+                <circle cx="12" cy="8" r="4"></circle>
+            </svg>
+            <span class="login-title">风电机组 Service BOM</span>
+        </div>
+        <div class="login-sub">请输入系统访问口令以进入协同管理工作台</div>
+
+        <span class="login-badge" id="modeBadge">{{ auth_mode_label }}</span>
+
+        <form id="loginForm" autocomplete="off">
+            <label class="login-label" for="passwordInput">系统访问口令</label>
+            <input type="password" id="passwordInput" class="login-input" placeholder="请输入口令" autofocus>
+            <button type="submit" class="login-btn" id="loginBtn">登 录</button>
+        </form>
+
+        <div class="login-error" id="loginError"></div>
+
+        <div class="login-hint">
+            • 口令在<strong>启动该服务的那台电脑的终端窗口</strong>中显示（首次启动自动生成）。<br>
+            • 忘记口令：删除 <code>data/auth.json</code> 后重启服务即会重新生成。<br>
+            • 需要免登录：设置环境变量 <code>SBOM_AUTH=off</code> 后重启。<br>
+            • 连续输错 6 次将临时锁定 60 秒。
+        </div>
+    </div>
+
+    <script>
+        const nextUrl = {{ next_url|tojson }};
+
+        function showError(msg) {
+            const el = document.getElementById('loginError');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        async function doLogin(password) {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            let data = {};
+            try { data = await res.json(); } catch (e) { data = {}; }
+            if (res.ok && data.success) {
+                window.location.href = (nextUrl && nextUrl.startsWith('/')) ? nextUrl : '/';
+                return;
+            }
+            showError(data.error || `登录失败 (HTTP ${res.status})`);
+            const btn = document.getElementById('loginBtn');
+            btn.disabled = false;
+            btn.textContent = '登 录';
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const pw = document.getElementById('passwordInput').value.trim();
+            if (!pw) { showError('请输入口令'); return; }
+            const btn = document.getElementById('loginBtn');
+            btn.disabled = true;
+            btn.textContent = '验证中...';
+            document.getElementById('loginError').style.display = 'none';
+            doLogin(pw);
+        });
+
+        // 若服务端未启用鉴权（或已登录），直接放行
+        (async function () {
+            try {
+                const res = await fetch('/api/auth/status');
+                const st = await res.json();
+                if (!st.required || st.authenticated) {
+                    window.location.href = (nextUrl && nextUrl.startsWith('/')) ? nextUrl : '/';
+                }
+            } catch (e) { /* 保持登录页 */ }
+        })();
+    </script>
+</body>
+</html>

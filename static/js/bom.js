@@ -55,6 +55,9 @@
                     computeBomHierarchyNumbers(items, 'dotted');
                     currentBomItems = items;
                     defaultBomItemsOrder = JSON.parse(JSON.stringify(items));
+                    if (typeof resetSortIconsOnly === 'function') {
+                        resetSortIconsOnly();
+                    }
                     renderBomTable(items);
                 })
                 .catch(err => {

@@ -1,21 +1,55 @@
 import sqlite3
 import os
 
+from flask import g, has_request_context
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, 'service_bom.db')
 
-def get_db():
+def _create_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA busy_timeout = 30000;")
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
     except Exception:
         pass
     return conn
+
+def get_db():
+    """
+    获取数据库连接。
+    在 Flask 请求上下文中自动复用 g.db 并在请求结束时通过 teardown_appcontext 统一安全回收；
+    在后台线程或命令行任务中返回独立的连接。
+    """
+    if has_request_context():
+        conn = getattr(g, 'db', None)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except Exception:
+                pass
+        conn = _create_connection()
+        g.db = conn
+        return conn
+    return _create_connection()
+
+def close_db(e=None):
+    """Flask teardown 钩子：请求结束时安全关闭连接，释放锁资源。"""
+    if has_request_context():
+        conn = getattr(g, 'db', None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            g.db = None
+
 
 def find_template_path():
     """
@@ -44,9 +78,10 @@ def init_db():
         system_name TEXT NOT NULL,
         doc_no TEXT DEFAULT '',
         ecn_no TEXT DEFAULT '',
-        form_no TEXT DEFAULT 'FDJL-JS-037',
         company TEXT DEFAULT '上海电气风电集团股份有限公司',
         is_locked INTEGER DEFAULT 1,
+        locked_by TEXT DEFAULT '',
+        locked_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
@@ -151,17 +186,16 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bom_items_sub_id ON bom_items(subsystem_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_subsystems_proj_id ON subsystems(project_id)')
 
-    # Migration for projects: add is_locked column if not present (default 1 for non-current, 0 for current)
+    # Migration for projects: add is_locked, locked_by, locked_at columns if not present
     cursor.execute("PRAGMA table_info(projects)")
     proj_cols = [r['name'] for r in cursor.fetchall()]
     if 'is_locked' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN is_locked INTEGER DEFAULT 1")
-        # By default, lock all non-current projects and unlock the most recent project (if any)
-        cursor.execute("SELECT id FROM projects ORDER BY id DESC LIMIT 1")
-        latest = cursor.fetchone()
-        if latest:
-            cursor.execute("UPDATE projects SET is_locked = 0 WHERE id = ?", (latest['id'],))
-        conn.commit()
+    if 'locked_by' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN locked_by TEXT DEFAULT ''")
+    if 'locked_at' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN locked_at TIMESTAMP")
+    conn.commit()
 
     # Migration for materials: add drawing_no column if not present
     cursor.execute("PRAGMA table_info(materials)")

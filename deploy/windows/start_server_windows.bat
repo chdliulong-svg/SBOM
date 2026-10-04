@@ -11,6 +11,8 @@ echo =======================================================
 set HOST=0.0.0.0
 set PORT=8000
 set HEADLESS=true
+set SBOM_AUTH=off
+
 
 if exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" app.py

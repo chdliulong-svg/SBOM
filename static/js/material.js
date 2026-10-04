@@ -5,6 +5,25 @@
         let masterSearchDebounceTimer = null;
         let hierFuzzyDebounceTimer = null;
 
+        // Master Materials Table & Selection State (allMasterMaterials declared in core.js)
+        let rawMasterMaterialsOrder = [];
+        let masterCurrentSortField = null;
+        let masterCurrentSortDir = 'none'; // 'none', 'asc', 'desc'
+        let selectedMasterMatNos = new Set();
+
+        const MASTER_SORT_FIELD_LABELS = {
+            material_no: '物料号',
+            name: '元器件名称',
+            referenced_projects: '引用项目',
+            description: '物料完整描述',
+            spec_model: '规格型号',
+            manufacturer: '制造商',
+            unit: '单位',
+            drawing_no: '图纸/代号',
+            image_path: '实物图片',
+            manual_path: '技术手册'
+        };
+
         function handleMasterSearchInput(val) {
             clearTimeout(masterSearchDebounceTimer);
             masterSearchDebounceTimer = setTimeout(() => {
@@ -39,6 +58,31 @@
                 .catch(err => console.error('Error loading master stats:', err));
         }
 
+        function toggleMasterStats(forceShow = null) {
+            const banner = document.getElementById('masterStatsBanner');
+            const btn = document.getElementById('btnMasterStatsToggle');
+            if (!banner) return;
+
+            const isVisible = banner.style.display !== 'none';
+            const show = forceShow !== null ? forceShow : !isVisible;
+
+            if (show) {
+                banner.style.display = 'grid';
+                if (btn) {
+                    btn.style.borderColor = '#2563eb';
+                    btn.style.color = '#1d4ed8';
+                    btn.style.background = '#eff6ff';
+                }
+            } else {
+                banner.style.display = 'none';
+                if (btn) {
+                    btn.style.borderColor = '';
+                    btn.style.color = '';
+                    btn.style.background = '';
+                }
+            }
+        }
+
         function loadMasterMaterials(searchQuery = null) {
             if (searchQuery !== null) {
                 const sInput = document.getElementById('masterSearch');
@@ -50,101 +94,406 @@
             fetch(`/api/materials?q=${encodeURIComponent(search)}&filter_type=${encodeURIComponent(filterType)}`)
                 .then(r => r.json())
                 .then(materials => {
-                    allMasterMaterials = materials;
+                    const list = Array.isArray(materials) ? materials : [];
+                    rawMasterMaterialsOrder = [...list];
+                    allMasterMaterials = [...list];
 
-                    const tbody = document.getElementById('masterTableBody');
-                    if (tbody) {
-                        tbody.innerHTML = '';
-                        if (!materials || materials.length === 0) {
-                            tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; color: var(--text-muted); padding: 40px;">未找到匹配的通用物料</td></tr>`;
-                            return;
+                    // Prune selection: retain items that still exist
+                    const validNos = new Set(allMasterMaterials.map(m => m.material_no));
+                    for (const no of selectedMasterMatNos) {
+                        if (!validNos.has(no)) {
+                            selectedMasterMatNos.delete(no);
                         }
-
-                        materials.forEach(m => {
-                            const tr = document.createElement('tr');
-
-                            // Image cell
-                            let imgTag = '';
-                            if (m.image_path) {
-                                imgTag = `
-                                    <div class="asset-btn-wrap">
-                                        <img src="/${m.image_path}" class="thumb-img" onclick="showImgPreview('/${m.image_path}')" title="点击放大预览">
-                                        <button type="button" class="asset-del-btn" onclick="deleteMasterAsset('${escapeHtml(m.material_no)}', 'image')" title="移除图片">&times;</button>
-                                    </div>`;
-                            } else {
-                                imgTag = `<span class="thumb-placeholder" onclick="triggerImgUpload('${escapeHtml(m.material_no)}')" title="点击上传实物图片">上传图片</span>`;
-                            }
-
-                            // Manual cell
-                            let manTag = '';
-                            if (m.manual_path) {
-                                const safeName = (m.name || '').replace(/'/g, "\\'");
-                                manTag = `
-                                    <div class="asset-btn-wrap">
-                                        <button type="button" class="manual-link" style="border: 1px solid #bae6fd; cursor: pointer; background: #f0f9ff; padding: 2px 7px;" onclick="previewManualOnline('/${m.manual_path}', '${escapeHtml(m.material_no)}', '${safeName}')" title="在线查阅 PDF 手册">查看手册</button>
-                                        <button type="button" class="asset-del-btn" onclick="deleteMasterAsset('${escapeHtml(m.material_no)}', 'manual')" title="移除手册">&times;</button>
-                                    </div>`;
-                            } else {
-                                manTag = `<span class="manual-empty" onclick="triggerManualUpload('${escapeHtml(m.material_no)}')" title="点击上传技术手册">上传手册</span>`;
-                            }
-
-                            // Child count badge
-                            let childBadge = '';
-                            if (m.child_count > 0) {
-                                childBadge = `<span class="badge-child-tag" onclick="openMasterHierarchyModal('${escapeHtml(m.material_no)}')" title="包含 ${m.child_count} 项子零部件，点击管理结构">${m.child_count}项结构</span>`;
-                            }
-
-                            // Referenced projects cell
-                            const projList = m.referenced_projects || [];
-                            let projCellHtml = '';
-                            if (projList && projList.length > 0) {
-                                const projBadges = projList.slice(0, 2).map(p => {
-                                    const pTitle = p.name || p.code || '未命名项目';
-                                    return `<span class="badge-project-ref" onclick="openMasterUsageModal('${escapeHtml(m.material_no)}')" title="点击查看项目 [${escapeHtml(pTitle)}] 详细引用位置与Sheet">${escapeHtml(pTitle)}</span>`;
-                                }).join('');
-
-                                let moreBadge = '';
-                                if (projList.length > 2) {
-                                    moreBadge = `<span class="badge-project-ref badge-project-more" onclick="openMasterUsageModal('${escapeHtml(m.material_no)}')" title="共 ${projList.length} 个项目引用，点击查看全部">+${projList.length - 2}</span>`;
-                                }
-                                const allProjNames = projList.map(p => p.name || p.code).join(', ');
-                                projCellHtml = `<div style="display: flex; gap: 4px; align-items: center; overflow: hidden; flex-wrap: nowrap;" title="引用项目 (${projList.length}个): ${escapeHtml(allProjNames)}&#10;点击查看具体Sheet和行号">${projBadges}${moreBadge}</div>`;
-                            } else {
-                                projCellHtml = `<span style="color: #94a3b8; font-size: 12px;">未引用</span>`;
-                            }
-
-                            // Actions
-                            const actionBtns = `
-                                <div class="action-btns">
-                                    <button class="btn btn-outline btn-sm" style="color: #0284c7; border-color: #bae6fd; background: #f0f9ff;" onclick="insertMasterToCurrentBom('${escapeHtml(m.material_no)}')" title="将该物料及子件导入当前 Sheet">引用</button>
-                                    <button class="btn btn-outline btn-sm" onclick="openEditMasterModal('${escapeHtml(m.material_no)}')" title="编辑物料属性及标准化描述">编辑</button>
-                                    <button class="btn btn-outline btn-sm" style="color: #166534; border-color: #bbf7d0; background: #f0fdf4;" onclick="openMasterHierarchyModal('${escapeHtml(m.material_no)}')" title="维护该总成下属的标准子零部件">结构</button>
-                                    <button class="btn btn-outline btn-sm btn-delete" onclick="deleteMasterMaterial('${escapeHtml(m.material_no)}')" title="从物料库中删除">删除</button>
-                                </div>
-                            `;
-
-                            tr.innerHTML = `
-                                <td class="col-center">${actionBtns}</td>
-                                <td title="${escapeHtml(m.material_no)}"><div style="display: flex; align-items: center; gap: 4px; overflow: hidden;"><span class="cell-text-ellipsis" style="flex-shrink: 0; max-width: 100%; font-weight: bold;">${escapeHtml(m.material_no)}</span>${childBadge}</div></td>
-                                <td title="${escapeHtml(m.name || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.name || '')}</div></td>
-                                <td>${projCellHtml}</td>
-                                <td title="${escapeHtml(m.description || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.description || '')}</div></td>
-                                <td title="${escapeHtml(m.spec_model || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.spec_model || '')}</div></td>
-                                <td title="${escapeHtml(m.manufacturer || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.manufacturer || '')}</div></td>
-                                <td class="col-center">${escapeHtml(m.unit || 'PCS')}</td>
-                                <td title="${escapeHtml(m.drawing_no || '/')}"><div class="cell-text-ellipsis">${escapeHtml(m.drawing_no || '/')}</div></td>
-                                <td class="col-center">${imgTag}</td>
-                                <td class="col-center">${manTag}</td>
-                            `;
-                            tbody.appendChild(tr);
-                        });
-                        applyColumnWidths('masterTable');
                     }
+
+                    // Apply active column sorting
+                    if (masterCurrentSortField && masterCurrentSortDir !== 'none') {
+                        applyMasterSortList();
+                    }
+
+                    renderMasterMaterialsTable();
                 })
                 .catch(err => console.error('Error loading master materials:', err));
         }
 
+        function renderMasterMaterialsTable() {
+            const tbody = document.getElementById('masterTableBody');
+            if (!tbody) return;
+
+            tbody.innerHTML = '';
+            if (!allMasterMaterials || allMasterMaterials.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; color: var(--text-muted); padding: 40px;">未找到匹配的通用物料</td></tr>`;
+                applyColumnWidths('masterTable');
+                updateMasterToolbarState();
+                return;
+            }
+
+            allMasterMaterials.forEach(m => {
+                const isSelected = selectedMasterMatNos.has(m.material_no);
+                const tr = document.createElement('tr');
+                if (isSelected) {
+                    tr.className = 'master-row-selected';
+                }
+                tr.ondblclick = () => openEditMasterModal(m.material_no);
+                tr.onclick = (e) => handleMasterRowClick(e, m.material_no);
+                tr.title = '双击编辑该物料 · 单击勾选行';
+
+                // Checkbox cell (replaces old action column)
+                const selectCellHtml = `
+                    <td class="col-center" onclick="event.stopPropagation()">
+                        <input type="checkbox" class="master-row-cb" value="${escapeHtml(m.material_no)}" ${isSelected ? 'checked' : ''} onchange="toggleMasterRowSelect('${escapeHtml(m.material_no)}', this.checked)" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
+                    </td>`;
+
+                // Image cell
+                let imgTag = '';
+                if (m.image_path) {
+                    imgTag = `
+                        <div class="asset-btn-wrap">
+                            <img src="/${m.image_path}" class="thumb-img" onclick="event.stopPropagation(); showImgPreview('/${m.image_path}')" title="点击放大预览">
+                            <button type="button" class="asset-del-btn" onclick="event.stopPropagation(); deleteMasterAsset('${escapeHtml(m.material_no)}', 'image')" title="移除图片">&times;</button>
+                        </div>`;
+                } else {
+                    imgTag = `<span class="thumb-placeholder" onclick="event.stopPropagation(); triggerImgUpload('${escapeHtml(m.material_no)}')" title="点击上传实物图片">上传图片</span>`;
+                }
+
+                // Manual cell
+                let manTag = '';
+                if (m.manual_path) {
+                    const safeName = (m.name || '').replace(/'/g, "\\'");
+                    manTag = `
+                        <div class="asset-btn-wrap">
+                            <button type="button" class="manual-link" style="border: 1px solid #bae6fd; cursor: pointer; background: #f0f9ff; padding: 2px 7px;" onclick="event.stopPropagation(); previewManualOnline('/${m.manual_path}', '${escapeHtml(m.material_no)}', '${safeName}')" title="在线查阅 PDF 手册">查看手册</button>
+                            <button type="button" class="asset-del-btn" onclick="event.stopPropagation(); deleteMasterAsset('${escapeHtml(m.material_no)}', 'manual')" title="移除手册">&times;</button>
+                        </div>`;
+                } else {
+                    manTag = `<span class="manual-empty" onclick="event.stopPropagation(); triggerManualUpload('${escapeHtml(m.material_no)}')" title="点击上传技术手册">上传手册</span>`;
+                }
+
+                // Child count badge
+                let childBadge = '';
+                if (m.child_count > 0) {
+                    childBadge = `<span class="badge-child-tag" onclick="event.stopPropagation(); openMasterHierarchyModal('${escapeHtml(m.material_no)}')" title="包含 ${m.child_count} 项子零部件，点击管理结构">${m.child_count}项结构</span>`;
+                }
+
+                // Referenced projects cell
+                const projList = m.referenced_projects || [];
+                let projCellHtml = '';
+                if (projList && projList.length > 0) {
+                    const projBadges = projList.slice(0, 2).map(p => {
+                        const pTitle = p.name || p.code || '未命名项目';
+                        return `<span class="badge-project-ref" onclick="event.stopPropagation(); openMasterUsageModal('${escapeHtml(m.material_no)}')" title="点击查看项目 [${escapeHtml(pTitle)}] 详细引用位置与Sheet">${escapeHtml(pTitle)}</span>`;
+                    }).join('');
+
+                    let moreBadge = '';
+                    if (projList.length > 2) {
+                        moreBadge = `<span class="badge-project-ref badge-project-more" onclick="event.stopPropagation(); openMasterUsageModal('${escapeHtml(m.material_no)}')" title="共 ${projList.length} 个项目引用，点击查看全部">+${projList.length - 2}</span>`;
+                    }
+                    const allProjNames = projList.map(p => p.name || p.code).join(', ');
+                    projCellHtml = `<div style="display: flex; gap: 4px; align-items: center; overflow: hidden; flex-wrap: nowrap;" title="引用项目 (${projList.length}个): ${escapeHtml(allProjNames)}&#10;点击查看具体Sheet和行号">${projBadges}${moreBadge}</div>`;
+                } else {
+                    projCellHtml = `<span style="color: #94a3b8; font-size: 12px;">未引用</span>`;
+                }
+
+                tr.innerHTML = `
+                    ${selectCellHtml}
+                    <td title="${escapeHtml(m.material_no)}"><div style="display: flex; align-items: center; gap: 4px; overflow: hidden;"><span class="cell-text-ellipsis" style="flex-shrink: 0; max-width: 100%; font-weight: bold;">${escapeHtml(m.material_no)}</span>${childBadge}</div></td>
+                    <td title="${escapeHtml(m.name || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.name || '')}</div></td>
+                    <td>${projCellHtml}</td>
+                    <td title="${escapeHtml(m.description || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.description || '')}</div></td>
+                    <td title="${escapeHtml(m.spec_model || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.spec_model || '')}</div></td>
+                    <td title="${escapeHtml(m.manufacturer || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.manufacturer || '')}</div></td>
+                    <td class="col-center">${escapeHtml(m.unit || 'PCS')}</td>
+                    <td title="${escapeHtml(m.drawing_no || '/')}"><div class="cell-text-ellipsis">${escapeHtml(m.drawing_no || '/')}</div></td>
+                    <td class="col-center">${imgTag}</td>
+                    <td class="col-center">${manTag}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            applyColumnWidths('masterTable');
+            updateMasterToolbarState();
+        }
+
+        // --- Row Click & Selection Helpers ---
+        function handleMasterRowClick(event, matNo) {
+            if (['INPUT', 'BUTTON', 'IMG', 'A'].includes(event.target.tagName) ||
+                event.target.closest('.asset-btn-wrap') ||
+                event.target.closest('.badge-child-tag') ||
+                event.target.closest('.badge-project-ref') ||
+                event.target.closest('.thumb-placeholder') ||
+                event.target.closest('.manual-empty')) {
+                return;
+            }
+            toggleMasterRowSelect(matNo);
+        }
+
+        function toggleMasterSelectAll(checked) {
+            if (checked) {
+                (allMasterMaterials || []).forEach(m => selectedMasterMatNos.add(m.material_no));
+            } else {
+                selectedMasterMatNos.clear();
+            }
+            renderMasterMaterialsTable();
+        }
+
+        function toggleMasterRowSelect(matNo, explicitChecked) {
+            if (explicitChecked !== undefined) {
+                if (explicitChecked) selectedMasterMatNos.add(matNo);
+                else selectedMasterMatNos.delete(matNo);
+            } else {
+                if (selectedMasterMatNos.has(matNo)) selectedMasterMatNos.delete(matNo);
+                else selectedMasterMatNos.add(matNo);
+            }
+            renderMasterMaterialsTable();
+        }
+
+        function clearMasterSelection() {
+            selectedMasterMatNos.clear();
+            renderMasterMaterialsTable();
+        }
+
+        function updateMasterToolbarState() {
+            const count = selectedMasterMatNos.size;
+            const countSpan = document.getElementById('masterSelectedNum');
+            if (countSpan) countSpan.textContent = count;
+
+            const clearBtn = document.getElementById('btnMasterClearSelection');
+            if (clearBtn) clearBtn.style.display = count > 0 ? 'inline-block' : 'none';
+
+            const selectAllCb = document.getElementById('masterSelectAll');
+            if (selectAllCb) {
+                const total = (allMasterMaterials || []).length;
+                if (total === 0) {
+                    selectAllCb.checked = false;
+                    selectAllCb.indeterminate = false;
+                } else if (count >= total) {
+                    selectAllCb.checked = true;
+                    selectAllCb.indeterminate = false;
+                } else if (count > 0) {
+                    selectAllCb.checked = false;
+                    selectAllCb.indeterminate = true;
+                } else {
+                    selectAllCb.checked = false;
+                    selectAllCb.indeterminate = false;
+                }
+            }
+        }
+
+        // --- Column Header Sorting ---
+        function handleMasterTableSort(field) {
+            if (!allMasterMaterials || allMasterMaterials.length === 0) return;
+
+            if (masterCurrentSortField === field) {
+                if (masterCurrentSortDir === 'asc') masterCurrentSortDir = 'desc';
+                else if (masterCurrentSortDir === 'desc') masterCurrentSortDir = 'none';
+                else masterCurrentSortDir = 'asc';
+            } else {
+                masterCurrentSortField = field;
+                masterCurrentSortDir = 'asc';
+            }
+
+            applyMasterSort();
+        }
+
+        function applyMasterSort() {
+            document.querySelectorAll('.sort-icon[id^="master-sort-"]').forEach(icon => {
+                icon.textContent = '⇅';
+                icon.classList.remove('active');
+            });
+
+            const statusSpan = document.getElementById('masterSortStatusSpan');
+            const resetBtn = document.getElementById('btnMasterResetSort');
+
+            if (masterCurrentSortDir === 'none' || !masterCurrentSortField) {
+                masterCurrentSortField = null;
+                masterCurrentSortDir = 'none';
+                if (statusSpan) statusSpan.textContent = '';
+                if (resetBtn) resetBtn.style.display = 'none';
+                allMasterMaterials = [...rawMasterMaterialsOrder];
+            } else {
+                const icon = document.getElementById(`master-sort-${masterCurrentSortField}`);
+                if (icon) {
+                    icon.textContent = masterCurrentSortDir === 'asc' ? '▲' : '▼';
+                    icon.classList.add('active');
+                }
+                const label = MASTER_SORT_FIELD_LABELS[masterCurrentSortField] || masterCurrentSortField;
+                if (statusSpan) {
+                    statusSpan.textContent = `[按 ${label} ${masterCurrentSortDir === 'asc' ? '升序 ▲' : '降序 ▼'}]`;
+                }
+                if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+                applyMasterSortList();
+            }
+
+            renderMasterMaterialsTable();
+        }
+
+        function applyMasterSortList() {
+            if (!masterCurrentSortField || masterCurrentSortDir === 'none') return;
+
+            allMasterMaterials.sort((a, b) => {
+                let valA, valB;
+                if (masterCurrentSortField === 'referenced_projects') {
+                    valA = (a.referenced_projects || []).length;
+                    valB = (b.referenced_projects || []).length;
+                    return masterCurrentSortDir === 'asc' ? (valA - valB) : (valB - valA);
+                } else if (masterCurrentSortField === 'image_path') {
+                    valA = a.image_path ? 1 : 0;
+                    valB = b.image_path ? 1 : 0;
+                    return masterCurrentSortDir === 'asc' ? (valB - valA) : (valA - valB);
+                } else if (masterCurrentSortField === 'manual_path') {
+                    valA = a.manual_path ? 1 : 0;
+                    valB = b.manual_path ? 1 : 0;
+                    return masterCurrentSortDir === 'asc' ? (valB - valA) : (valA - valB);
+                } else {
+                    valA = a[masterCurrentSortField] ?? '';
+                    valB = b[masterCurrentSortField] ?? '';
+                    const numA = parseFloat(valA);
+                    const numB = parseFloat(valB);
+                    let res = 0;
+                    if (!isNaN(numA) && !isNaN(numB) && String(valA).trim() !== '' && String(valB).trim() !== '') {
+                        res = numA - numB;
+                    } else {
+                        res = String(valA).localeCompare(String(valB), 'zh-CN', { numeric: true, sensitivity: 'base' });
+                    }
+                    return masterCurrentSortDir === 'asc' ? res : -res;
+                }
+            });
+        }
+
+        function resetMasterSort() {
+            masterCurrentSortField = null;
+            masterCurrentSortDir = 'none';
+            applyMasterSort();
+            showToast('已恢复物料主库默认排序', 'info');
+        }
+
+        // --- Master Toolbar Action Handlers ---
+        function handleMasterToolbarEdit() {
+            if (selectedMasterMatNos.size === 0) {
+                showToast('请先勾选需要编辑的物料行（或直接双击该行）！', 'warning');
+                return;
+            }
+            if (selectedMasterMatNos.size > 1) {
+                showToast('每次仅支持编辑单项物料，请只选择 1 项（或直接双击某行）！', 'warning');
+                return;
+            }
+            const matNo = Array.from(selectedMasterMatNos)[0];
+            openEditMasterModal(matNo);
+        }
+
+        function handleMasterToolbarHierarchy() {
+            if (selectedMasterMatNos.size === 0) {
+                showToast('请先勾选需要管理装配结构的物料！', 'warning');
+                return;
+            }
+            if (selectedMasterMatNos.size > 1) {
+                showToast('总成结构管理仅支持单项物料，请只选择 1 项！', 'warning');
+                return;
+            }
+            const matNo = Array.from(selectedMasterMatNos)[0];
+            openMasterHierarchyModal(matNo);
+        }
+
+        function handleMasterToolbarUsage() {
+            if (selectedMasterMatNos.size === 0) {
+                showToast('请先勾选需要追溯引用的物料！', 'warning');
+                return;
+            }
+            if (selectedMasterMatNos.size > 1) {
+                showToast('引用追溯仅支持单项物料，请只选择 1 项！', 'warning');
+                return;
+            }
+            const matNo = Array.from(selectedMasterMatNos)[0];
+            openMasterUsageModal(matNo);
+        }
+
+        async function handleMasterToolbarInsertBom() {
+            if (!currentSubsystemId) {
+                alert('请先在主界面打开一个机型的子系统 (Sheet)，然后再点击引用物料！');
+                return;
+            }
+            if (selectedMasterMatNos.size === 0) {
+                showToast('请先勾选需要引用至当前 BOM 的物料！', 'warning');
+                return;
+            }
+
+            const selectedNos = Array.from(selectedMasterMatNos);
+            if (selectedNos.length === 1) {
+                insertMasterToCurrentBom(selectedNos[0]);
+                return;
+            }
+
+            if (!confirm(`确定将选中的 ${selectedNos.length} 项物料批量导入到当前 Sheet 吗？\n\n（提示：对于总成物料，批量导入将导入总成单行；若需连带导入完整总成树状结构，建议单独引用该总成）`)) {
+                return;
+            }
+
+            let successCount = 0;
+            for (const matNo of selectedNos) {
+                const mat = (allMasterMaterials || []).find(m => m.material_no === matNo);
+                const payload = {
+                    subsystem_id: currentSubsystemId,
+                    material_no: matNo,
+                    name: mat ? (mat.name || '') : '',
+                    m_name: mat ? (mat.name || '') : '',
+                    description: mat ? (mat.description || '') : '',
+                    m_desc: mat ? (mat.description || '') : '',
+                    spec_model: mat ? (mat.spec_model || '') : '',
+                    m_model: mat ? (mat.spec_model || '') : '',
+                    manufacturer: mat ? (mat.manufacturer || '') : '',
+                    m_mfr: mat ? (mat.manufacturer || '') : '',
+                    qty: 1,
+                    unit: mat ? (mat.unit || 'PCS') : 'PCS',
+                    drawing_no: mat ? (mat.drawing_no || '/') : '/',
+                    level_str: '●',
+                    level_num: 1,
+                    notes: mat ? (mat.notes || '') : '',
+                    substitute: mat ? (mat.substitute || '') : '',
+                    import_children: false
+                };
+
+                try {
+                    const res = await safeFetchJson('/api/bom/add', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (res && res.success) {
+                        successCount++;
+                    }
+                } catch (e) {
+                    console.error('Batch insert error for', matNo, e);
+                }
+            }
+
+            if (currentSubsystemId) {
+                loadBomItems(currentSubsystemId);
+            }
+            loadMasterMaterials();
+            loadMasterStats();
+            showToast(`已成功将 ${successCount} 项物料批量导入到当前 Sheet！`, 'success');
+        }
+
+        function handleMasterToolbarDelete() {
+            if (selectedMasterMatNos.size === 0) {
+                showToast('请先勾选需要从物料主库中删除的物料！', 'warning');
+                return;
+            }
+
+            const selectedNos = Array.from(selectedMasterMatNos);
+            deleteMasterMaterialsWithConfirm(selectedNos);
+        }
+
         function openMasterModal() {
+            selectedMasterMatNos.clear();
+            masterCurrentSortField = null;
+            masterCurrentSortDir = 'none';
+            const sInput = document.getElementById('masterSearch');
+            if (sInput) sInput.value = '';
+            const fSelect = document.getElementById('masterFilterType');
+            if (fSelect) fSelect.value = 'all';
+
+            toggleMasterStats(false);
             loadMasterStats();
             loadMasterMaterials();
             openModal('masterModal');
@@ -761,48 +1110,81 @@
             .catch(err => alert('网络异常: ' + err.message));
         }
 
-        // --- Delete Material ---
+        // --- Delete Material with Friendly Confirmation (Single & Batch) ---
+        async function deleteMasterMaterialsWithConfirm(matNos) {
+            if (!matNos || matNos.length === 0) return;
+
+            if (matNos.length === 1) {
+                const matNo = matNos[0];
+                const mat = (allMasterMaterials || []).find(m => m.material_no === matNo);
+                const refList = mat ? (mat.referenced_projects || []) : [];
+                let confirmMsg = '';
+
+                if (refList.length > 0) {
+                    const refNames = refList.map(p => p.name || p.code).slice(0, 3).join('、');
+                    const moreText = refList.length > 3 ? ` 等共 ${refList.length} 个项目` : '';
+                    confirmMsg = `【⚠️ 引用风险警示】\n\n物料 [${matNo}]（${mat ? (mat.name || '') : ''}）当前正被项目 BOM 引用：\n• 引用项目：${refNames}${moreText}\n\n从物料主库中删除后，该物料在全局通用物料库的记录及装配层级关系将被清除！\n\n确定仍要从主库中删除该物料吗？此操作不可撤销。`;
+                } else {
+                    confirmMsg = `确定要从全局物料主库中删除物料 [${matNo}]（${mat ? (mat.name || '') : ''}）吗？\n\n删除后不可撤销，请确认是否继续。`;
+                }
+
+                if (!confirm(confirmMsg)) return;
+
+                try {
+                    const res = await safeFetchJson('/api/material/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ material_no: matNo })
+                    });
+                    if (res && res.success) {
+                        selectedMasterMatNos.delete(matNo);
+                        showToast(`物料 [${matNo}] 已从物料主库中删除。`, 'success');
+                        loadMasterMaterials();
+                        loadMasterStats();
+                    } else {
+                        alert((res && res.error) || '删除失败');
+                    }
+                } catch (err) {
+                    alert('网络异常: ' + err.message);
+                }
+            } else {
+                // Batch deletion confirmation
+                const selectedList = (allMasterMaterials || []).filter(m => matNos.includes(m.material_no));
+                const referencedItems = selectedList.filter(m => m.referenced_projects && m.referenced_projects.length > 0);
+
+                let confirmMsg = `确定要从全局物料主库中批量删除选中的 ${matNos.length} 项物料吗？\n\n此操作不可撤销。`;
+                if (referencedItems.length > 0) {
+                    const sampleNames = referencedItems.slice(0, 3).map(m => m.material_no).join('、');
+                    const moreText = referencedItems.length > 3 ? ` 等共 ${referencedItems.length} 项` : '';
+                    confirmMsg = `【⚠️ 批量删除高危警示】\n\n本次勾选的 ${matNos.length} 项物料中，有 ${referencedItems.length} 项已被工程项目引用（包含：${sampleNames}${moreText}）！\n\n删除后，这些物料在通用主库中的主数据及总成层级结构将被清除！\n\n确认全部批量删除吗？`;
+                }
+
+                if (!confirm(confirmMsg)) return;
+
+                try {
+                    const res = await safeFetchJson('/api/materials/batch-delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ material_nos: matNos })
+                    });
+                    if (res && res.success) {
+                        matNos.forEach(no => selectedMasterMatNos.delete(no));
+                        showToast((res && res.message) || `成功批量删除 ${matNos.length} 项物料。`, 'success');
+                        loadMasterMaterials();
+                        loadMasterStats();
+                    } else {
+                        alert((res && res.error) || '批量删除失败');
+                    }
+                } catch (err) {
+                    alert('网络异常: ' + err.message);
+                }
+            }
+        }
+
         function deleteMasterMaterial(matNo) {
-            if (!confirm(`确定要从物料主库中删除物料 [${matNo}] 吗？`)) return;
-
-            fetch('/api/material/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ material_no: matNo })
-            })
-            .then(r => r.json())
-            .then(res => {
-                if (res.success) {
-                    showToast(`物料 [${matNo}] 已从物料主库中删除。`, 'success');
-                    loadMasterMaterials();
-                    loadMasterStats();
-                } else {
-                    alert(res.error || '删除失败');
-                }
-            })
-            .catch(err => alert('网络异常: ' + err.message));
+            deleteMasterMaterialsWithConfirm([matNo]);
         }
 
-        // --- Clear All Master Materials ---
-        function clearMasterMaterials() {
-            if (!confirm('确定要清空物料主库吗？\n\n此操作将清除主库中的全部物料信息及总成层级结构关系！\n\n确定要全部清空吗？')) return;
-
-            fetch('/api/materials/clear', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(r => r.json())
-            .then(res => {
-                if (res.success) {
-                    showToast(res.message || '已清空物料主库。', 'success');
-                    loadMasterMaterials();
-                    loadMasterStats();
-                } else {
-                    alert(res.error || '清空失败');
-                }
-            })
-            .catch(err => alert('网络异常: ' + err.message));
-        }
 
         // --- Delete Asset (Image / Manual) ---
         function deleteMasterAsset(matNo, assetType) {
