@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  service-bom:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    container_name: service_bom_app
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      # 持久化数据库目录
+      - ../../data:/app/data
+      # 持久化图片与PDF手册资源
+      - ../../assets:/app/assets
+      # 持久化临时上传与导出成果物
+      - ../../uploads:/app/uploads
+      - ../../exports:/app/exports
+      # 挂载模版目录
+      - "../../Excel 模版:/app/Excel 模版"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - HEADLESS=true

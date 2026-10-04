@@ -1,0 +1,2067 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>风电机组 Service BOM</title>
+    <!-- Mozilla PDF.js Local Offline Engine (Zero Browser Plugin Dependency) -->
+    <script src="/static/pdfjs/pdf.min.js"></script>
+    <!-- Global Application Stylesheet -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="logo-area">
+            <div class="logo-icon">S</div>
+            <div>
+                <div class="app-title">风电机组 Service BOM</div>
+                <div class="app-subtitle">统一物料主库 · 装配结构管理 · 标准化导出</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-outline" onclick="openMasterModal()" title="查看并维护全机型通用的物料主库与总成装配结构">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                </svg>
+                <span>物料主库</span>
+            </button>
+            <button class="btn btn-outline" id="btnHeaderCompare" onclick="openProjectCompareModal()" title="对比两个项目的BOM物料差异、数量变化与配置异同">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="18" cy="18" r="3"></circle>
+                    <circle cx="6" cy="6" r="3"></circle>
+                    <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+                    <path d="M11 18H8a2 2 0 0 1-2-2V9"></path>
+                </svg>
+                <span>项目比对</span>
+            </button>
+            <button class="btn btn-success" id="btnHeaderExport" onclick="exportCurrentProject()" title="导出标准格式 SBOM.xlsx">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>导出 SBOM (.xlsx)</span>
+            </button>
+            <button class="btn btn-outline" id="btnHeaderOfflinePkg" onclick="exportOfflinePackage()" title="整机备件资料离线包一键导出 (包含SBOM、实物图库、技术PDF与现场免安装离线速查网页，适配海上风电及偏远风场无网运维)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                <span>离线运维包 (.zip)</span>
+            </button>
+            <button class="btn btn-outline" id="btnHeaderBackup" onclick="openBackupModal()" title="系统快照、自动备份与一键数据恢复中心">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <span>数据安全</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <!-- Project Bar -->
+            <div class="project-bar">
+                <div class="project-select-group" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span style="font-weight: 600; font-size: 13px; color: #1e293b;">当前项目:</span>
+                    <select id="projectSelect" class="form-select" style="font-weight: bold; min-width: 280px; max-width: 380px;" onchange="loadProject(this.value)">
+                        <!-- Populated by JS -->
+                    </select>
+                    <div id="projectLockStatusGroup" style="display: inline-flex; align-items: center;">
+                        <button type="button" class="btn btn-sm" id="btnToggleProjectLock" onclick="toggleCurrentProjectLock()" style="display: none; padding: 4px 12px; font-weight: 600; font-size: 12px; border-radius: 4px; cursor: pointer; transition: all 0.2s ease;"></button>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="openNewProjectModal()" title="新建项目工程">
+                        新建
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="triggerOpenProjectFile()" title="打开已保存的 .sbom 或 .json 项目工程文件">
+                        打开
+                    </button>
+                    <button class="btn btn-outline btn-sm" id="btnProjectSave" onclick="openSaveProjectModal()" title="导出当前项目为 .sbom 或 .json 工程文件">
+                        保存
+                    </button>
+                    <button class="btn btn-outline btn-sm" id="btnProjectCopy" onclick="openCopyProjectModal()" title="复制当前项目及其所有Sheet和BOM数据为新工程">
+                        复制
+                    </button>
+                    <button class="btn btn-outline btn-sm" id="btnProjectRename" onclick="openRenameProjectModal()" title="重命名当前项目的工程名称">
+                        重命名
+                    </button>
+                    <button class="btn btn-outline btn-sm" id="btnProjectClose" onclick="closeCurrentProject()" title="关闭当前工程，返回初始欢迎面板">
+                        关闭
+                    </button>
+                    <button class="btn btn-danger btn-sm" id="btnProjectDelete" onclick="deleteCurrentProject()" title="删除当前项目及其所有Sheet与BOM数据（物料主库完整保留）">
+                        删除
+                    </button>
+                </div>
+                <div id="projectInfoSummary" style="font-size: 13px; color: var(--text-muted);">
+                    <!-- Summary e.g. 文件号 / 表单号 -->
+                </div>
+            </div>
+
+            <!-- No Project Open Placeholder / Welcome Dashboard -->
+            <div id="noProjectPlaceholder" style="display: none; padding: 60px 24px; text-align: center; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 10px; margin: 16px 0;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                <h3 style="color: #1e293b; font-size: 20px; font-weight: 700; margin-bottom: 8px;">当前未打开任何工程项目</h3>
+                <p style="color: #64748b; font-size: 14px; max-width: 540px; margin: 0 auto 24px; line-height: 1.6;">
+                    您可以从上方下拉菜单中选择已有项目，或者通过以下快捷方式开启新的 BOM 编制工作：
+                </p>
+                <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="openNewProjectModal()" style="padding: 9px 18px; font-size: 14px;">
+                        新建工程项目
+                    </button>
+                    <button class="btn btn-outline" onclick="triggerOpenProjectFile()" style="padding: 9px 18px; font-size: 14px;">
+                        打开工程文件 (.sbom)
+                    </button>
+                    <button class="btn btn-outline" onclick="openImportModal()" style="padding: 9px 18px; font-size: 14px;">
+                        导入 Excel 模版
+                    </button>
+                    <button class="btn btn-outline" onclick="openProjectCompareModal()" style="padding: 9px 18px; font-size: 14px;">
+                        项目 BOM 比对
+                    </button>
+                    <button class="btn btn-outline" onclick="openMasterModal()" style="padding: 9px 18px; font-size: 14px;">
+                        浏览物料主库
+                    </button>
+                </div>
+            </div>
+
+            <!-- Project Content Area (Tabs, Cover & BOM Tables) -->
+            <div id="projectContentArea">
+
+            <!-- Locked Notice Alert Banner -->
+            <div id="projectLockedAlert" style="display: none; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 10px 18px; border-radius: 6px; font-size: 13px; margin: 12px 20px 0 20px; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 18px;">🔒</span>
+                    <span>当前工程处于<b>锁定保护状态（只读）</b>，所有 BOM 清单及属性仅供查阅、导出与比对。如需进行编辑修改，请先解锁。</span>
+                </div>
+                <button type="button" class="btn btn-warning btn-sm" onclick="unlockCurrentProject()" style="padding: 4px 14px; font-weight: 600;">
+                    🔓 立即解锁编辑
+                </button>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="tab-nav" style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                    <button class="tab-btn" id="tab-btn-cover" onclick="switchTab('cover')">
+                        封面
+                    </button>
+                    <button class="tab-btn" id="tab-btn-revision" onclick="switchTab('revision')">
+                        签字及修改页
+                    </button>
+                    <!-- Dynamic subsystem tabs -->
+                    <div id="subsystemTabContainer" style="display: flex; gap: 4px; align-items: center;"></div>
+                    <button class="btn btn-outline btn-sm" id="btnAddNewSheet" style="margin-left: 8px; border-style: dashed;" onclick="addNewSubsystemSheet()" title="添加新的BOM子系统Sheet">
+                        + 新建 Sheet
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB 1: Cover -->
+            <div id="tabContent-cover" style="display: none;">
+                <div class="cover-box">
+                    <h3 style="margin-bottom: 20px; font-size: 16px;">封面与基本信息</h3>
+                    <div class="cover-row">
+                        <label class="form-label">机型代号 (Code):</label>
+                        <input id="cov-code" class="form-input" placeholder="例如: EW6.25-220">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">产品名称 (Name):</label>
+                        <input id="cov-name" class="form-input" value="风力发电机组" placeholder="默认: 风力发电机组">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">文件名称 (Title):</label>
+                        <input id="cov-system" class="form-input">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">文件号:</label>
+                        <input id="cov-doc" class="form-input" placeholder="可留空或填编号">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">ECN 变更号:</label>
+                        <input id="cov-ecn" class="form-input" placeholder="ECN号">
+                    </div>
+                    <input type="hidden" id="cov-form" value="FDJL-JS-037">
+                    <div class="cover-row">
+                        <label class="form-label">单位/公司:</label>
+                        <input id="cov-company" class="form-input" value="上海电气风电集团股份有限公司">
+                    </div>
+                    <div style="text-align: right; margin-top: 20px;">
+                        <button class="btn btn-primary" id="btnSaveCover" onclick="saveProjectCover()">保存封面信息</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 1.5: Revision & Signatures (签字及修改页) -->
+            <div id="tabContent-revision" style="display: none;">
+                <div class="cover-box" style="max-width: 1050px; margin: 0 auto; padding: 20px 24px;">
+                    <!-- 头部标题与新增按钮 -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <h3 style="margin: 0; font-size: 16px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                                <span>📝 清单签字及修改页</span>
+                                <span style="font-size: 12px; font-weight: normal; color: #2563eb; background: #eff6ff; padding: 2px 8px; border-radius: 4px; border: 1px solid #bfdbfe;">
+                                    对应导出模版《签字及修改页》Sheet
+                                </span>
+                            </h3>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+                                记录该风电机组 BOM 的所有工程变更说明（ECN），每一项变更对应一行，导出标准 Excel 时将按顺序排入对应表格行。
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button class="btn btn-primary btn-sm" id="btnAddEcnRow" onclick="openAddEcnModal()" style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600; padding: 7px 16px;">
+                                <span>➕ 新增修改记录</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ECN 更改记录表格 -->
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                            <thead>
+                                <tr style="background: #f8fafc; color: #334155; border-bottom: 2px solid #e2e8f0; font-weight: 600;">
+                                    <th style="width: 60px; text-align: center; padding: 12px 8px; border-right: 1px solid #e2e8f0;">序号</th>
+                                    <th style="width: 150px; padding: 12px 10px; border-right: 1px solid #e2e8f0;">ECN 号</th>
+                                    <th style="padding: 12px 14px; border-right: 1px solid #e2e8f0;">更 改 内 容 描 述</th>
+                                    <th style="width: 110px; padding: 12px 10px; border-right: 1px solid #e2e8f0;">更改人</th>
+                                    <th style="width: 125px; padding: 12px 10px; border-right: 1px solid #e2e8f0;">更改日期</th>
+                                    <th style="width: 130px; text-align: center; padding: 12px 8px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ecnTableBody">
+                                <!-- 由 JS 渲染 -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 底部：审核与签字确认 (对应模版第 33-35 行) -->
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 18px 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                            <div style="font-weight: 600; font-size: 14px; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                                <span>✍️ 清单审核签字</span>
+                                <span style="font-size: 12px; font-weight: normal; color: #64748b;">(对应模版底部编制、校核、审定签字与日期)</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="btnSaveSignatures" onclick="saveProjectSignatures()" style="padding: 5px 16px; font-size: 12px;">
+                                💾 保存签字
+                            </button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+                            <!-- 编制 -->
+                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                                    <span>编 制 (Author)</span>
+                                    <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">清单主编制</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label style="width: 52px; font-size: 12px; color: #64748b; font-weight: 500; text-align: right; flex-shrink: 0;">签字人:</label>
+                                        <input type="text" class="form-input" id="sig-author-name" placeholder="填写姓名" style="font-size: 13px; height: 34px; padding: 0 10px; line-height: 34px; flex: 1; box-sizing: border-box;">
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label style="width: 52px; font-size: 12px; color: #64748b; font-weight: 500; text-align: right; flex-shrink: 0;">日&emsp;期:</label>
+                                        <input type="date" class="form-input" id="sig-author-date" style="font-size: 13px; height: 34px; padding: 0 10px; line-height: 34px; flex: 1; box-sizing: border-box;">
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 校核 -->
+                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                                    <span>校 核 (Reviewer)</span>
+                                    <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">技术校对</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label style="width: 52px; font-size: 12px; color: #64748b; font-weight: 500; text-align: right; flex-shrink: 0;">签字人:</label>
+                                        <input type="text" class="form-input" id="sig-reviewer-name" placeholder="填写姓名" style="font-size: 13px; height: 34px; padding: 0 10px; line-height: 34px; flex: 1; box-sizing: border-box;">
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label style="width: 52px; font-size: 12px; color: #64748b; font-weight: 500; text-align: right; flex-shrink: 0;">日&emsp;期:</label>
+                                        <input type="date" class="form-input" id="sig-reviewer-date" style="font-size: 13px; height: 34px; padding: 0 10px; line-height: 34px; flex: 1; box-sizing: border-box;">
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 审定 -->
+                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                                    <span>审 定 (Approver)</span>
+                                    <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">主管审定</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label style="width: 52px; font-size: 12px; color: #64748b; font-weight: 500; text-align: right; flex-shrink: 0;">签字人:</label>
+                                        <input type="text" class="form-input" id="sig-approver-name" placeholder="填写姓名" style="font-size: 13px; height: 34px; padding: 0 10px; line-height: 34px; flex: 1; box-sizing: border-box;">
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <label style="width: 52px; font-size: 12px; color: #64748b; font-weight: 500; text-align: right; flex-shrink: 0;">日&emsp;期:</label>
+                                        <input type="date" class="form-input" id="sig-approver-date" style="font-size: 13px; height: 34px; padding: 0 10px; line-height: 34px; flex: 1; box-sizing: border-box;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: BOM Table -->
+            <div id="tabContent-bom">
+                <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                        <!-- Unified Row Actions: select row first then operate -->
+                        <button class="btn btn-primary btn-sm" id="btnRowAdd" onclick="openAddBomModal()" title="添加新的BOM物料行（若已选中行则默认插入在其后）">
+                            添加物料
+                        </button>
+                        <button class="btn btn-outline btn-sm" id="btnRowBatchAdd" onclick="openBatchAddBomModal()" title="批量输入或粘贴多行物料号，按行自动导入并可指定导入级别" style="color: #1d4ed8; border-color: #93c5fd; background: #eff6ff; font-weight: 500;">
+                            批量添加
+                        </button>
+                        <button class="btn btn-outline btn-sm" id="btnRowEdit" onclick="editSelectedRow()" disabled title="请先在下方表格中点击选中一行，再进行编辑">
+                            编辑
+                        </button>
+                        <button class="btn btn-outline btn-sm" id="btnRowMoveUp" onclick="moveSelectedRow('up')" disabled title="请先在下方表格中点击选中一行，再执行上移（总成整组跟随）">
+                            上移
+                        </button>
+                        <button class="btn btn-outline btn-sm" id="btnRowMoveDown" onclick="moveSelectedRow('down')" disabled title="请先在下方表格中点击选中一行，再执行下移（总成整组跟随）">
+                            下移
+                        </button>
+                        <button class="btn btn-danger btn-sm" id="btnRowDelete" onclick="deleteSelectedRow()" disabled title="请先在下方表格中点击选中一行，再执行删除">
+                            删除
+                        </button>
+
+                        <!-- Tree Folding Control Group -->
+                        <div style="display: inline-flex; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; background: #fff; margin-left: 2px;">
+                            <button type="button" class="btn btn-outline btn-sm" onclick="expandAllBomTree()" title="展开所有总成层级与下级零部件明细" style="border: none; padding: 3px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 3px;">
+                                <span>▼ 展开</span>
+                            </button>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="collapseAllBomTree()" title="收起所有子零部件，仅看主要总成层级" style="border: none; border-left: 1px solid #cbd5e1; padding: 3px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 3px;">
+                                <span>▶ 折叠</span>
+                            </button>
+                        </div>
+
+                        <!-- Keyboard Shortcut Guide Trigger -->
+                        <button type="button" class="btn btn-outline btn-sm" onclick="openModal('shortcutHelpModal')" title="查看高频键盘快捷键指南 (Ctrl+S, Alt+↑/↓, Ctrl+Enter, Del)" style="padding: 3px 8px; font-size: 11px; color: #475569; background: #f8fafc;">
+                            ⌨️ 快捷键
+                        </button>
+
+                        <!-- Selected row indicator badge -->
+                        <span id="selectedRowIndicator" style="display: none; align-items: center; gap: 6px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-left: 6px;">
+                            <span>已选第 <b id="selRowNumBadge">1</b> 行 (<span id="selRowMatBadge" style="font-family: monospace;"></span>)</span>
+                            <a href="javascript:void(0)" onclick="clearRowSelection()" style="color: #64748b; margin-left: 4px; text-decoration: none; font-size: 14px;" title="取消选中">&times;</a>
+                        </span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <span id="currentSortStatusSpan" style="font-size: 12px; font-weight: 600; color: #2563eb;"></span>
+                        <input type="text" id="bomSearchInput" class="form-input" style="width: 250px;" placeholder="搜索物料号/名称/规格..." oninput="filterBomTable()">
+
+                        <span style="color: #cbd5e1; margin: 0 2px;">|</span>
+
+                        <!-- Sheet Operations moved after search box -->
+                        <button class="btn btn-outline btn-sm" onclick="renameCurrentSubsystemSheet()" title="修改当前Sheet名称">
+                            重命名 Sheet
+                        </button>
+                        <button class="btn btn-outline btn-sm" id="btnCopySheet" onclick="copyCurrentSubsystemSheet()" style="color: #1d4ed8; border-color: #93c5fd; background: #eff6ff; font-weight: 500;" title="完整复制当前Sheet及其所有BOM物料明细行">
+                            复制 Sheet
+                        </button>
+                        <button class="btn btn-outline btn-sm" id="btnDeleteSheet" style="color: #dc2626; border-color: #fca5a5;" onclick="deleteCurrentSubsystemSheet()" title="删除当前Sheet及其所有物料">
+                            删除 Sheet
+                        </button>
+
+                        <button class="btn btn-outline btn-sm" onclick="resetTableSort()" title="恢复默认排版顺序" id="resetSortBtn" style="display: none;">
+                            恢复默认排序
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick="resetAllColumnWidths('bomTable')" title="重置表格所有列为默认推荐宽度" id="resetColWidthsBtn">
+                            重置列宽
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Duplicate Material Rows Check Alert Bar -->
+                <div id="duplicateAlertBar" style="display: none; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; padding: 7px 14px; margin-bottom: 10px; font-size: 12px; color: #9a3412; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span><b>重复物料检查：</b> 检测到当前表中有 <b id="duplicateMatCount" style="color: #ea580c; font-size: 13px;">0</b> 个物料号存在重复记录（共涉及 <b id="duplicateRowCount" style="color: #ea580c; font-size: 13px;">0</b> 行），已高亮标注。</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button type="button" id="filterDuplicateBtn" class="btn btn-outline btn-sm" style="border-color: #fb923c; color: #c2410c; background: #fff;" onclick="toggleFilterDuplicates()">
+                            仅看重复行
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table id="bomTable">
+                        <thead>
+                            <tr>
+                                <th style="width: 38px; min-width: 38px; max-width: 38px;" class="col-center" data-col="select_check">
+                                    <input type="checkbox" id="selectAllBomCheckbox" onchange="toggleSelectAllBom(this.checked)" title="全选 / 取消全选" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
+                                </th>
+                                <th data-col="row_num" style="width: 55px;" class="col-center sortable-th" onclick="handleTableSort('row_num')" title="行号：按全局行顺序递增编号 (1, 2, 3...)">行号 <span class="sort-icon" id="sort-icon-row_num">⇅</span></th>
+                                <th data-col="level_num" style="width: 95px;" class="col-center">BOM层级</th>
+                                <th data-col="seq_num" style="width: 68px;" class="col-center sortable-th" onclick="handleTableSort('seq_num')" title="序号：按层级树状结构编号 (1, 1.1, 1.2.1...)">序号 <span class="sort-icon" id="sort-icon-seq_num">⇅</span></th>
+                                <th data-col="material_no" style="width: 140px;" class="sortable-th" onclick="handleTableSort('material_no')" title="点击正/负向排序（子层级自动整组跟随）">物料号 <span class="sort-icon" id="sort-icon-material_no">⇅</span></th>
+                                <th data-col="m_name" style="width: 180px;" class="sortable-th" onclick="handleTableSort('m_name')" title="点击正/负向排序（子层级自动整组跟随）">元器件名称 <span class="sort-icon" id="sort-icon-m_name">⇅</span></th>
+                                <th data-col="m_desc" style="width: 320px;" class="sortable-th" onclick="handleTableSort('m_desc')" title="点击正/负向排序（子层级自动整组跟随）">物料完整描述 <span class="sort-icon" id="sort-icon-m_desc">⇅</span></th>
+                                <th data-col="m_model" style="width: 160px;" class="sortable-th" onclick="handleTableSort('m_model')" title="点击正/负向排序（子层级自动整组跟随）">型号/规格 <span class="sort-icon" id="sort-icon-m_model">⇅</span></th>
+                                <th data-col="m_mfr" style="width: 120px;" class="sortable-th" onclick="handleTableSort('m_mfr')" title="点击正/负向排序（子层级自动整组跟随）">制造商 <span class="sort-icon" id="sort-icon-m_mfr">⇅</span></th>
+                                <th data-col="qty" style="width: 70px;" class="col-center sortable-th" onclick="handleTableSort('qty')" title="点击正/负向排序（子层级自动整组跟随）">数量 <span class="sort-icon" id="sort-icon-qty">⇅</span></th>
+                                <th data-col="unit" style="width: 55px;" class="col-center">单位</th>
+                                <th data-col="manual" style="width: 105px;" class="col-center">技术手册</th>
+                                <th data-col="image" style="width: 85px;" class="col-center">实物图片</th>
+                                <th data-col="drawing_no" style="width: 140px;">图纸/代号</th>
+                                <th data-col="notes" style="width: 140px;">补充说明</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bomTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            </div><!-- /#projectContentArea -->
+
+        </div>
+    </div>
+
+    <!-- MODAL 1: Add / Edit BOM Item -->
+    <div id="bomItemModal" class="modal-mask">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title" style="display: flex; align-items: center; justify-content: space-between; width: calc(100% - 32px);">
+                    <span id="bomModalTitle">添加物料行</span>
+                    <a href="javascript:void(0)" onclick="closeModal('bomItemModal'); openBatchAddBomModal();" style="font-size: 12px; font-weight: normal; color: #2563eb; text-decoration: none;" title="切换到多行批量导入模式">切换至批量添加模式 &raquo;</a>
+                </div>
+                <button class="modal-close" onclick="closeModal('bomItemModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-bom-id">
+                
+                <div class="form-grid">
+                    <!-- 1. Fuzzy Search & Match Bar -->
+                    <div class="form-group full" id="masterSelectGroup" style="position: relative;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                            <label class="form-label" style="color: #1d4ed8;">物料检索匹配（输入物料描述 / 元器件名称 / 规格型号 / 物料号）:</label>
+                            <span id="match-status-tag" class="match-badge" style="display: none;"></span>
+                        </div>
+                        <input type="text" id="bm-quick-search" class="form-input" style="width: 100%; box-sizing: border-box; border-color: #93c5fd; background: #eff6ff;" placeholder="输入关键词（如：润滑泵、分配器、传感器、软管、卡套、SSV 或 DFB...）自动联想" oninput="handleFuzzySearch(this.value)" autocomplete="off">
+                        <!-- Floating Dropdown list -->
+                        <div id="fuzzyDropdownResults" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 2. Material Number (Exact Match / Master Key) -->
+                    <div class="form-group">
+                        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>* 物料号 (唯一区分主键):</span>
+                            <span id="mat-exact-hint" style="color: #16a34a; font-size: 11px; font-weight: 500; display: none;">已匹配物料主库</span>
+                            <span id="mat-new-hint" style="color: #0284c7; font-size: 11px; font-weight: 500; display: none;">主库新物料（保存时将自动录入）</span>
+                        </label>
+                        <input id="bm-mat-no" class="form-input" placeholder="例如 DFB00166343" oninput="handleMatNoInput(this.value)" onblur="handleMatNoBlur(this.value)">
+                    </div>
+
+                    <!-- 3. Component Name -->
+                    <div class="form-group">
+                        <label class="form-label">元器件名称:</label>
+                        <input id="bm-name" class="form-input" placeholder="例如 润滑泵">
+                    </div>
+
+                    <!-- 3.1 Child Hierarchy Auto-Import Prompt Box -->
+                    <div id="modal-children-prompt-box" class="full-row" style="grid-column: 1 / -1 !important; display: none; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 14px 18px; margin-top: 2px; margin-bottom: 6px; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.08);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 8px;">
+                            <div style="font-weight: 600; color: #166534; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                                <span>检测到该物料在数据库中包含 <b id="childCountBadge" style="color: #15803d; font-size: 16px;">0</b> 个子层级零部件</span>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 600; color: #15803d; background: #dcfce7; padding: 5px 12px; border-radius: 6px; border: 1px solid #86efac;">
+                                    <input type="radio" name="importChildOption" id="importChildYes" value="yes" checked style="cursor: pointer; accent-color: #16a34a;">
+                                    <span>关联导入下属子结构（整组展开）</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: #475569; background: #ffffff; padding: 5px 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                                    <input type="radio" name="importChildOption" id="importChildNo" value="no" style="cursor: pointer;">
+                                    <span>仅添加当前单行</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: #14532d; line-height: 1.5; margin-bottom: 8px;">
+                            <b>装配结构说明：</b> 勾选后，系统将依据物料主库中的总成装配结构树，按层级顺序自动插入其下属子零部件（含图号、规格型号、装配数量等）。
+                        </div>
+                        <details style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #374151;">
+                            <summary style="cursor: pointer; color: #15803d; font-weight: 600; outline: none;">
+                                下属子零部件清单预览 (<span id="childPreviewSummaryCount">0</span> 项) ▼
+                            </summary>
+                            <div id="childPreviewItemsContainer" style="max-height: 160px; overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; border-top: 1px dashed #bbf7d0; padding-top: 6px;">
+                            </div>
+                        </details>
+                    </div>
+
+                    <!-- 4. Description (with inline fuzzy support) -->
+                    <div class="form-group full" style="position: relative;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                            <label class="form-label">物料完整描述 (支持输入描述进行模糊匹配):</label>
+                            <span id="desc-fuzzy-hint" style="font-size: 11px; color: var(--text-muted);">输入描述关键词可快速检索</span>
+                        </div>
+                        <input id="bm-desc" class="form-input" placeholder="例如 备件润滑系统_润滑泵_盘古_050316237703" oninput="handleDescFuzzy(this.value)" autocomplete="off">
+                        <div id="descFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 5. Model & Manufacturer -->
+                    <div class="form-group">
+                        <label class="form-label">型号/规格:</label>
+                        <input id="bm-model" class="form-input" placeholder="规格型号">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">制造商:</label>
+                        <input id="bm-mfr" class="form-input" placeholder="供应商名称">
+                    </div>
+
+                    <!-- 6. Quantity & Unit -->
+                    <div class="form-group">
+                        <label class="form-label">单机数量:</label>
+                        <input id="bm-qty" type="number" step="any" class="form-input" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">单位:</label>
+                        <input id="bm-unit" class="form-input" value="PCS">
+                    </div>
+
+                    <!-- 7. Level & Drawing -->
+                    <div class="form-group">
+                        <label class="form-label">BOM 层级:</label>
+                        <select id="bm-level" class="form-select">
+                            <option value="•|1">一级组件 (•)</option>
+                            <option value="••|2" selected>二级零件 (••)</option>
+                            <option value="•••|3">三级零件 (•••)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">图纸/文件代号:</label>
+                        <input id="bm-drawing" class="form-input" value="/">
+                    </div>
+
+                    <!-- 8. Component Photo & Technical Manual (Side-by-Side 2 Columns) -->
+                    <div class="full-row" style="grid-column: 1 / -1 !important; width: 100% !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 14px; box-sizing: border-box;">
+                        
+                        <!-- Left Column: Photo Card -->
+                        <div id="modal-img-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0; transition: border-color 0.2s, background 0.2s;">
+                            <!-- Photo Preview Box (Click to enlarge / focusable / paste target) -->
+                            <div id="modal-img-container" tabindex="0" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); outline: none; transition: border-color 0.2s, box-shadow 0.2s;" onclick="enlargeModalImage()" title="点击放大查看高清大图；支持直接 Ctrl+V 粘贴照片或拖拽图片">
+                                <img id="modal-img-preview" src="" style="width: 100%; height: 100%; object-fit: contain; display: none;">
+                                <span id="modal-img-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.35; padding: 2px;">
+                                    暂无照片<br>
+                                    <span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span><br>
+                                    <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; display: inline-block; margin-top: 2px;">或 Ctrl+V 粘贴</span>
+                                </span>
+                                <div id="modal-img-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">点击放大</div>
+                            </div>
+                            <!-- Photo Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件实物照片</span>
+                                    <span id="modal-img-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联照片</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="modal-img-status">
+                                    支持本地选择、<b>快捷键 Ctrl+V 粘贴截图</b>或拖拽图片（PNG / JPG），保存时自动关联。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" id="modal-pick-img-btn" onclick="triggerModalImgPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择照片
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="modal-paste-img-btn" onclick="pasteModalImgFromClipboard()" style="font-size: 11px; padding: 3px 8px; color: #2563eb; border-color: #93c5fd; background: #eff6ff;" title="读取系统剪贴板中的图片并直接粘贴 (快捷键 Ctrl+V)">
+                                        📋 粘贴照片
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="modal-remove-img-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeModalImg()">
+                                        移除照片
+                                    </button>
+                                    <span id="modal-pending-upload-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新照片</span>
+                                </div>
+                                <input type="file" id="modalImgFileInput" accept="image/*" style="display: none;" onchange="handleModalImgSelected(event)">
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Technical Manual Card -->
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0;">
+                            <!-- Manual Preview Box (Click to preview/read) -->
+                            <div id="modal-manual-container" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 6px; box-sizing: border-box;" onclick="handleModalManualClick()" title="点击在线预览技术手册">
+                                <div id="modal-manual-icon" style="display: none; line-height: 1;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
+                                <div id="modal-manual-filename" style="font-size: 10px; color: #1e293b; font-weight: 500; text-align: center; margin-top: 4px; word-break: break-all; max-height: 28px; overflow: hidden; display: none; line-height: 1.2;"></div>
+                                <span id="modal-manual-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.3;">暂无技术手册<br><span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span></span>
+                                <div id="modal-manual-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">在线预览</div>
+                            </div>
+                            <!-- Manual Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件技术手册 (PDF)</span>
+                                    <span id="modal-manual-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联手册</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="modal-manual-status">
+                                    支持关联 PDF 格式技术手册，可在线查阅并同步至物料数据库。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="triggerModalManualPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择手册 (PDF)
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="modal-preview-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="previewModalManual()">
+                                        查看手册
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="modal-remove-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeModalManual()">
+                                        移除手册
+                                    </button>
+                                    <span id="modal-pending-manual-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新手册</span>
+                                </div>
+                                <input type="file" id="modalManualFileInput" accept=".pdf,application/pdf" style="display: none;" onchange="handleModalManualSelected(event)">
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- 9. Insertion Position -->
+                    <div class="form-group" id="insertPosGroup">
+                        <label class="form-label">插入位置:</label>
+                        <select id="bm-insert-pos" class="form-select">
+                            <option value="end">追加到表格末尾</option>
+                        </select>
+                    </div>
+
+                    <!-- 10. Substitute -->
+                    <div class="form-group">
+                        <label class="form-label">替代物料号/型号:</label>
+                        <input id="bm-substitute" class="form-input">
+                    </div>
+
+                    <!-- 11. Notes -->
+                    <div class="form-group full">
+                        <label class="form-label">补充说明 / 备注:</label>
+                        <input id="bm-notes" class="form-input">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('bomItemModal')">取消</button>
+                <button class="btn btn-primary" id="btnSaveBomItem" onclick="submitBomItem()">确定保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 1.5: Batch Add BOM Items Modal -->
+    <div id="batchAddBomModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 820px; max-width: 96vw;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">批量添加物料 (按行快速导入)</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('batchAddBomModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px 24px; max-height: calc(85vh - 120px); overflow-y: auto;">
+                <!-- Description Tip -->
+                <div style="font-size: 13px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; line-height: 1.5;">
+                    <b>说明：</b> 每行输入或粘贴一个物料号（支持从 Excel 中复制整列物料号直接粘贴）。下方预览表中<b>可直接微调各物料的导入数量</b>；未收录的新物料将自动录入主库。
+                </div>
+
+                <!-- Config Options Grid -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                    <!-- Level Select -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600;">
+                            <span>导入级别 (BOM 层级) <span style="color: #ef4444;">*</span>:</span>
+                        </label>
+                        <select id="batch-bm-level" class="form-select" style="font-weight: 600; color: #1e293b;">
+                            <option value="•|1">一级组件 (•)</option>
+                            <option value="••|2" selected>二级零件 (••)</option>
+                            <option value="•••|3">三级零件 (•••)</option>
+                            <option value="••••|4">四级零件 (••••)</option>
+                        </select>
+                    </div>
+
+                    <!-- Insert Position -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600;">插入位置:</label>
+                        <select id="batch-insert-pos" class="form-select">
+                            <option value="end">追加到表格末尾</option>
+                        </select>
+                    </div>
+
+                    <!-- Default Qty -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px;">默认单机数量:</label>
+                        <input id="batch-bm-qty" type="number" step="any" min="0.001" class="form-input" value="1" oninput="onBatchTextOrConfigChanged()">
+                    </div>
+
+                    <!-- Default Unit -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px;">默认计量单位:</label>
+                        <input id="batch-bm-unit" class="form-input" value="PCS" oninput="onBatchTextOrConfigChanged()">
+                    </div>
+                </div>
+
+                <!-- Input Textarea -->
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600; margin-bottom: 0;">
+                            粘贴物料号列表 <span style="color: #ef4444;">*</span>:
+                        </label>
+                        <div style="display: flex; align-items: center; gap: 12px; font-size: 12px; color: #64748b;">
+                            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                <input type="checkbox" id="batch-opt-dedup" onchange="onBatchTextOrConfigChanged()" style="cursor: pointer;">
+                                <span>过滤重复物料号</span>
+                            </label>
+                            <span style="color: #cbd5e1;">|</span>
+                            <a href="javascript:void(0)" onclick="clearBatchInput()" style="color: #dc2626; text-decoration: none;">清空输入</a>
+                        </div>
+                    </div>
+                    <textarea id="batch-mat-text" class="form-input" rows="7" placeholder="请在此处直接粘贴物料号，每行一个。例如：&#10;DFB00014350&#10;DFB00041184&#10;DFB00044292&#10;B9401421&#10;（从 Excel 复制一列即可直接在此粘贴）" style="font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.5; resize: vertical;" oninput="onBatchTextOrConfigChanged()"></textarea>
+                </div>
+
+                <!-- Preview Area -->
+                <div id="batch-preview-wrapper" style="margin-top: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div style="font-size: 13px; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 8px;">
+                            <span>实时解析预览</span>
+                            <span id="batchPreviewSummary" style="font-size: 12px; font-weight: normal; color: #64748b;">(暂无输入)</span>
+                        </div>
+                        <div id="batchStatusBadges" style="display: flex; gap: 8px; font-size: 11px;">
+                            <span id="badgeMatchedCount" style="display: none; background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: 600;">已匹配主库: 0</span>
+                            <span id="badgeNewCount" style="display: none; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 600;">新物料: 0</span>
+                        </div>
+                    </div>
+
+                    <!-- Scrollable Preview Table -->
+                    <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: #fff;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                            <thead style="position: sticky; top: 0; background: #f8fafc; border-bottom: 1px solid var(--border); z-index: 1;">
+                                <tr>
+                                    <th style="padding: 6px 8px; width: 38px; color: #64748b; font-weight: 600; text-align: center;">#</th>
+                                    <th style="padding: 6px 10px; width: 135px; color: #334155; font-weight: 600;">物料号</th>
+                                    <th style="padding: 6px 10px; color: #334155; font-weight: 600;">物料名称 (主库)</th>
+                                    <th style="padding: 6px 10px; color: #334155; font-weight: 600;">规格型号 / 厂家</th>
+                                    <th style="padding: 6px 10px; width: 125px; color: #2563eb; font-weight: 600;">数量 (可直接调整)</th>
+                                    <th style="padding: 6px 10px; width: 85px; color: #334155; font-weight: 600; text-align: center;">主库状态</th>
+                                    <th style="padding: 6px 6px; width: 40px; text-align: center; color: #64748b;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batchPreviewTableBody">
+                                <tr>
+                                    <td colspan="7" style="padding: 24px; text-align: center; color: #94a3b8;">
+                                        请在上方粘贴或输入物料号后查看解析预览
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 24px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 12px; color: #64748b;">
+                    共识别 <b id="batchFooterCount" style="color: #2563eb; font-size: 14px;">0</b> 项待导入物料
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-outline" onclick="closeModal('batchAddBomModal')">取消</button>
+                    <button class="btn btn-primary" id="btnSubmitBatchAdd" onclick="submitBatchBomAdd()" disabled style="padding: 6px 22px;">
+                        确认批量导入
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: Master Materials Hub -->
+    <div id="masterModal" class="modal-mask">
+        <div class="modal-dialog" id="masterModalDialog" style="width: 1360px; max-width: 97vw; height: 93vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 12px 20px; cursor: default; user-select: none;" ondblclick="toggleMasterModalMaximize()" title="双击标题栏可最大化/还原窗口">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e3a8a;">
+                            物料主库管理
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 1px;">
+                            统一物料主数据源 · 装配层级结构管理 · 跨机型引用维护
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button type="button" class="modal-tool-btn" id="masterModalMaxBtn" onclick="toggleMasterModalMaximize()" title="最大化窗口" style="display: inline-flex; align-items: center; justify-content: center;">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>
+                    </button>
+                    <button type="button" class="modal-close" onclick="closeModal('masterModal')" title="关闭窗口">&times;</button>
+                </div>
+            </div>
+            
+            <div class="modal-body" style="padding: 14px 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1;">
+                <!-- Stats Banner -->
+                <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #64748b;">物料总数</div>
+                        <div id="stat-total" style="font-size: 18px; font-weight: 700; color: #1e293b; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px; padding: 8px 12px; text-align: center; cursor: pointer;" onclick="filterMasterByStatus('referenced')" title="点击筛选已引用物料">
+                        <div style="font-size: 11px; color: #7e22ce;">已引用物料</div>
+                        <div id="stat-referenced" style="font-size: 18px; font-weight: 700; color: #6b21a8; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #15803d;">总成结构数</div>
+                        <div id="stat-children" style="font-size: 18px; font-weight: 700; color: #166534; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #1d4ed8;">实物图片数</div>
+                        <div id="stat-images" style="font-size: 18px; font-weight: 700; color: #1e40af; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #fefce8; border: 1px solid #fef08a; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #a16207;">技术手册数</div>
+                        <div id="stat-manuals" style="font-size: 18px; font-weight: 700; color: #854d0e; margin-top: 1px;">-</div>
+                    </div>
+                </div>
+
+                <!-- Master Toolbar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #ffffff; padding: 2px 0; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="btn btn-primary" onclick="openCreateMasterModal()">
+                            新建物料
+                        </button>
+                        <button class="btn btn-outline" onclick="triggerMasterExcelImport()" title="上传Excel自动提取通用物料并对齐模版标题入库">
+                            导入 Excel
+                        </button>
+                        <button class="btn btn-outline" onclick="exportMasterMaterialsExcel()" title="导出包含全部物料、规格、手册和图片状态的标准Excel清单">
+                            导出清单 (.xlsx)
+                        </button>
+                        <button class="btn btn-outline" style="color: #0284c7; border-color: #7dd3fc; background: #f0f9ff;" onclick="openAuditModal()" title="智能排查物料主库中相同规格型号的重复录入（一物多码），并支持一键清理">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <span>智能查重</span>
+                        </button>
+                        <button class="btn btn-outline" style="color: #dc2626; border-color: #fca5a5; background: #fff5f5;" onclick="clearMasterMaterials()" title="清空主库中的所有物料及总成层级结构">
+                            清空主库
+                        </button>
+                        <span style="color: #cbd5e1; margin: 0 4px;">|</span>
+                        <button class="btn btn-outline" onclick="resetAllColumnWidths('masterTable')" title="重置主库表格所有列为推荐默认宽度">
+                            重置列宽
+                        </button>
+                        <span style="color: #cbd5e1; margin: 0 4px;">|</span>
+                        <select id="masterFilterType" class="form-select" style="font-size: 13px; font-weight: 500; border-color: #cbd5e1;" onchange="loadMasterMaterials()">
+                            <option value="all">全部物料</option>
+                            <option value="referenced">仅看已引用物料</option>
+                            <option value="unreferenced">仅看未引用物料</option>
+                            <option value="has_children">仅看总成结构</option>
+                            <option value="has_image">仅看包含图片</option>
+                            <option value="has_manual">仅看包含手册</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input id="masterSearch" class="form-input" style="width: 320px;" placeholder="搜索物料号/名称/型号/描述/图纸/制造商..." oninput="handleMasterSearchInput(this.value)">
+                        <button class="btn btn-outline" onclick="loadMasterMaterials()" title="刷新主库数据">刷新</button>
+                    </div>
+                </div>
+
+                <!-- Master Table -->
+                <div class="table-responsive" id="masterTableContainer" style="flex: 1; max-height: calc(93vh - 250px); border: 1px solid var(--border); border-radius: 6px;">
+                    <table id="masterTable">
+                        <thead>
+                            <tr>
+                                <th data-col="mm_actions" style="width: 185px;" class="col-center">操作管理</th>
+                                <th data-col="mm_mat_no" style="width: 140px;">物料号</th>
+                                <th data-col="mm_name" style="width: 160px;">元器件名称</th>
+                                <th data-col="mm_projects" style="width: 170px;">引用项目</th>
+                                <th data-col="mm_desc" style="width: 280px;">物料完整描述</th>
+                                <th data-col="mm_model" style="width: 150px;">规格型号</th>
+                                <th data-col="mm_mfr" style="width: 120px;">制造商</th>
+                                <th data-col="mm_unit" style="width: 60px;" class="col-center">单位</th>
+                                <th data-col="mm_drawing" style="width: 140px;">图纸/代号</th>
+                                <th data-col="mm_image" style="width: 90px;" class="col-center">实物图片</th>
+                                <th data-col="mm_manual" style="width: 105px;" class="col-center">技术手册</th>
+                            </tr>
+                        </thead>
+                        <tbody id="masterTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 12px; color: #64748b;">
+                    <b>说明：</b> 点击「引用」可将该物料及其子零部件添加至当前 Sheet；修改主库物料属性时支持批量同步至引用项目。
+                </div>
+                <button class="btn btn-outline" onclick="closeModal('masterModal')">关闭窗口</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2.1: Add / Edit Master Material Modal -->
+    <div id="editMasterItemModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 720px; max-width: 94vw;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" id="editMasterModalTitle" style="font-size: 15px; font-weight: 600; color: #1e3a8a;">新建物料</div>
+                <button class="modal-close" onclick="closeModal('editMasterItemModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <input type="hidden" id="mm-is-create" value="true">
+                <input type="hidden" id="mm-old-mat-no" value="">
+                <div id="mat-dup-warning-box" style="display: none; margin-bottom: 12px;"></div>
+                <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">* 物料号 (主键唯一区分):</label>
+                        <input id="mm-mat-no" class="form-input" placeholder="例如 DFB00166343" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">* 元器件名称:</label>
+                        <input id="mm-name" class="form-input" placeholder="例如 润滑泵 / 分配器">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">规格型号:</label>
+                        <input id="mm-spec-model" class="form-input" placeholder="例如 DFB-10L-400V">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">制造商:</label>
+                        <input id="mm-manufacturer" class="form-input" placeholder="例如 SKF / Lincoln">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">计量单位:</label>
+                        <input id="mm-unit" class="form-input" value="PCS" placeholder="PCS / M / SET 等">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">图纸/文件代号:</label>
+                        <input id="mm-drawing-no" class="form-input" value="/" placeholder="例如 / 或 DWG-1002">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">替代物料号 (选填):</label>
+                        <input id="mm-substitute" class="form-input" placeholder="可替代的备件物料号">
+                    </div>
+                    <div class="form-group full" style="grid-column: 1 / -1;">
+                        <label class="form-label">* 物料完整描述 (Description):</label>
+                        <textarea id="mm-description" class="form-input" rows="3" style="width: 100%; resize: vertical;" placeholder="完整的工程物料标准化详细描述..."></textarea>
+                    </div>
+                    <div class="form-group full" style="grid-column: 1 / -1;">
+                        <label class="form-label">补充说明 / 技术备注 (Notes):</label>
+                        <input id="mm-notes" class="form-input" placeholder="选填，例如 安装扭矩、接线规范等">
+                    </div>
+
+                    <!-- Component Photo & Technical Manual (Side-by-Side 2 Columns) -->
+                    <div class="full-row" style="grid-column: 1 / -1 !important; width: 100% !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 14px; box-sizing: border-box;">
+                        <!-- Left Column: Photo Card -->
+                        <div id="mm-img-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0; transition: border-color 0.2s, background 0.2s;">
+                            <!-- Photo Preview Box -->
+                            <div id="mm-img-container" tabindex="0" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); outline: none; transition: border-color 0.2s, box-shadow 0.2s;" onclick="enlargeMmImage()" title="点击放大查看高清大图；支持直接 Ctrl+V 粘贴照片或拖拽图片">
+                                <img id="mm-img-preview" src="" style="width: 100%; height: 100%; object-fit: contain; display: none;">
+                                <span id="mm-img-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.35; padding: 2px;">
+                                    暂无照片<br>
+                                    <span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span><br>
+                                    <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; display: inline-block; margin-top: 2px;">或 Ctrl+V 粘贴</span>
+                                </span>
+                                <div id="mm-img-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">点击放大</div>
+                            </div>
+                            <!-- Photo Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件实物照片</span>
+                                    <span id="mm-img-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联照片</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="mm-img-status">
+                                    支持本地选择、<b>快捷键 Ctrl+V 粘贴截图</b>或拖拽图片（PNG / JPG / WEBP）。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" id="mm-pick-img-btn" onclick="triggerMmImgPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择照片
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="mm-paste-img-btn" onclick="pasteMmImgFromClipboard()" style="font-size: 11px; padding: 3px 8px; color: #2563eb; border-color: #93c5fd; background: #eff6ff;" title="读取系统剪贴板中的图片并直接粘贴 (快捷键 Ctrl+V)">
+                                        📋 粘贴照片
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="mm-remove-img-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeMmImg()">
+                                        移除照片
+                                    </button>
+                                    <span id="mm-pending-upload-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新照片</span>
+                                </div>
+                                <input type="file" id="mmImgFileInput" accept="image/*" style="display: none;" onchange="handleMmImgSelected(event)">
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Technical Manual Card -->
+                        <div id="mm-manual-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0; transition: border-color 0.2s, background 0.2s;">
+                            <!-- Manual Preview Box -->
+                            <div id="mm-manual-container" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 6px; box-sizing: border-box;" onclick="handleMmManualClick()" title="点击在线预览技术手册">
+                                <div id="mm-manual-icon" style="display: none; line-height: 1;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
+                                <div id="mm-manual-filename" style="font-size: 10px; color: #1e293b; font-weight: 500; text-align: center; margin-top: 4px; word-break: break-all; max-height: 28px; overflow: hidden; display: none; line-height: 1.2;"></div>
+                                <span id="mm-manual-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.3;">暂无技术手册<br><span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span></span>
+                                <div id="mm-manual-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">在线预览</div>
+                            </div>
+                            <!-- Manual Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件技术手册 (PDF)</span>
+                                    <span id="mm-manual-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联手册</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="mm-manual-status">
+                                    支持关联标准 PDF 格式技术手册，可在线查阅。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="triggerMmManualPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择手册 (PDF)
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="mm-preview-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="previewMmManual()">
+                                        查看手册
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="mm-remove-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeMmManual()">
+                                        移除手册
+                                    </button>
+                                    <span id="mm-pending-manual-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新手册</span>
+                                </div>
+                                <input type="file" id="mmManualFileInput" accept=".pdf,application/pdf" style="display: none;" onchange="handleMmManualSelected(event)">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="mm-sync-group" class="form-group full" style="grid-column: 1 / -1; display: none; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px 14px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #1e40af; font-weight: 500;">
+                            <input type="checkbox" id="mm-sync-bom" checked style="width: 16px; height: 16px;">
+                            <span>同步更新所有已引用此物料号的现有项目 BOM 明细行（保持全系统标准化统一）</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid var(--border);">
+                <button class="btn btn-outline" onclick="closeModal('editMasterItemModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitMasterItem()" style="padding: 6px 22px;">确定保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2.2: Sub-assembly Hierarchy Management Modal -->
+    <div id="masterHierarchyModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 1000px; max-width: 95vw; max-height: 93vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f0fdf4; border-bottom: 1px solid #bbf7d0; padding: 14px 20px;">
+                <div>
+                    <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #166534;" id="hierarchyModalTitle">
+                        总成装配结构管理
+                    </div>
+                    <div style="font-size: 12px; color: #15803d; margin-top: 2px;" id="hierarchyModalSubtitle">
+                        维护该总成下属的标准装配结构。在机型编制引入此总成时，支持关联导入其下属全部子层级。
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('masterHierarchyModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1;">
+                <!-- Add Child Sub-component Box -->
+                <div style="background: #f8fafc; border: 1.5px dashed #93c5fd; border-radius: 8px; padding: 14px 18px;">
+                    <div style="font-weight: 600; font-size: 13px; color: #1d4ed8; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                        <span>添加子零部件:</span>
+                        <span style="font-size: 11px; color: #0369a1; background: #e0f2fe; padding: 3px 10px; border-radius: 4px; font-weight: 500;">
+                            新增物料将自动归为此总成的直接下属层级 (<span id="hierNextLvlHint">二级 ●●</span>)
+                        </span>
+                    </div>
+                    <input type="hidden" id="hier-parent-mat" value="">
+                    <input type="hidden" id="hier-edit-id" value="">
+                    <input type="hidden" id="hier-level-num" value="2">
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 90px 90px 140px auto; gap: 12px; align-items: flex-end;">
+                        <div style="position: relative;">
+                            <label class="form-label" style="font-size: 11px;">* 子物料 (主库搜索或输入物料号):</label>
+                            <input type="text" id="hier-child-search" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" placeholder="输入物料号/名称进行匹配" oninput="handleHierChildSearch(this.value)" autocomplete="off">
+                            <div id="hierFuzzyDropdown" class="fuzzy-dropdown" style="display: none; top: 100%; left: 0; width: 100%; min-width: 360px;"></div>
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">数量:</label>
+                            <input type="text" id="hier-qty" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" value="1">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">单位:</label>
+                            <input type="text" id="hier-unit" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" value="PCS">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">图纸代号:</label>
+                            <input type="text" id="hier-drawing" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" value="/">
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="submitSaveHierarchyChild()" style="padding: 6px 16px; height: 32px;" id="hierSubmitBtn">
+                                添加至结构
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Children Table -->
+                <div style="font-weight: 600; font-size: 13px; color: #1e293b; display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <span>当前下属子零部件清单 (<span id="hierChildCount">0</span> 项):</span>
+                    <button type="button" class="btn btn-outline btn-sm" id="btnHierClearAll" style="color: #dc2626; border-color: #fca5a5;" onclick="clearAllMasterChildren()" title="清空该总成当前配置的所有下属子零部件">
+                        清空结构
+                    </button>
+                </div>
+                <div class="table-responsive" style="max-height: 380px; border: 1px solid var(--border); border-radius: 6px;">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th style="width: 120px;" class="col-center">操作</th>
+                                <th style="width: 55px;" class="col-center">排序</th>
+                                <th style="width: 130px;">子物料号</th>
+                                <th style="width: 160px;">元器件名称</th>
+                                <th>物料描述 / 规格</th>
+                                <th style="width: 65px;" class="col-center">数量</th>
+                                <th style="width: 55px;" class="col-center">单位</th>
+                                <th style="width: 110px;">图纸代号</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hierTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+                <button class="btn btn-outline" onclick="closeModal('masterHierarchyModal')">完成并返回主库</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2.3: Where-Used Reference Modal -->
+    <div id="masterUsageModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 760px; max-width: 92vw; max-height: 85vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #faf5ff; border-bottom: 1px solid #e9d5ff;">
+                <div class="modal-title" style="font-size: 15px; font-weight: 700; color: #6b21a8;" id="usageModalTitle">
+                    物料引用明细与溯源
+                </div>
+                <button class="modal-close" onclick="closeModal('masterUsageModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px; overflow-y: auto;">
+                <div id="usageSummaryText" style="font-size: 13px; color: #475569; margin-bottom: 12px;"></div>
+                <div class="table-responsive" style="max-height: 380px; border: 1px solid var(--border); border-radius: 6px;">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>项目机型名称</th>
+                                <th>子系统 (Sheet)</th>
+                                <th style="width: 70px;" class="col-center">行号</th>
+                                <th style="width: 75px;" class="col-center">层级</th>
+                                <th style="width: 70px;" class="col-center">数量</th>
+                                <th style="width: 90px;" class="col-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usageTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border);">
+                <button class="btn btn-outline" onclick="closeModal('masterUsageModal')">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2.4: Master Materials Import Mapping & Confirmation Modal -->
+    <div id="masterImportMappingModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 880px; max-width: 95vw; max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 14px 22px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e3a8a;">
+                            导入物料数据 (列映射确认)
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 1px;">
+                            系统已自动提取数据并进行模版列映射，请核对各列对应关系；如有不确定项请手动调整
+                        </div>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('masterImportMappingModal')">&times;</button>
+            </div>
+            
+            <div class="modal-body" style="padding: 16px 22px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px;">
+                <!-- Status & Uncertainty Alert Banner -->
+                <div id="importAlertBanner" style="border-radius: 6px; padding: 10px 14px; font-size: 13px; line-height: 1.5;"></div>
+
+                <!-- Sheet & Header Row Configuration -->
+                <div style="display: flex; gap: 14px; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 16px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-weight: 600; font-size: 13px; color: #1e293b;">工作簿:</span>
+                        <span id="importFileNameSpan" style="font-size: 13px; color: #0369a1; font-weight: 500;">-</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label for="importSheetSelect" style="font-weight: 600; font-size: 13px; color: #1e293b;">工作表 (Sheet):</label>
+                        <select id="importSheetSelect" class="form-select" style="font-size: 12px; padding: 4px 8px; min-width: 140px;" onchange="onImportSheetChange(this.value)">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label for="importHeaderRowInput" style="font-weight: 600; font-size: 13px; color: #1e293b;">表头行号:</label>
+                        <input type="number" id="importHeaderRowInput" class="form-input" style="font-size: 12px; width: 60px; padding: 4px 6px;" min="1" max="20" value="1" onchange="onImportHeaderRowChange(this.value)">
+                    </div>
+                    <div style="margin-left: auto; font-size: 12px; color: #15803d; font-weight: 600; background: #dcfce7; padding: 3px 8px; border-radius: 4px;">
+                        共检测到约 <span id="importTotalRowsSpan">0</span> 行有效物料
+                    </div>
+                </div>
+
+                <!-- Column Mapping Grid -->
+                <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; background: #ffffff;">
+                    <div style="font-weight: 700; font-size: 13px; color: #1e293b; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>标准模版字段 与 Excel 数据列映射对应关系:</span>
+                        <span style="font-size: 11px; font-weight: normal; color: #64748b;">标 * 为关键必填字段</span>
+                    </div>
+                    <div id="mappingGridContainer" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 20px;">
+                        <!-- Generated dynamically by JS -->
+                    </div>
+                </div>
+
+                <!-- Live Sample Data Preview Table -->
+                <div>
+                    <div style="font-weight: 600; font-size: 13px; color: #1e293b; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                        <span>Excel 前 5 行数据实时提取预览:</span>
+                        <span style="font-size: 11px; color: #64748b;">(蓝色表头为已对齐映射的模版字段列)</span>
+                    </div>
+                    <div class="table-responsive" style="max-height: 200px; border: 1px solid var(--border); border-radius: 6px;">
+                        <table style="width: 100%; font-size: 11px;">
+                            <thead id="importPreviewTableHead"></thead>
+                            <tbody id="importPreviewTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Options -->
+                <div style="display: flex; align-items: center; justify-content: space-between; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #1e40af; font-weight: 500;">
+                        <input type="checkbox" id="importOverwriteCheck" checked style="width: 16px; height: 16px;">
+                        <span>当主库中已存在相同物料号时，自动用 Excel 中的属性数据进行更新覆盖</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 22px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn btn-outline" onclick="closeModal('masterImportMappingModal')">取消</button>
+                <button class="btn btn-primary" id="btnSubmitMasterImport" onclick="submitMasterImportExecute()" style="padding: 7px 24px; font-weight: 600;">
+                    确认导入
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: Image Preview -->
+    <div id="imgPreviewModal" class="modal-mask" onclick="closeModal('imgPreviewModal')">
+        <div style="background: transparent; max-width: 80vw; max-height: 80vh; text-align: center;">
+            <img id="previewImgTag" src="" style="max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        </div>
+    </div>
+
+    <!-- MODAL 4: Import Excel -->
+    <div id="importModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 500px;">
+            <div class="modal-header">
+                <div class="modal-title">导入 Excel SBOM 模版</div>
+                <button class="modal-close" onclick="closeModal('importModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                    系统将自动解析工作簿中的封面、签字页以及各子系统 BOM，同时自动解压提取内嵌的图片和 PDF 手册入库。
+                </p>
+                <input type="file" id="excelFileInput" accept=".xlsx" class="form-input" style="width: 100%;">
+                <div id="importProgress" style="display: none; margin-top: 14px; color: var(--primary); font-weight: 500;">
+                    正在解析并提取图片与手册附件，请稍候...
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('importModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitImportExcel()">开始导入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 5: Online PDF Viewer Modal (Zero-Plugin Native HTML5 Canvas Reader) -->
+    <div id="pdfViewerModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 92vw; height: 92vh; max-width: 1500px; display: flex; flex-direction: column; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.35);">
+            <!-- Modal Header / Document Title -->
+            <div class="modal-header" style="background: #f1f5f9; padding: 10px 20px; border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+                    <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <div class="modal-title" id="pdfViewerTitle" style="font-size: 15px; font-weight: 600; color: #1e293b;">技术手册在线预览</div>
+                        <div id="pdfViewerSubtitle" style="font-size: 12px; color: #64748b;">在线阅读 · 高清渲染</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <a id="pdfDownloadBtn" href="javascript:void(0)" onclick="downloadCurrentPdf(event)" class="btn btn-outline btn-sm" style="display: inline-flex; align-items: center; gap: 6px; border-color: #cbd5e1; background: #fff; color: #1e293b; font-weight: 500;" title="下载技术手册到本地" download>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        <span>下载到本地</span>
+                    </a>
+                    <button class="modal-close" onclick="closeModal('pdfViewerModal')">&times;</button>
+                </div>
+            </div>
+
+            <!-- PDF Toolbar: Page controls, Zoom, Jump -->
+            <div style="background: #334155; color: #f8fafc; padding: 8px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid #1e293b; font-size: 13px;">
+                <!-- Page Navigation -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button type="button" class="btn btn-outline btn-sm" id="pdfPrevPageBtn" onclick="onPdfPrevPage()" style="background: #475569; color: #fff; border-color: #64748b;" title="上一页 (快捷键: ← 或 PageUp)">◀ 上一页</button>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span>第</span>
+                        <input id="pdfPageNumInput" type="number" min="1" value="1" style="width: 52px; text-align: center; padding: 2px 4px; border-radius: 4px; border: 1px solid #64748b; background: #1e293b; color: #fff; font-weight: bold;" onchange="onPdfPageNumChange(this.value)" onkeydown="if(event.key==='Enter') onPdfPageNumChange(this.value)">
+                        <span>/ <span id="pdfPageCountSpan">1</span> 页</span>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-sm" id="pdfNextPageBtn" onclick="onPdfNextPage()" style="background: #475569; color: #fff; border-color: #64748b;" title="下一页 (快捷键: → 或 PageDown)">下一页 ▶</button>
+                </div>
+
+                <!-- Zoom Controls -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="onPdfZoomOut()" style="background: #475569; color: #fff; border-color: #64748b;" title="缩小">缩小</button>
+                    <span id="pdfZoomSpan" style="min-width: 48px; text-align: center; font-weight: 500;">120%</span>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="onPdfZoomIn()" style="background: #475569; color: #fff; border-color: #64748b;" title="放大">放大</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="onPdfFitWidth()" style="background: #475569; color: #fff; border-color: #64748b;" title="自适应宽度">↔ 适应宽度</button>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="onPdfFitPage()" style="background: #475569; color: #fff; border-color: #64748b;" title="适合整页">↕ 适应整页</button>
+                </div>
+
+                <div style="font-size: 12px; color: #94a3b8;">
+                    支持鼠标滚轮 · 键盘 ← → 翻页
+                </div>
+            </div>
+
+            <!-- PDF Viewer Body (Canvas & Scroll Area) -->
+            <div id="pdfViewerScrollContainer" style="flex: 1; overflow: auto; background: #525659; display: flex; flex-direction: column; align-items: center; padding: 20px 10px; position: relative;" onwheel="handlePdfWheel(event)">
+                <div id="pdfLoadingSpinner" style="position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 14px; font-weight: 500; display: flex; flex-direction: column; align-items: center; gap: 10px; background: rgba(0,0,0,0.75); padding: 18px 28px; border-radius: 8px; z-index: 10;">
+                    <div style="width: 28px; height: 28px; border: 3px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                    <div>正在载入技术手册，请稍候...</div>
+                </div>
+                <canvas id="pdfViewerCanvas" style="box-shadow: 0 6px 20px rgba(0,0,0,0.4); background: #ffffff; border-radius: 2px; display: none;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 6: New Project Modal -->
+    <div id="newProjectModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 560px;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">新建项目</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('newProjectModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 22px;">
+                <div style="font-size: 13px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; line-height: 1.5;">
+                    <b>说明：</b> 请输入新项目名称，系统将自动使用该名称作为<b>文件名称</b>与<b>导出的 Excel 文件名</b>，产品名称默认设为<b>风力发电机组</b>，并自动初始化封面与标准子系统 BOM。
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>新项目名称 / 文件名 <span style="color: #ef4444;">*</span>:</span>
+                            <span style="font-size: 11px; color: #2563eb; font-weight: normal;">自动同步为导出文件名</span>
+                        </label>
+                        <input id="new-proj-name" class="form-input" style="font-size: 14px; padding: 9px 12px; font-weight: 600;" placeholder="例如: EW8.5-230变桨润滑系统 或 6.25MW风电机组" autocomplete="off" onkeydown="if(event.key==='Enter') submitNewProject()">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 22px; background: #f8fafc; border-top: 1px solid var(--border);">
+                <button class="btn btn-outline" onclick="closeModal('newProjectModal')">取消</button>
+                <button class="btn btn-primary" id="btnSubmitNewProject" onclick="submitNewProject()" style="padding: 6px 20px;">
+                    创建项目
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 7: Rename Project Modal -->
+    <div id="renameProjectModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 560px;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">重命名当前项目</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('renameProjectModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 22px;">
+                <div style="font-size: 13px; color: #065f46; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; line-height: 1.5;">
+                    <b>说明：</b> 修改后，系统将同步更新<b>项目名</b>、<b>封面文件名称</b>以及<b>导出的 Excel 文件名</b>。
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>新项目名称 / 文件名 <span style="color: #ef4444;">*</span>:</span>
+                            <span style="font-size: 11px; color: #16a34a; font-weight: normal;">自动同步为导出文件名</span>
+                        </label>
+                        <input id="rename-proj-name" class="form-input" style="font-size: 14px; padding: 9px 12px; font-weight: 600;" placeholder="输入新的项目名称" autocomplete="off" onkeydown="if(event.key==='Enter') submitRenameProject()">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 22px; background: #f8fafc; border-top: 1px solid var(--border);">
+                <button class="btn btn-outline" onclick="closeModal('renameProjectModal')">取消</button>
+                <button class="btn btn-success" id="btnSubmitRenameProject" onclick="submitRenameProject()" style="padding: 6px 20px;">
+                    确认重命名
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 7.5: Copy Project Modal -->
+    <div id="copyProjectModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 520px;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">复制当前工程项目</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('copyProjectModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 24px;">
+                <div style="font-size: 12px; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; line-height: 1.5;">
+                    <b>说明：</b> 将完整复制当前项目的所有数据（包括<b>封面基本信息</b>、<b>全部 Sheet 子系统</b>、<b>完整的 BOM 明细行</b>、<b>层级结构</b>及<b>签字记录</b>），生成一个独立的新工程。
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>新项目名称 <span style="color: #ef4444;">*</span>:</span>
+                            <span style="font-size: 11px; color: #16a34a; font-weight: normal;">自动同步为导出文件名</span>
+                        </label>
+                        <input id="copy-proj-name" class="form-input" style="font-size: 14px; padding: 9px 12px; font-weight: 600;" placeholder="输入复制后的新项目名称" autocomplete="off" onkeydown="if(event.key==='Enter') submitCopyProject()">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 22px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-outline" onclick="closeModal('copyProjectModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitCopyProject()" style="padding: 6px 20px;" id="btnSubmitCopyProject">
+                    确认复制
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file inputs for quick upload -->
+    <input type="file" id="singleImgUploadInput" accept="image/*" style="display: none;" onchange="handleSingleImgUpload(event)">
+    <input type="file" id="singleManualUploadInput" accept=".pdf" style="display: none;" onchange="handleSingleManualUpload(event)">
+    <input type="file" id="masterExcelUploadInput" accept=".xlsx" style="display: none;" onchange="handleMasterExcelFileChosen(event)">
+    <input type="file" id="projectFileInput" accept=".sbom,.json,.zip" style="display: none;" onchange="handleProjectFileChosen(event)">
+
+    <!-- MODAL 8: Save Project Bundle Modal -->
+    <div id="saveProjectModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 580px;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">导出项目工程文件</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('saveProjectModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 22px; display: flex; flex-direction: column; gap: 16px;">
+                <div style="font-size: 13px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 16px; border-radius: 6px; line-height: 1.5;">
+                    <b>说明：</b> 系统将打包保存当前项目的所有数据（包含封面、全部子系统 Sheet、BOM 层级结构、关联的主库物料定义以及实物照片和技术手册附件）。
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 16px;">
+                    <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">当前保存项目：</div>
+                    <div id="save-proj-title-display" style="font-size: 15px; font-weight: 700; color: #1e3a8a;">-</div>
+                    <div id="save-proj-stats-display" style="font-size: 12px; color: #0284c7; margin-top: 4px;">-</div>
+                </div>
+
+                <div>
+                    <label class="form-label" style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 8px; display: block;">
+                        选择保存文件格式:
+                    </label>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <label style="display: flex; align-items: flex-start; gap: 10px; border: 2px solid #2563eb; border-radius: 6px; padding: 12px 14px; cursor: pointer; background: #eff6ff; transition: all 0.2s;" id="labelSaveSbom">
+                            <input type="radio" name="saveBundleFormat" value="sbom" checked style="margin-top: 3px;" onchange="updateSaveFormatStyle()">
+                            <div>
+                                <div style="font-weight: 600; font-size: 13px; color: #1e293b;">
+                                    Service BOM 完整工程文件 (<span style="color: #2563eb;">.sbom</span>) <span style="font-size: 11px; background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 4px; margin-left: 6px;">推荐</span>
+                                </div>
+                                <div style="font-size: 12px; color: #64748b; margin-top: 3px; line-height: 1.4;">
+                                    单一自包含工程包，封装全部元数据、各Sheet层级清单以及内嵌的实物照片和 PDF 手册。适合长期归档与跨设备独立流转。
+                                </div>
+                            </div>
+                        </label>
+
+                        <label style="display: flex; align-items: flex-start; gap: 10px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; cursor: pointer; background: #ffffff; transition: all 0.2s;" id="labelSaveJson">
+                            <input type="radio" name="saveBundleFormat" value="json" style="margin-top: 3px;" onchange="updateSaveFormatStyle()">
+                            <div>
+                                <div style="font-weight: 600; font-size: 13px; color: #1e293b;">
+                                    JSON 纯数据工程文件 (<span style="color: #059669;">.json</span>)
+                                </div>
+                                <div style="font-size: 12px; color: #64748b; margin-top: 3px; line-height: 1.4;">
+                                    轻量纯文本结构化数据格式，包含全套封面、子系统与 BOM 明细（不含图片手册二进制），便于第三方程序交互与比对。
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 22px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn btn-outline" onclick="closeModal('saveProjectModal')">取消</button>
+                <button class="btn btn-primary" onclick="executeSaveProjectFile()" style="padding: 7px 22px; font-weight: 600;">
+                    导出工程文件
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 9: Open Project Bundle Modal -->
+    <div id="openProjectModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 620px;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">打开项目工程文件</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('openProjectModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 22px; display: flex; flex-direction: column; gap: 16px;">
+                <!-- Project info card -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 18px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <div>
+                            <span style="font-size: 11px; color: #64748b;">工程文件: </span>
+                            <span id="open-file-name" style="font-size: 12px; font-weight: 600; color: #0369a1;">-</span>
+                        </div>
+                        <span id="open-format-badge" style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 600;">.sbom 工程包</span>
+                    </div>
+                    <div id="open-proj-name" style="font-size: 16px; font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">-</div>
+                    <div style="display: flex; gap: 12px; font-size: 12px; color: #475569; flex-wrap: wrap;">
+                        <span>机型代号: <b id="open-proj-code" style="color: #0f172a;">-</b></span>
+                        <span>系统标题: <b id="open-proj-system" style="color: #0f172a;">-</b></span>
+                    </div>
+                    <div id="open-proj-summary" style="margin-top: 10px; font-size: 12px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 4px; font-weight: 500;">
+                        -
+                    </div>
+                </div>
+
+                <!-- No conflict banner -->
+                <div id="open-noconflict-banner" style="display: none; font-size: 13px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 10px 14px; border-radius: 6px;">
+                    <b>新工程载入：</b> 系统中尚未有相同命名的项目，载入后将直接创建并在工作区呈现。
+                </div>
+
+                <!-- Conflict banner & options -->
+                <div id="open-conflict-banner" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 14px 16px;">
+                    <div style="font-size: 13px; font-weight: 700; color: #92400e; margin-bottom: 6px;">
+                        冲突提示：系统中已存在同名或同代号项目：
+                    </div>
+                    <div style="font-size: 12px; color: #78350f; margin-bottom: 12px;">
+                        现有项目：<b id="open-existing-name">-</b>，请选择您希望执行的打开方式：
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #1e293b; cursor: pointer;">
+                            <input type="radio" name="openConflictAction" value="new" checked>
+                            <span><b>作为新项目打开</b>（系统将自动重命名为副本，保留本地原有项目）</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #dc2626; cursor: pointer;">
+                            <input type="radio" name="openConflictAction" value="overwrite">
+                            <span><b>覆盖已有项目</b>（用工程文件中的数据完全替换更新该本地项目）</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 22px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn btn-outline" onclick="closeModal('openProjectModal')">取消</button>
+                <button class="btn btn-primary" id="btnSubmitOpenProject" onclick="submitOpenProjectExecute()" style="padding: 7px 24px; font-weight: 600;">
+                    确认打开
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 10: Project Comparison Modal (BOM Diff Analyzer) -->
+    <div id="projectCompareModal" class="modal-mask" onclick="if(event.target===this) closeModal('projectCompareModal')">
+        <div class="modal-dialog" id="projectCompareModalDialog" style="width: 1360px; max-width: 98vw; height: 93vh; display: flex; flex-direction: column;">
+            <!-- Modal Header -->
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center;" ondblclick="toggleCompareModalMaximize()" title="双击标题栏可最大化/还原窗口">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 32px; height: 32px; border-radius: 6px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px;">
+                        ⇄
+                    </div>
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e3a8a;">
+                            工程项目 BOM 比对分析
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 1px;">
+                            对比两机型/工程项目的物料清单差异、数量变化与配置异同 · 支持导出 Excel 对比报告
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button class="btn btn-outline btn-sm" id="compareModalMaxBtn" onclick="toggleCompareModalMaximize()" title="最大化/还原窗口" style="padding: 4px 8px; font-size: 11px;">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>
+                    </button>
+                    <button class="modal-close" onclick="closeModal('projectCompareModal')">&times;</button>
+                </div>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px;">
+                <!-- Control Panel: Project Selectors & Filters -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; justify-content: space-between;">
+                    <div style="display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; flex: 1;">
+                        <!-- Project A (Baseline) -->
+                        <div style="min-width: 250px; flex: 1;">
+                            <label class="form-label" style="font-size: 12px; font-weight: 700; color: #1e3a8a; margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                                <span style="background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 3px; font-size: 11px;">A</span>
+                                <span>基准项目 (Baseline):</span>
+                            </label>
+                            <select id="compareProjA" class="form-select" style="font-weight: 600; width: 100%;" onchange="onCompareProjectChange()">
+                                <!-- Dynamically populated -->
+                            </select>
+                        </div>
+
+                        <!-- Swap Button -->
+                        <div style="margin-bottom: 2px;">
+                            <button type="button" class="btn btn-outline btn-sm" onclick="swapCompareProjects()" title="互换基准项目与比对项目" style="padding: 7px 12px; height: 36px; border-color: #cbd5e1; background: #fff;">
+                                <span style="font-size: 15px; font-weight: bold; color: #2563eb;">⇄</span>
+                            </button>
+                        </div>
+
+                        <!-- Project B (Target) -->
+                        <div style="min-width: 250px; flex: 1;">
+                            <label class="form-label" style="font-size: 12px; font-weight: 700; color: #0284c7; margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+                                <span style="background: #e0f2fe; color: #0369a1; padding: 1px 6px; border-radius: 3px; font-size: 11px;">B</span>
+                                <span>比对项目 (Target):</span>
+                            </label>
+                            <select id="compareProjB" class="form-select" style="font-weight: 600; width: 100%;" onchange="onCompareProjectChange()">
+                                <!-- Dynamically populated -->
+                            </select>
+                        </div>
+
+                        <!-- Subsystem Sheet Filter -->
+                        <div style="min-width: 170px;">
+                            <label class="form-label" style="font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 5px;">比对范围 (Sheet):</label>
+                            <select id="compareSubsystemSelect" class="form-select" style="font-size: 12px; width: 100%; height: 36px;" onchange="executeProjectCompare()">
+                                <option value="all">全部子系统 (整机汇总)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button type="button" class="btn btn-primary" id="btnRunCompare" onclick="executeProjectCompare()" style="padding: 8px 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <span>开始比对</span>
+                        </button>
+                        <button type="button" class="btn btn-success" id="btnExportCompare" onclick="exportCompareReportExcel()" style="padding: 8px 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;" title="将比对结果完整导出为专业 Excel 差异报表">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            <span>导出对比报表 (.xlsx)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Metrics Overview Cards Banner -->
+                <div id="compareMetricsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px;">
+                    <!-- Card A -->
+                    <div class="compare-stat-card" style="border-left: 4px solid #1e3a8a; background: #f8fafc;">
+                        <div class="compare-stat-label">
+                            <span>基准项目【A】</span>
+                            <span id="compareStatA_code" style="font-size: 10px; background: #e2e8f0; padding: 1px 4px; border-radius: 3px;">-</span>
+                        </div>
+                        <div class="compare-stat-val" id="compareStatA_name" style="font-size: 13px; color: #1e3a8a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="">-</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">物料: <b id="compareStatA_types" style="color: #0f172a;">0</b> 种 · <b id="compareStatA_pieces" style="color: #0f172a;">0</b> 件</div>
+                    </div>
+
+                    <!-- Card B -->
+                    <div class="compare-stat-card" style="border-left: 4px solid #0284c7; background: #f8fafc;">
+                        <div class="compare-stat-label">
+                            <span>比对项目【B】</span>
+                            <span id="compareStatB_code" style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px;">-</span>
+                        </div>
+                        <div class="compare-stat-val" id="compareStatB_name" style="font-size: 13px; color: #0369a1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="">-</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">物料: <b id="compareStatB_types" style="color: #0f172a;">0</b> 种 · <b id="compareStatB_pieces" style="color: #0f172a;">0</b> 件</div>
+                    </div>
+
+                    <!-- Card: Added -->
+                    <div class="compare-stat-card" style="border-left: 4px solid #16a34a; background: #f0fdf4;">
+                        <div class="compare-stat-label" style="color: #166534;">🟢 目标新增 (仅在B)</div>
+                        <div class="compare-stat-val" id="compareStat_added" style="color: #15803d;">0</div>
+                        <div style="font-size: 11px; color: #166534; margin-top: 3px;">新增物料项数</div>
+                    </div>
+
+                    <!-- Card: Removed -->
+                    <div class="compare-stat-card" style="border-left: 4px solid #dc2626; background: #fef2f2;">
+                        <div class="compare-stat-label" style="color: #991b1b;">🔴 目标减少 (仅在A)</div>
+                        <div class="compare-stat-val" id="compareStat_removed" style="color: #b91c1c;">0</div>
+                        <div style="font-size: 11px; color: #991b1b; margin-top: 3px;">缺失/删减物料项</div>
+                    </div>
+
+                    <!-- Card: Modified -->
+                    <div class="compare-stat-card" style="border-left: 4px solid #d97706; background: #fffbeb;">
+                        <div class="compare-stat-label" style="color: #92400e;">🟡 属性/数量差异 (≠)</div>
+                        <div class="compare-stat-val" id="compareStat_modified" style="color: #b45309;">0</div>
+                        <div style="font-size: 11px; color: #92400e; margin-top: 3px;">数量/层级/图号变化</div>
+                    </div>
+
+                    <!-- Card: Same -->
+                    <div class="compare-stat-card" style="border-left: 4px solid #64748b; background: #f8fafc;">
+                        <div class="compare-stat-label" style="color: #475569;">⚪ 完全一致 (=)</div>
+                        <div class="compare-stat-val" id="compareStat_same" style="color: #334155;">0</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">无任何变化物料</div>
+                    </div>
+                </div>
+
+                <!-- Filter & Search Bar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 2px;">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;" id="compareFilterPillsGroup">
+                        <button type="button" class="compare-filter-pill active" data-filter="diff" onclick="setCompareFilter('diff')">
+                            <span>全部差异</span>
+                            <span id="pillCount_diff" style="background: rgba(0,0,0,0.12); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
+                        </button>
+                        <button type="button" class="compare-filter-pill" data-filter="added" onclick="setCompareFilter('added')">
+                            <span>🟢 目标新增</span>
+                            <span id="pillCount_added" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
+                        </button>
+                        <button type="button" class="compare-filter-pill" data-filter="removed" onclick="setCompareFilter('removed')">
+                            <span>🔴 目标减少</span>
+                            <span id="pillCount_removed" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
+                        </button>
+                        <button type="button" class="compare-filter-pill" data-filter="modified" onclick="setCompareFilter('modified')">
+                            <span>🟡 属性差异</span>
+                            <span id="pillCount_modified" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
+                        </button>
+                        <button type="button" class="compare-filter-pill" data-filter="same" onclick="setCompareFilter('same')">
+                            <span>⚪ 完全一致</span>
+                            <span id="pillCount_same" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
+                        </button>
+                        <button type="button" class="compare-filter-pill" data-filter="all" onclick="setCompareFilter('all')">
+                            <span>📋 全部物料</span>
+                            <span id="pillCount_all" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
+                        </button>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input id="compareSearchInput" type="text" class="form-input" placeholder="实时过滤物料号 / 名称 / 型号..." style="width: 250px; font-size: 12px; padding: 5px 10px;" oninput="onCompareFilterChanged()">
+                    </div>
+                </div>
+
+                <!-- Comparison Result Table -->
+                <div style="flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: #fff; min-height: 280px; position: relative;">
+                    <div id="compareLoadingSpinner" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.92); padding: 20px 32px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); flex-direction: column; align-items: center; gap: 10px; z-index: 10;">
+                        <div style="width: 28px; height: 28px; border: 3px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                        <div style="font-size: 13px; font-weight: 600; color: #1e3a8a;">正在比对两项目 BOM 数据，请稍候...</div>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;" id="compareTable">
+                        <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 2;">
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                <th rowspan="2" style="width: 40px; text-align: center; color: #64748b; font-weight: 600; border-right: 1px solid #e2e8f0;">#</th>
+                                <th rowspan="2" style="width: 100px; text-align: center; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">差异状态</th>
+                                <th rowspan="2" style="width: 130px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">物料号</th>
+                                <th rowspan="2" style="width: 150px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">元器件名称</th>
+                                <th rowspan="2" style="width: 170px; color: #64748b; font-weight: 600; border-right: 1px solid #e2e8f0;">规格型号 / 制造商</th>
+                                <th colspan="4" style="text-align: center; background: #eff6ff; color: #1e40af; font-weight: 700; border-right: 1px solid #bfdbfe; padding: 6px 10px;" id="thProjATitle">
+                                    【基准项目 A】配置
+                                </th>
+                                <th colspan="4" style="text-align: center; background: #f0fdf4; color: #166534; font-weight: 700; border-right: 1px solid #bbf7d0; padding: 6px 10px;" id="thProjBTitle">
+                                    【比对项目 B】配置
+                                </th>
+                                <th rowspan="2" style="width: 95px; text-align: center; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">数量差额</th>
+                                <th rowspan="2" style="color: #1e293b; font-weight: 700; min-width: 220px;">具体差异说明</th>
+                            </tr>
+                            <tr style="border-bottom: 2px solid var(--border); font-size: 11px;">
+                                <!-- A subheaders -->
+                                <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 75px; text-align: right; border-right: 1px solid #e2e8f0;">数量</th>
+                                <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 65px; text-align: center; border-right: 1px solid #e2e8f0;">层级</th>
+                                <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 85px; border-right: 1px solid #e2e8f0;">图号</th>
+                                <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 85px; border-right: 1px solid #bfdbfe;">Sheet</th>
+                                <!-- B subheaders -->
+                                <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 75px; text-align: right; border-right: 1px solid #e2e8f0;">数量</th>
+                                <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 65px; text-align: center; border-right: 1px solid #e2e8f0;">层级</th>
+                                <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 85px; border-right: 1px solid #e2e8f0;">图号</th>
+                                <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 85px; border-right: 1px solid #bbf7d0;">Sheet</th>
+                            </tr>
+                        </thead>
+                        <tbody id="compareTableBody">
+                            <tr>
+                                <td colspan="15" style="padding: 40px; text-align: center; color: #94a3b8; font-size: 13px;">
+                                    请选择基准项目与比对项目，点击上方【开始比对】查看 BOM 差异分析
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 12px; color: #64748b;" id="compareFooterSummary">
+                    准备就绪，请选择项目开始比对
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="btn btn-outline" onclick="closeModal('projectCompareModal')">关闭</button>
+                    <button class="btn btn-outline" id="btnCompareEcn" onclick="openCompareEcnModal()" title="基于比对差异自动萃取生成工程 ECN 变更说明文本与履历草稿">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        <span>生成 ECN 变更说明</span>
+                    </button>
+                    <button class="btn btn-primary" id="btnCompareProcurement" onclick="exportProcurementExcel()" title="筛选新增物料及增量定额，导出专用的技改/增量备件采购申报清单">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <path d="M16 10a4 4 0 0 1-8 0"></path>
+                        </svg>
+                        <span>导出增量备件申报 (.xlsx)</span>
+                    </button>
+                    <button class="btn btn-success" onclick="exportCompareReportExcel()" style="padding: 6px 16px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>导出对比报表 (.xlsx)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Compare ECN Auto Generator Modal -->
+    <div id="compareEcnModal" class="modal-mask" onclick="if(event.target===this) closeModal('compareEcnModal')">
+        <div class="modal-dialog" style="width: 920px; max-width: 95vw; height: 86vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px; font-weight: 700; color: #1e293b;">📝 智能生成 ECN 变更履历草稿</span>
+                    <span class="badge" style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;">智能萃取</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('compareEcnModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 20px; background: #ffffff;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                    <div style="font-size: 12px; color: #64748b;" id="compareEcnSubtitle">
+                        基于基准机型与目标机型的 BOM 差异自动提炼
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-outline btn-sm" onclick="copyCompareEcnText('markdown')" title="复制格式化 Markdown 内容">
+                            📋 复制 Markdown
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick="copyCompareEcnText('plain')" title="复制适合直接粘贴至 ERP/邮件的纯文本摘要">
+                            📋 复制纯文本
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick="downloadCompareEcnMarkdown()" title="下载为 .md 文件">
+                            📥 下载 .md 文件
+                        </button>
+                    </div>
+                </div>
+                <div id="compareEcnPreviewArea" style="background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-size: 13px; line-height: 1.6; color: #334155; white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; max-height: 58vh; overflow-y: auto;">
+                    正在生成 ECN 变更内容...
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div id="compareEcnStatusTip" style="font-size: 12px; color: #166534; font-weight: 500;"></div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-outline" onclick="closeModal('compareEcnModal')">关闭</button>
+                    <button class="btn btn-primary" id="btnApplyEcnToProject" onclick="applyEcnToTargetProject()" title="将提炼的 ECN 变更摘要直接录入至目标机组的 ECN 修改记录表中">
+                        ➕ 导入至目标机组 ECN 记录
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 11: Add / Edit ECN Record Modal -->
+    <div id="ecnModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 580px; max-width: 95vw;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span id="ecnModalTitle" style="font-weight: 600;">➕ 新增修改记录</span>
+                </div>
+                <button class="modal-close" onclick="closeEcnModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;">
+                <input type="hidden" id="ecnModalRecordId">
+                <div style="font-size: 13px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 10px 14px; border-radius: 6px; line-height: 1.5;">
+                    💡 <b>说明：</b> 每一项工程变更对应导出 Excel《签字及修改页》中的一行，填入后系统将按顺序排入下一行。
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div>
+                        <label class="form-label" style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 6px; display: block;">
+                            ECN 号 <span style="color: #ef4444;">*</span>
+                        </label>
+                        <input type="text" class="form-input" id="ecnModalEcnNo" placeholder="如: ECN-2026-001" style="width: 100%;">
+                    </div>
+                    <div>
+                        <label class="form-label" style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 6px; display: block;">
+                            更改人
+                        </label>
+                        <input type="text" class="form-input" id="ecnModalChanger" placeholder="填写姓名" style="width: 100%;">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label" style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 6px; display: block;">
+                        更改日期
+                    </label>
+                    <input type="date" class="form-input" id="ecnModalChangeDate" style="width: 100%;">
+                </div>
+                <div>
+                    <label class="form-label" style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 6px; display: block;">
+                        更 改 内 容 描 述 <span style="color: #ef4444;">*</span>
+                    </label>
+                    <textarea class="form-input" id="ecnModalChangeDesc" rows="4" placeholder="详细输入具体的修改内容描述，例如：&#10;1. 将偏航润滑油泵由进口件变更为国产 DFB00123 型号；&#10;2. 修改单机数量为 2 件..." style="width: 100%; resize: vertical; line-height: 1.5; font-size: 13px;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 24px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-outline" onclick="closeEcnModal()">取消</button>
+                <button type="button" class="btn btn-primary" id="btnSaveEcnRecord" onclick="submitEcnModal()" style="padding: 6px 20px;">
+                    保存记录
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 18: Backup & Snapshot Rollback Center -->
+    <div id="backupModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 980px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 14px 20px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e293b;">数据安全与快照恢复中心</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                            WAL 原子级快照防护 · 高危操作前自动存档 · 任意历史版本一键回滚
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="modal-close" onclick="closeModal('backupModal')" title="关闭">&times;</button>
+            </div>
+
+            <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;">
+                <!-- Manual Snapshot Action Card -->
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+                        <div style="font-weight: 600; font-size: 13px; color: #166534; white-space: nowrap;">新建手动快照:</div>
+                        <input type="text" id="manualBackupNote" class="form-input" placeholder="输入快照备注（例如：重要发布前基线存档、批量调整前备份...）" style="flex: 1; font-size: 13px;">
+                    </div>
+                    <button type="button" class="btn btn-success" id="btnCreateManualBackup" onclick="createManualBackup()" style="padding: 6px 18px; font-weight: 600;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                        <span>立即创建快照</span>
+                    </button>
+                </div>
+
+                <!-- Info summary bar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #64748b; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                    <div>现有快照: <b id="backupListCount" style="color: #2563eb;">0</b> 份 (系统自动保留最近 30 份)</div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="btn btn-outline btn-sm" onclick="loadBackupsList()" style="font-size: 11px; padding: 3px 8px;">
+                            刷新列表
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Snapshots List Container -->
+                <div id="backupListContainer" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="text-align: center; color: #94a3b8; padding: 40px;">加载快照列表中...</div>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 11px; color: #94a3b8;">
+                    💡 提示：恢复快照将完整覆盖当前工作区数据，并在恢复前自动为您生成一份最新安全存档，永不丢失改动。
+                </div>
+                <button type="button" class="btn btn-outline" onclick="closeModal('backupModal')">关闭窗口</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 19: Material Master Intelligent Duplicate Management -->
+    <div id="auditModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 1100px; max-width: 96vw; max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 14px 20px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e293b;">物料主库智能查重（一物多码治理）</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                            自动归一化匹配相同规格型号的冗余物料编码 · 标明项目引用状态 · 支持一键删除冗余条目
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="loadAuditReport()" title="重新运行查重分析">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/>
+                        </svg>
+                        重新扫描
+                    </button>
+                    <button type="button" class="modal-close" onclick="closeModal('auditModal')" title="关闭">&times;</button>
+                </div>
+            </div>
+
+            <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px;">
+                <!-- Summary bar & Search box -->
+                <div style="display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 16px; gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 16px;">🔍</span>
+                        <div id="auditDuplicateSummaryText" style="font-size: 13px; font-weight: 600; color: #1e293b;">
+                            正在扫描主库一物多码重复物料...
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="text" id="auditSearchInput" class="form-input" style="font-size: 12px; padding: 4px 10px; width: 230px;" placeholder="按物料号 / 型号 / 名称过滤..." oninput="filterAuditDuplicateGroups()">
+                    </div>
+                </div>
+
+                <!-- Duplicate Groups Container -->
+                <div id="auditDuplicateGroupsContainer" style="display: flex; flex-direction: column; gap: 14px;">
+                    <!-- Populated dynamically by audit.js -->
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 12px; color: #64748b;">
+                    💡 提示：对于未被任何工程项目引用的重复条目，可直接点击【一键删除】安全移除；已被引用的物料删除时将提示引用工程信息。
+                </div>
+                <button type="button" class="btn btn-outline" onclick="closeModal('auditModal')">关闭窗口</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 20: Keyboard Shortcuts Guide Modal -->
+    <div id="shortcutHelpModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 580px; max-width: 95vw;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 14px 20px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 18px;">⌨️</span>
+                    <div class="modal-title" style="font-size: 15px; font-weight: 700; color: #1e293b;">键盘快捷键指南 (Power-User Shortcuts)</div>
+                </div>
+                <button type="button" class="modal-close" onclick="closeModal('shortcutHelpModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">快速保存当前工程信息</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #1e40af; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Ctrl + S</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">在当前选中行下方快速插入新物料行</span>
+                        <span style="display: flex; gap: 6px;">
+                            <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #1e40af; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Ctrl + Enter</kbd>
+                            <span style="color: #94a3b8; font-size: 12px; align-self: center;">或</span>
+                            <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #1e40af; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Insert</kbd>
+                        </span>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">将当前选中物料行向上移动（总成子件整组跟随）</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #1e40af; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Alt + ↑</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">将当前选中物料行向下移动（总成子件整组跟随）</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #1e40af; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Alt + ↓</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">删除当前选中行（自动触发安全快照）</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #dc2626; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Delete</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">双击表格中任意物料行</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #059669; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">双击左键 (编辑物料)</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">弹窗内快速粘贴系统剪贴板图片</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #0284c7; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Ctrl + V</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">关闭任意打开的浮层 / 弹窗</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #475569; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Escape</kbd>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+                <button type="button" class="btn btn-outline" onclick="closeModal('shortcutHelpModal')">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modular Application Scripts -->
+    <script src="/static/js/core.js"></script>
+    <script src="/static/js/table_utils.js"></script>
+    <script src="/static/js/project.js"></script>
+    <script src="/static/js/bom.js"></script>
+    <script src="/static/js/material.js"></script>
+    <script src="/static/js/compare.js"></script>
+    <script src="/static/js/pdf_viewer.js"></script>
+    <script src="/static/js/backup.js"></script>
+    <script src="/static/js/audit.js"></script>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

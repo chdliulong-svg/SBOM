@@ -1,0 +1,35 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---------- 业务数据（含敏感信息，不入库） ----------
+data/
+assets/
+backups/
+uploads/
+exports/
+
+# ---------- 密钥与本地配置 ----------
+.env
+*.key
+auth.json
+
+# ---------- 编辑器 / 系统 ----------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 日志 ----------
+logs/
+*.log

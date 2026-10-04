@@ -1,0 +1,1071 @@
+// ==========================================
+// Service BOM - Project Lifecycle, Revision, ECN & Bundles
+// ==========================================
+
+        function loadProjects(selectId = null) {
+            safeFetchJson('/api/projects')
+                .then(projects => {
+                    const sel = document.getElementById('projectSelect');
+                    sel.innerHTML = '<option value="">-- 请选择或新建/打开工程项目 --</option>';
+                    projects.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        const mainTitle = (p.system_name && p.system_name !== '风力发电机组') ? p.system_name : ((p.name && p.name !== '风力发电机组') ? p.name : p.code);
+                        const subInfo = (p.code && p.code !== mainTitle) ? ` [${p.code}]` : '';
+                        const isLocked = (p.is_locked === 1 || p.is_locked === undefined);
+                        const lockIcon = isLocked ? '🔒 ' : '🔓 ';
+                        const lockTag = isLocked ? ' (已锁定)' : ' (编辑中)';
+                        opt.textContent = `${lockIcon}${mainTitle}${subInfo}${lockTag}`;
+                        sel.appendChild(opt);
+                    });
+
+                    if (selectId === 'none') {
+                        closeCurrentProject();
+                    } else if (selectId && projects.some(p => p.id == selectId)) {
+                        sel.value = selectId;
+                        loadProject(selectId);
+                    } else if (projects.length > 0) {
+                        const targetId = projects[0].id;
+                        sel.value = targetId;
+                        loadProject(targetId);
+                    } else {
+                        closeCurrentProject();
+                    }
+                });
+        }
+
+        function loadProject(projectId, targetSubsystemId = null) {
+            if (!projectId) {
+                closeCurrentProject();
+                return;
+            }
+            currentProjectId = projectId;
+            const contentArea = document.getElementById('projectContentArea');
+            const placeholder = document.getElementById('noProjectPlaceholder');
+            if (contentArea) contentArea.style.display = 'block';
+            if (placeholder) placeholder.style.display = 'none';
+            setProjectActionButtonsDisabled(false);
+
+            safeFetchJson(`/api/project/${projectId}`)
+                .then(data => {
+                    if (!data || data.error) {
+                        closeCurrentProject();
+                        return;
+                    }
+                    currentProjectData = data;
+                    document.getElementById('projectInfoSummary').textContent = 
+                        `文件号: ${data.doc_no || '未设'} | ECN: ${data.ecn_no || '无'}`;
+                    
+                    // Fill cover form
+                    document.getElementById('cov-code').value = data.code || '';
+                    document.getElementById('cov-name').value = data.name || '风力发电机组';
+                    document.getElementById('cov-system').value = data.system_name || '';
+                    document.getElementById('cov-doc').value = data.doc_no || '';
+                    document.getElementById('cov-ecn').value = data.ecn_no || '';
+                    document.getElementById('cov-form').value = data.form_no || '';
+                    document.getElementById('cov-company').value = data.company || '';
+
+                    // Apply project lock state to UI
+                    applyProjectLockUI(data.is_locked == 1);
+                    renderRevisionPage();
+
+                    // Render Subsystem Tabs
+                    const tabContainer = document.getElementById('subsystemTabContainer');
+                    tabContainer.innerHTML = '';
+                    if (data.subsystems && data.subsystems.length > 0) {
+                        let activeId = targetSubsystemId;
+                        if (!activeId || !data.subsystems.some(s => s.id === activeId)) {
+                            activeId = data.subsystems[0].id;
+                        }
+                        data.subsystems.forEach((sub) => {
+                            const btn = document.createElement('button');
+                            btn.className = `tab-btn ${sub.id === activeId ? 'active' : ''}`;
+                            btn.id = `sub-tab-${sub.id}`;
+                            btn.textContent = sub.name;
+                            btn.onclick = () => switchSubsystemTab(sub.id);
+                            tabContainer.appendChild(btn);
+                        });
+                        switchSubsystemTab(activeId);
+                    } else {
+                        switchTab('cover');
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to load project:', err);
+                    closeCurrentProject();
+                });
+        }
+
+        function closeCurrentProject() {
+            clearRowSelection();
+            currentProjectId = null;
+            currentProjectData = null;
+            currentSubsystemId = null;
+            currentBomItems = [];
+            const sel = document.getElementById('projectSelect');
+            if (sel) sel.value = '';
+            const summary = document.getElementById('projectInfoSummary');
+            if (summary) summary.textContent = '当前未载入项目';
+            const contentArea = document.getElementById('projectContentArea');
+            const placeholder = document.getElementById('noProjectPlaceholder');
+            if (contentArea) contentArea.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'block';
+
+            const badge = document.getElementById('projectLockBadge');
+            const btn = document.getElementById('btnToggleProjectLock');
+            const alertBanner = document.getElementById('projectLockedAlert');
+            if (badge) badge.style.display = 'none';
+            if (btn) btn.style.display = 'none';
+            if (alertBanner) alertBanner.style.display = 'none';
+            if (document.getElementById('tabContent-revision')) document.getElementById('tabContent-revision').style.display = 'none';
+
+            setProjectActionButtonsDisabled(true);
+            showToast('已关闭当前工程项目', 'info');
+        }
+
+        // ==========================================
+        // Project Lock & Unlock UI & Actions
+        // ==========================================
+        function applyProjectLockUI(isLocked) {
+            const btn = document.getElementById('btnToggleProjectLock');
+            const alertBanner = document.getElementById('projectLockedAlert');
+
+            if (btn) {
+                btn.style.display = 'inline-flex';
+                btn.style.alignItems = 'center';
+                btn.style.gap = '5px';
+                if (isLocked) {
+                    btn.className = 'btn btn-sm';
+                    btn.style.background = '#fef2f2';
+                    btn.style.color = '#dc2626';
+                    btn.style.border = '1px solid #fca5a5';
+                    btn.innerHTML = '🔒 已锁定 (点击解锁)';
+                    btn.title = '当前工程处于锁定保护状态（只读）。点击可解锁并开启编辑';
+                } else {
+                    btn.className = 'btn btn-sm';
+                    btn.style.background = '#f0fdf4';
+                    btn.style.color = '#166534';
+                    btn.style.border = '1px solid #86efac';
+                    btn.innerHTML = '🔓 已解锁 (点击锁定)';
+                    btn.title = '当前工程处于编辑中状态。点击可立即锁定保护防误改';
+                }
+            }
+
+            if (alertBanner) {
+                alertBanner.style.display = isLocked ? 'flex' : 'none';
+            }
+
+            // Toolbar add buttons
+            const btnAdd = document.getElementById('btnRowAdd');
+            const btnBatch = document.getElementById('btnRowBatchAdd');
+            const btnAddSheet = document.getElementById('btnAddNewSheet');
+            if (btnAdd) {
+                btnAdd.disabled = isLocked;
+                btnAdd.title = isLocked ? '当前工程已锁定，请先解锁后再添加物料' : '添加单项物料';
+            }
+            if (btnBatch) {
+                btnBatch.disabled = isLocked;
+                btnBatch.title = isLocked ? '当前工程已锁定，请先解锁后再批量导入物料' : '批量粘贴物料号添加';
+            }
+            if (btnAddSheet) {
+                btnAddSheet.disabled = isLocked;
+                btnAddSheet.title = isLocked ? '当前工程已锁定，请先解锁后再添加Sheet' : '新增子系统Sheet';
+            }
+
+            // Cover Form inputs and save button
+            ['cov-code', 'cov-name', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = isLocked;
+            });
+            const btnSaveCover = document.getElementById('btnSaveCover');
+            if (btnSaveCover) {
+                btnSaveCover.disabled = isLocked;
+                btnSaveCover.title = isLocked ? '当前工程已锁定，请先解锁后再保存封面' : '保存封面信息';
+            }
+
+            // Revision & Signatures controls
+            const btnAddEcn = document.getElementById('btnAddEcnRow');
+            if (btnAddEcn) {
+                btnAddEcn.disabled = isLocked;
+                btnAddEcn.title = isLocked ? '当前工程已锁定，请先解锁后再添加修改记录' : '新增工程变更记录';
+            }
+            const btnSaveSig = document.getElementById('btnSaveSignatures');
+            if (btnSaveSig) {
+                btnSaveSig.disabled = isLocked;
+                btnSaveSig.title = isLocked ? '当前工程已锁定，请先解锁后再保存签字' : '保存签字信息';
+            }
+            ['sig-author-name', 'sig-author-date', 'sig-reviewer-name', 'sig-reviewer-date', 'sig-approver-name', 'sig-approver-date'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = isLocked;
+            });
+            renderRevisionPage();
+
+            // Project Rename / Delete buttons
+            const btnRename = document.getElementById('btnProjectRename');
+            const btnDelete = document.getElementById('btnProjectDelete');
+            if (btnRename) {
+                btnRename.title = isLocked ? '当前工程已锁定，需先解锁方可重命名' : '重命名当前项目的工程名称';
+            }
+            if (btnDelete) {
+                btnDelete.title = isLocked ? '当前工程已锁定，需先解锁方可删除' : '删除当前项目及其所有Sheet与BOM数据';
+            }
+
+            // Sheet Operations buttons
+            const btnCopySheet = document.getElementById('btnCopySheet');
+            const btnDeleteSheet = document.getElementById('btnDeleteSheet');
+            if (btnCopySheet) {
+                btnCopySheet.disabled = isLocked;
+                btnCopySheet.title = isLocked ? '当前工程已锁定，需先解锁方可复制Sheet' : '完整复制当前Sheet及其所有BOM物料明细行';
+            }
+            if (btnDeleteSheet) {
+                btnDeleteSheet.disabled = isLocked;
+                btnDeleteSheet.title = isLocked ? '当前工程已锁定，需先解锁方可删除Sheet' : '删除当前Sheet及其所有物料';
+            }
+
+            // Update row action buttons
+            updateRowActionButtons();
+        }
+
+        async function unlockCurrentProject() {
+            if (!currentProjectId || !currentProjectData) return;
+            const pTitle = currentProjectData.system_name || currentProjectData.code || '当前工程';
+
+            if (!confirm(`确认解锁工程【${pTitle}】以进行编辑？\n\n注意：解锁当前工程后，系统将自动锁定其他所有工程，以保护非当前工程数据不被误改。`)) {
+                return;
+            }
+
+            try {
+                const res = await safeFetchJson(`/api/project/${currentProjectId}/unlock`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (res && res.success) {
+                    currentProjectData.is_locked = 0;
+                    showToast(res.message || `工程【${pTitle}】已解锁！`, 'success');
+                    applyProjectLockUI(false);
+                    loadProjects(currentProjectId);
+                } else {
+                    alert((res && res.error) || '解锁失败');
+                }
+            } catch (err) {
+                alert('解锁过程发生错误: ' + err.message);
+            }
+        }
+
+        async function lockCurrentProject() {
+            if (!currentProjectId || !currentProjectData) return;
+            const pTitle = currentProjectData.system_name || currentProjectData.code || '当前工程';
+
+            try {
+                const res = await safeFetchJson(`/api/project/${currentProjectId}/lock`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (res && res.success) {
+                    currentProjectData.is_locked = 1;
+                    showToast(`工程【${pTitle}】已锁定保护！`, 'info');
+                    applyProjectLockUI(true);
+                    loadProjects(currentProjectId);
+                } else {
+                    alert((res && res.error) || '锁定失败');
+                }
+            } catch (err) {
+                alert('锁定过程发生错误: ' + err.message);
+            }
+        }
+
+        function toggleCurrentProjectLock() {
+            if (!currentProjectData) return;
+            if (currentProjectData.is_locked == 1) {
+                unlockCurrentProject();
+            } else {
+                lockCurrentProject();
+            }
+        }
+
+        function deleteCurrentProject() {
+            if (!currentProjectId || !currentProjectData) {
+                alert('当前未打开任何工程项目，无法执行删除！');
+                return;
+            }
+            if (currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法删除！如需删除请先在顶部点击【解锁编辑】。');
+                return;
+            }
+            const projTitle = (currentProjectData.code ? `[${currentProjectData.code}] ` : '') + (currentProjectData.name || currentProjectData.system_name || '当前项目');
+            const confirmMsg = `确定要彻底删除项目【${projTitle}】吗？\n\n删除后：\n1. 该项目的所有子系统 Sheet 将被永久移除；\n2. 该项目的所有 BOM 编制明细行将被永久清除；\n3. 全局通用物料主库将完整保留，不受影响。\n\n此操作不可撤销，确定删除吗？`;
+            if (!confirm(confirmMsg)) return;
+
+            safeFetchJson('/api/project/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: currentProjectId })
+            })
+            .then(res => {
+                if (res.success) {
+                    showToast(res.message || '项目已成功删除。', 'success');
+                    loadProjects();
+                } else {
+                    alert(res.error || '删除项目失败');
+                }
+            })
+            .catch(err => alert('删除操作异常: ' + err.message));
+        }
+
+        function setProjectActionButtonsDisabled(disabled) {
+            ['btnProjectSave', 'btnProjectCopy', 'btnProjectRename', 'btnProjectClose', 'btnProjectDelete', 'btnHeaderSave', 'btnHeaderExport', 'btnHeaderOfflinePkg', 'btnHeaderClose'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.disabled = disabled;
+                    if (disabled) {
+                        el.style.opacity = '0.45';
+                        el.style.pointerEvents = 'none';
+                        el.setAttribute('tabindex', '-1');
+                    } else {
+                        el.style.opacity = '1';
+                        el.style.pointerEvents = 'auto';
+                        el.removeAttribute('tabindex');
+                    }
+                }
+            });
+        }
+
+
+        // --- Save Project Cover ---
+        async function saveProjectCover() {
+            if (!currentProjectId) {
+                alert('请先选择一个工程项目！');
+                return;
+            }
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，封面信息无法修改！如需编辑请先在顶部点击【解锁编辑】。');
+                return;
+            }
+            const payload = {
+                id: currentProjectId,
+                code: document.getElementById('cov-code').value.trim(),
+                name: document.getElementById('cov-name').value.trim() || '风力发电机组',
+                system_name: document.getElementById('cov-system').value.trim(),
+                doc_no: document.getElementById('cov-doc').value.trim(),
+                ecn_no: document.getElementById('cov-ecn').value.trim(),
+                form_no: document.getElementById('cov-form').value.trim(),
+                company: document.getElementById('cov-company').value.trim()
+            };
+            try {
+                const res = await safeFetchJson('/api/project/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res && res.success) {
+                    showToast('封面及项目信息已保存！', 'success');
+                    loadProjects(currentProjectId);
+                } else {
+                    alert((res && res.error) || '保存封面信息失败');
+                }
+            } catch (err) {
+                alert('保存封面信息失败: ' + (err.message || '网络连接异常'));
+            }
+        }
+
+        // ==========================================
+        // Revision & Signatures (清单签字及修改页) Logic
+        // ==========================================
+        function renderRevisionPage() {
+            if (!currentProjectData) return;
+            const ecnList = currentProjectData.ecn_records || [];
+            const sigList = currentProjectData.signatures || [];
+            const isLocked = currentProjectData.is_locked == 1;
+
+            // 1. Render Signatures
+            const sigMap = {};
+            sigList.forEach(s => {
+                if (s.role) sigMap[s.role] = s;
+            });
+            const author = sigMap['编制'] || {};
+            const reviewer = sigMap['校核'] || {};
+            const approver = sigMap['审定'] || {};
+
+            const elAuthorName = document.getElementById('sig-author-name');
+            const elAuthorDate = document.getElementById('sig-author-date');
+            const elReviewerName = document.getElementById('sig-reviewer-name');
+            const elReviewerDate = document.getElementById('sig-reviewer-date');
+            const elApproverName = document.getElementById('sig-approver-name');
+            const elApproverDate = document.getElementById('sig-approver-date');
+
+            if (elAuthorName) elAuthorName.value = author.sign_name || '';
+            if (elAuthorDate) elAuthorDate.value = author.sign_date || '';
+            if (elReviewerName) elReviewerName.value = reviewer.sign_name || '';
+            if (elReviewerDate) elReviewerDate.value = reviewer.sign_date || '';
+            if (elApproverName) elApproverName.value = approver.sign_name || '';
+            if (elApproverDate) elApproverDate.value = approver.sign_date || '';
+
+            // 2. Render ECN Records Table
+            const tbody = document.getElementById('ecnTableBody');
+            if (!tbody) return;
+
+            let html = '';
+            if (ecnList.length === 0) {
+                html += `
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 36px 12px; color: #94a3b8; font-size: 13px;">
+                            <div style="font-size: 26px; margin-bottom: 6px;">📋</div>
+                            暂无工程变更修改记录。<br>
+                            ${isLocked ? '<span style="color: #ef4444; font-size: 12px; margin-top: 4px; display: inline-block;">当前工程处于锁定保护状态，如需添加请先在顶部点击【已锁定】进行解锁</span>' : '<span style="color: #2563eb; font-size: 12px; cursor: pointer; text-decoration: underline; margin-top: 4px; display: inline-block;" onclick="openAddEcnModal()">➕ 点击添加第一条修改记录</span>'}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                ecnList.forEach((ecn, idx) => {
+                    const rowNo = idx + 1;
+                    const ecnNoSafe = escapeHtml(ecn.ecn_no || '');
+                    const descSafe = escapeHtml(ecn.change_desc || '');
+                    const changerSafe = escapeHtml(ecn.changer || '');
+                    const dateSafe = escapeHtml(ecn.change_date || '');
+
+                    html += `
+                        <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                            <td style="text-align: center; padding: 12px 8px; font-weight: 600; color: #64748b; border-right: 1px solid #e2e8f0;">${rowNo}</td>
+                            <td style="padding: 12px 10px; font-weight: 600; color: #1e293b; border-right: 1px solid #e2e8f0;">
+                                <span style="background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #bfdbfe; font-family: monospace;">
+                                    ${ecnNoSafe || '—'}
+                                </span>
+                            </td>
+                            <td style="padding: 12px 14px; color: #334155; line-height: 1.6; white-space: pre-wrap; word-break: break-word; border-right: 1px solid #e2e8f0;">${descSafe || '—'}</td>
+                            <td style="padding: 12px 10px; color: #475569; font-weight: 500; border-right: 1px solid #e2e8f0;">${changerSafe || '—'}</td>
+                            <td style="padding: 12px 10px; color: #64748b; border-right: 1px solid #e2e8f0; font-family: monospace;">${dateSafe || '—'}</td>
+                            <td style="text-align: center; padding: 12px 8px;">
+                                <div style="display: inline-flex; gap: 6px; justify-content: center;">
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="openEditEcnModal(${idx})" ${isLocked ? 'disabled' : ''} style="padding: 3px 8px; font-size: 12px;" title="编辑此条修改记录">
+                                        ✏️ 编辑
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="deleteEcnRecord(${ecn.id})" ${isLocked ? 'disabled' : ''} style="padding: 3px 8px; font-size: 12px; color: #ef4444; border-color: #fca5a5;" title="删除此条修改记录">
+                                        🗑️ 删除
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                if (!isLocked) {
+                    html += `
+                        <tr style="background: #fafafa; border-top: 1px dashed #cbd5e1; cursor: pointer;" onclick="openAddEcnModal()" title="点击在此追加填入下一行修改记录">
+                            <td colspan="6" style="text-align: center; padding: 10px; color: #2563eb; font-size: 13px; font-weight: 500;">
+                                ➕ 点击在此添加下一行修改记录...
+                            </td>
+                        </tr>
+                    `;
+                }
+            }
+            tbody.innerHTML = html;
+        }
+
+        function openAddEcnModal() {
+            if (!currentProjectId) {
+                alert('请先选择或打开一个工程项目！');
+                return;
+            }
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法添加修改记录！如需编辑请先在顶部点击【解锁】。');
+                return;
+            }
+
+            document.getElementById('ecnModalTitle').textContent = '➕ 新增修改记录';
+            document.getElementById('ecnModalRecordId').value = '';
+
+            const projEcn = (currentProjectData && currentProjectData.ecn_no) || '';
+            document.getElementById('ecnModalEcnNo').value = projEcn;
+
+            let defaultChanger = '';
+            if (currentProjectData && currentProjectData.ecn_records && currentProjectData.ecn_records.length > 0) {
+                defaultChanger = currentProjectData.ecn_records[currentProjectData.ecn_records.length - 1].changer || '';
+            } else if (currentProjectData && currentProjectData.signatures) {
+                const sAuthor = currentProjectData.signatures.find(s => s.role === '编制');
+                if (sAuthor) defaultChanger = sAuthor.sign_name || '';
+            }
+            document.getElementById('ecnModalChanger').value = defaultChanger;
+
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('ecnModalChangeDate').value = today;
+            document.getElementById('ecnModalChangeDesc').value = '';
+
+            openModal('ecnModal');
+            setTimeout(() => {
+                const descInput = document.getElementById('ecnModalChangeDesc');
+                if (descInput) descInput.focus();
+            }, 100);
+        }
+
+        function openEditEcnModal(index) {
+            if (!currentProjectId || !currentProjectData || !currentProjectData.ecn_records) return;
+            if (currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法编辑修改记录！');
+                return;
+            }
+            const record = currentProjectData.ecn_records[index];
+            if (!record) return;
+
+            document.getElementById('ecnModalTitle').textContent = '✏️ 编辑修改记录';
+            document.getElementById('ecnModalRecordId').value = record.id;
+            document.getElementById('ecnModalEcnNo').value = record.ecn_no || '';
+            document.getElementById('ecnModalChanger').value = record.changer || '';
+            document.getElementById('ecnModalChangeDate').value = record.change_date || '';
+            document.getElementById('ecnModalChangeDesc').value = record.change_desc || '';
+
+            openModal('ecnModal');
+        }
+
+        function closeEcnModal() {
+            closeModal('ecnModal');
+        }
+
+        async function submitEcnModal() {
+            if (!currentProjectId) return;
+            const recordId = document.getElementById('ecnModalRecordId').value;
+            const ecnNo = document.getElementById('ecnModalEcnNo').value.trim();
+            const changer = document.getElementById('ecnModalChanger').value.trim();
+            const changeDate = document.getElementById('ecnModalChangeDate').value.trim();
+            const changeDesc = document.getElementById('ecnModalChangeDesc').value.trim();
+
+            if (!ecnNo && !changeDesc) {
+                alert('请至少填写 ECN 号或更改内容描述！');
+                return;
+            }
+
+            const payload = {
+                ecn_no: ecnNo,
+                changer: changer,
+                change_date: changeDate,
+                change_desc: changeDesc
+            };
+
+            const btnSave = document.getElementById('btnSaveEcnRecord');
+            btnSave.disabled = true;
+            btnSave.textContent = '保存中...';
+
+            try {
+                if (recordId) {
+                    const res = await safeFetchJson(`/api/project/${currentProjectId}/ecn/${recordId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (res && res.success) {
+                        showToast('修改记录已更新！', 'success');
+                        closeEcnModal();
+                        const idx = currentProjectData.ecn_records.findIndex(r => r.id == recordId);
+                        if (idx !== -1) {
+                            currentProjectData.ecn_records[idx] = { ...currentProjectData.ecn_records[idx], ...payload };
+                        }
+                        renderRevisionPage();
+                    } else {
+                        alert((res && res.error) || '更新记录失败');
+                    }
+                } else {
+                    const res = await safeFetchJson(`/api/project/${currentProjectId}/ecn`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (res && res.success) {
+                        showToast('新增修改记录成功！填入下一行', 'success');
+                        closeEcnModal();
+                        if (!currentProjectData.ecn_records) currentProjectData.ecn_records = [];
+                        currentProjectData.ecn_records.push(res.record);
+                        renderRevisionPage();
+                    } else {
+                        alert((res && res.error) || '新增记录失败');
+                    }
+                }
+            } catch (err) {
+                alert('操作失败: ' + err.message);
+            } finally {
+                btnSave.disabled = false;
+                btnSave.textContent = '保存记录';
+            }
+        }
+
+        async function deleteEcnRecord(recordId) {
+            if (!currentProjectId || !currentProjectData) return;
+            if (currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法删除修改记录！');
+                return;
+            }
+            if (!confirm('确认删除该条修改记录吗？此操作无法撤销。')) return;
+
+            try {
+                const res = await safeFetchJson(`/api/project/${currentProjectId}/ecn/${recordId}`, {
+                    method: 'DELETE'
+                });
+                if (res && res.success) {
+                    showToast('修改记录已删除', 'info');
+                    currentProjectData.ecn_records = currentProjectData.ecn_records.filter(r => r.id != recordId);
+                    renderRevisionPage();
+                } else {
+                    alert((res && res.error) || '删除失败');
+                }
+            } catch (err) {
+                alert('删除失败: ' + err.message);
+            }
+        }
+
+        async function saveProjectSignatures() {
+            if (!currentProjectId || !currentProjectData) return;
+            if (currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法修改签字信息！如需编辑请先在顶部点击【解锁】。');
+                return;
+            }
+
+            const signatures = [
+                {
+                    role: '编制',
+                    sign_name: (document.getElementById('sig-author-name').value || '').trim(),
+                    sign_date: (document.getElementById('sig-author-date').value || '').trim()
+                },
+                {
+                    role: '校核',
+                    sign_name: (document.getElementById('sig-reviewer-name').value || '').trim(),
+                    sign_date: (document.getElementById('sig-reviewer-date').value || '').trim()
+                },
+                {
+                    role: '审定',
+                    sign_name: (document.getElementById('sig-approver-name').value || '').trim(),
+                    sign_date: (document.getElementById('sig-approver-date').value || '').trim()
+                }
+            ];
+
+            const btnSave = document.getElementById('btnSaveSignatures');
+            btnSave.disabled = true;
+            btnSave.textContent = '保存中...';
+
+            try {
+                const res = await safeFetchJson(`/api/project/${currentProjectId}/signatures/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ signatures })
+                });
+                if (res && res.success) {
+                    showToast('签字审核信息保存成功！', 'success');
+                    currentProjectData.signatures = signatures;
+                } else {
+                    alert((res && res.error) || '保存签字失败');
+                }
+            } catch (err) {
+                alert('保存签字失败: ' + err.message);
+            } finally {
+                btnSave.disabled = false;
+                btnSave.textContent = '💾 保存签字';
+            }
+        }
+
+
+        // --- Import Excel ---
+        function openImportModal() {
+            document.getElementById('importProgress').style.display = 'none';
+            openModal('importModal');
+        }
+
+        function submitImportExcel() {
+            const fileInput = document.getElementById('excelFileInput');
+            if (fileInput.files.length === 0) {
+                alert('请先选择要导入的 .xlsx 文件！');
+                return;
+            }
+            document.getElementById('importProgress').style.display = 'block';
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            fetch('/api/import', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(res => {
+                    document.getElementById('importProgress').style.display = 'none';
+                    if (res.success) {
+                        alert('Excel 模版解析并导入成功！');
+                        closeModal('importModal');
+                        loadProjects();
+                    } else {
+                        alert(res.error || '导入失败');
+                    }
+                });
+        }
+
+        // --- Export Excel ---
+        function exportCurrentProject() {
+            if (!currentProjectId) return;
+            window.location.href = `/api/export/${currentProjectId}`;
+        }
+
+        // --- Export Offline Field Maintenance Package (.zip) ---
+        function exportOfflinePackage() {
+            if (!currentProjectId) {
+                alert('请先选择或载入工程项目！');
+                return;
+            }
+            showToast('正在生成并打包整机离线运维资料包（包含SBOM、实物图库、技术PDF与免安装速查网页）...', 'info');
+            window.location.href = `/api/project/${currentProjectId}/export_offline_package`;
+        }
+
+        let isRenameProjSystemManual = false;
+
+        function openNewProjectModal() {
+            document.getElementById('new-proj-name').value = '';
+            openModal('newProjectModal');
+            setTimeout(() => {
+                const el = document.getElementById('new-proj-name');
+                if (el) el.focus();
+            }, 100);
+        }
+
+        let isSubmittingNewProject = false;
+        async function submitNewProject() {
+            if (isSubmittingNewProject) return;
+            const inputEl = document.getElementById('new-proj-name');
+            const inputVal = inputEl ? inputEl.value.trim() : '';
+            if (!inputVal) {
+                alert('请输入新项目名称！');
+                if (inputEl) inputEl.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btnSubmitNewProject');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '正在创建...';
+            }
+            isSubmittingNewProject = true;
+
+            const name = '风力发电机组';
+            const system_name = inputVal;
+            const code = inputVal;
+
+            try {
+                const res = await safeFetchJson('/api/project/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, system_name, code })
+                });
+                if (res && res.success) {
+                    closeModal('newProjectModal');
+                    showToast(`新项目 "${system_name}" 创建成功！`, 'success');
+                    loadProjects(res.id);
+                } else {
+                    alert((res && res.error) || '创建项目失败，请重试');
+                }
+            } catch (err) {
+                alert('创建项目失败: ' + (err.message || '网络连接异常'));
+            } finally {
+                isSubmittingNewProject = false;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '创建项目';
+                }
+            }
+        }
+
+        function openRenameProjectModal() {
+            if (!currentProjectId || !currentProjectData) {
+                alert('请先选择一个项目！');
+                return;
+            }
+            if (currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法重命名！如需重命名请先在顶部点击【解锁编辑】。');
+                return;
+            }
+            const displayName = (currentProjectData.system_name && currentProjectData.system_name !== '风力发电机组') ? currentProjectData.system_name : ((currentProjectData.name && currentProjectData.name !== '风力发电机组') ? currentProjectData.name : currentProjectData.code);
+            document.getElementById('rename-proj-name').value = displayName;
+            openModal('renameProjectModal');
+            setTimeout(() => {
+                const el = document.getElementById('rename-proj-name');
+                if (el) {
+                    el.focus();
+                    el.select();
+                }
+            }, 100);
+        }
+
+        let isSubmittingRenameProject = false;
+        async function submitRenameProject() {
+            if (isSubmittingRenameProject || !currentProjectId) return;
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法重命名！如需重命名请先在顶部点击【解锁编辑】。');
+                return;
+            }
+            const inputEl = document.getElementById('rename-proj-name');
+            const newName = inputEl ? inputEl.value.trim() : '';
+            if (!newName) {
+                alert('项目名称不能为空！');
+                if (inputEl) inputEl.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btnSubmitRenameProject');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '正在保存...';
+            }
+            isSubmittingRenameProject = true;
+
+            try {
+                const res = await safeFetchJson('/api/project/rename', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: currentProjectId,
+                        system_name: newName,
+                        product_name: (currentProjectData && currentProjectData.name) ? currentProjectData.name : '风力发电机组'
+                    })
+                });
+                if (res && res.success) {
+                    closeModal('renameProjectModal');
+                    showToast(`项目已成功重命名为 "${newName}"！`, 'success');
+                    loadProjects(currentProjectId);
+                } else {
+                    alert((res && res.error) || '重命名失败');
+                }
+            } catch (err) {
+                alert('重命名失败: ' + (err.message || '网络连接异常'));
+            } finally {
+                isSubmittingRenameProject = false;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '确认重命名';
+                }
+            }
+        }
+
+        // ==========================================
+        // Copy Project Functions
+        // ==========================================
+        function openCopyProjectModal() {
+            if (!currentProjectId || !currentProjectData) {
+                alert('请先选择或打开一个项目！');
+                return;
+            }
+            const displayName = (currentProjectData.system_name && currentProjectData.system_name !== '风力发电机组') ? currentProjectData.system_name : ((currentProjectData.name && currentProjectData.name !== '风力发电机组') ? currentProjectData.name : currentProjectData.code);
+            const defaultCopyName = `${displayName}_副本`;
+            document.getElementById('copy-proj-name').value = defaultCopyName;
+            openModal('copyProjectModal');
+            setTimeout(() => {
+                const el = document.getElementById('copy-proj-name');
+                if (el) {
+                    el.focus();
+                    el.select();
+                }
+            }, 100);
+        }
+
+        let isSubmittingCopyProject = false;
+        async function submitCopyProject() {
+            if (isSubmittingCopyProject || !currentProjectId) return;
+            const inputEl = document.getElementById('copy-proj-name');
+            const newName = inputEl ? inputEl.value.trim() : '';
+            if (!newName) {
+                alert('项目名称不能为空！');
+                if (inputEl) inputEl.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btnSubmitCopyProject');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '正在复制...';
+            }
+            isSubmittingCopyProject = true;
+
+            try {
+                const res = await safeFetchJson('/api/project/copy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: currentProjectId,
+                        name: '风力发电机组',
+                        system_name: newName
+                    })
+                });
+                if (res && res.success) {
+                    closeModal('copyProjectModal');
+                    showToast(res.message || `项目已成功复制为 "${newName}"！`, 'success');
+                    loadProjects(res.id);
+                } else {
+                    alert((res && res.error) || '复制项目失败');
+                }
+            } catch (err) {
+                alert('复制项目失败: ' + (err.message || '网络连接异常'));
+            } finally {
+                isSubmittingCopyProject = false;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '确认复制';
+                }
+            }
+        }
+
+
+        // ==========================================
+        // Project Bundle Save & Open Functions
+        // ==========================================
+        let currentOpenProjectInspectData = null;
+
+        function updateSaveFormatStyle() {
+            const val = document.querySelector('input[name="saveBundleFormat"]:checked')?.value || 'sbom';
+            const lbSbom = document.getElementById('labelSaveSbom');
+            const lbJson = document.getElementById('labelSaveJson');
+            if (val === 'sbom') {
+                lbSbom.style.borderColor = '#2563eb';
+                lbSbom.style.background = '#eff6ff';
+                lbJson.style.borderColor = '#cbd5e1';
+                lbJson.style.background = '#ffffff';
+            } else {
+                lbJson.style.borderColor = '#059669';
+                lbJson.style.background = '#f0fdf4';
+                lbSbom.style.borderColor = '#cbd5e1';
+                lbSbom.style.background = '#ffffff';
+            }
+        }
+
+        function openSaveProjectModal() {
+            if (!currentProjectId || !currentProjectData) {
+                alert('请先选择一个项目！');
+                return;
+            }
+            const displayName = (currentProjectData.system_name && currentProjectData.system_name !== '风力发电机组') ? currentProjectData.system_name : ((currentProjectData.name && currentProjectData.name !== '风力发电机组') ? currentProjectData.name : currentProjectData.code);
+            document.getElementById('save-proj-title-display').textContent = displayName;
+            const subCount = currentProjectData.subsystems ? currentProjectData.subsystems.length : 1;
+            document.getElementById('save-proj-stats-display').textContent = `包含 ${subCount} 个子系统 Sheet，机型代号 [${currentProjectData.code || '未设'}]`;
+            
+            // Default select sbom
+            const sbomRadio = document.querySelector('input[name="saveBundleFormat"][value="sbom"]');
+            if (sbomRadio) sbomRadio.checked = true;
+            updateSaveFormatStyle();
+
+            openModal('saveProjectModal');
+        }
+
+        function executeSaveProjectFile() {
+            if (!currentProjectId) return;
+            const format = document.querySelector('input[name="saveBundleFormat"]:checked')?.value || 'sbom';
+            closeModal('saveProjectModal');
+            showToast(`正在生成并下载项目工程文件 (.${format})...`, 'info');
+            window.location.href = `/api/project/${currentProjectId}/export_file?format=${format}`;
+        }
+
+        function triggerOpenProjectFile() {
+            const input = document.getElementById('projectFileInput');
+            if (input) {
+                input.value = '';
+                input.click();
+            }
+        }
+
+        function handleProjectFileChosen(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showToast(`正在解析项目工程文件 "${file.name}"...`, 'info');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/api/project/open/inspect', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res.error) {
+                    alert(res.error);
+                    return;
+                }
+
+                currentOpenProjectInspectData = res;
+
+                document.getElementById('open-file-name').textContent = res.original_filename || file.name;
+                const ext = (res.original_filename || file.name).split('.').pop().toLowerCase();
+                document.getElementById('open-format-badge').textContent = `.${ext} 工程文件`;
+                document.getElementById('open-proj-name').textContent = res.name || '未命名项目';
+                document.getElementById('open-proj-code').textContent = res.code || '无';
+                document.getElementById('open-proj-system').textContent = res.system_name || res.name;
+                
+                const sheetsText = (res.subsystems_names || []).join('、');
+                document.getElementById('open-proj-summary').innerHTML = `
+                    <div><b>数据概览：</b> 包含 <b>${res.subsystems_count}</b> 个 Sheet（${sheetsText || '默认清单'}），共 <b>${res.total_items_count}</b> 项物料明细，<b>${res.materials_count}</b> 项主库物料记录。</div>
+                `;
+
+                const conflictBanner = document.getElementById('open-conflict-banner');
+                const noConflictBanner = document.getElementById('open-noconflict-banner');
+
+                if (res.has_conflict && res.existing_project) {
+                    conflictBanner.style.display = 'block';
+                    noConflictBanner.style.display = 'none';
+                    const existName = res.existing_project.name || res.existing_project.code;
+                    document.getElementById('open-existing-name').textContent = `【${existName}】(代号: ${res.existing_project.code || '-'})`;
+                    // Default to new
+                    const newRadio = document.querySelector('input[name="openConflictAction"][value="new"]');
+                    if (newRadio) newRadio.checked = true;
+                } else {
+                    conflictBanner.style.display = 'none';
+                    noConflictBanner.style.display = 'block';
+                }
+
+                openModal('openProjectModal');
+            })
+            .catch(err => {
+                alert('解析文件异常: ' + err.message);
+            });
+        }
+
+        function submitOpenProjectExecute() {
+            if (!currentOpenProjectInspectData) return;
+
+            const btn = document.getElementById('btnSubmitOpenProject');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '正在载入项目数据...';
+            }
+
+            let action = 'new';
+            let targetId = null;
+            if (currentOpenProjectInspectData.has_conflict && currentOpenProjectInspectData.existing_project) {
+                const checkedRadio = document.querySelector('input[name="openConflictAction"]:checked');
+                action = checkedRadio ? checkedRadio.value : 'new';
+                if (action === 'overwrite') {
+                    targetId = currentOpenProjectInspectData.existing_project.id;
+                }
+            }
+
+            fetch('/api/project/open/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    temp_filename: currentOpenProjectInspectData.temp_filename,
+                    action: action,
+                    target_project_id: targetId
+                })
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '确认打开';
+                }
+
+                if (res.success) {
+                    closeModal('openProjectModal');
+                    showToast(res.message || '项目已载入。', 'success');
+                    loadProjects(res.project_id);
+                    loadMasterStats();
+                } else {
+                    alert(res.error || '打开项目失败');
+                }
+            })
+            .catch(err => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '确认打开';
+                }
+                alert('打开项目异常: ' + err.message);
+            });
+        }
+
+
