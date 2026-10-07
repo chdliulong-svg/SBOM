@@ -77,9 +77,8 @@ class Config:
         self.host = (os.environ.get('HOST', '0.0.0.0') or '0.0.0.0').strip()
         self.port = _env_int('PORT', 8000, 1, 65535)
 
-        # 鉴权开关：off（默认免登录，直接进入工作台）、on（强制开启）、auto（局域网共享时开启）
-        mode = (os.environ.get('SBOM_AUTH', 'off') or 'off').strip().lower()
-        self.auth_mode = mode if mode in ('auto', 'on', 'off') else 'off'
+        # 鉴权配置：已永久关闭登录保护功能（全员免登录直接访问）
+        self.auth_mode = 'off'
 
         self.upload_max_mb = _env_int('SBOM_UPLOAD_MAX_MB', 200, 1, 2048)
         self.session_lifetime_days = _env_int('SBOM_SESSION_DAYS', 7, 1, 90)
@@ -90,13 +89,8 @@ class Config:
 
     @property
     def auth_required(self):
-        """当前是否要求登录。"""
-        if self.auth_mode == 'on':
-            return True
-        if self.auth_mode == 'off':
-            return False
-        # auto：仅监听回环地址时视为可信
-        return self.host not in _TRUSTED_HOSTS
+        """当前是否要求登录（永久关闭）。"""
+        return False
 
     @property
     def max_content_length(self):
@@ -104,12 +98,7 @@ class Config:
 
     @property
     def auth_mode_label(self):
-        if self.auth_mode == 'on':
-            return '强制开启'
-        if self.auth_mode == 'off':
-            return '已关闭（免登录模式，直接访问）'
-        return ('自动：局域网共享模式 → 需要登录'
-                if self.auth_required else '自动：仅本机访问 → 免登录')
+        return '已永久关闭（免登录模式，直接访问）'
 
 
 
