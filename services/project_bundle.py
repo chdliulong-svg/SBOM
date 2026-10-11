@@ -5,6 +5,7 @@ import zipfile
 import shutil
 from datetime import datetime
 from .database import get_db
+from .config import config
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
@@ -108,8 +109,8 @@ def export_project_data(project_id):
             'system_name': project_info.get('system_name') or '',
             'doc_no': project_info.get('doc_no') or '',
             'ecn_no': project_info.get('ecn_no') or '',
-            'form_no': project_info.get('form_no') or 'FDJL-JS-037',
-            'company': project_info.get('company') or '上海电气风电集团股份有限公司'
+            'form_no': project_info.get('form_no') or config.form_no_default,
+            'company': project_info.get('company') or config.company_default
         },
         'signatures': signatures,
         'ecn_records': ecn_records,
@@ -301,8 +302,8 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
     system_name = (proj.get('system_name') or name).strip()
     doc_no = proj.get('doc_no', '')
     ecn_no = proj.get('ecn_no', '')
-    form_no = proj.get('form_no', 'FDJL-JS-037')
-    company = proj.get('company', '上海电气风电集团股份有限公司')
+    form_no = proj.get('form_no') or config.form_no_default
+    company = proj.get('company') or config.company_default
 
     conn = get_db()
     cursor = conn.cursor()

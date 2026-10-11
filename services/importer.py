@@ -2,6 +2,7 @@ import os
 import zipfile
 import xml.etree.ElementTree as ET
 from .database import get_db, init_db, find_template_path
+from .config import config
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
@@ -55,8 +56,8 @@ def import_excel_sbom(excel_path):
         system_name = 'EW6.25-220变桨轴承润滑系统SBOM'
         doc_no = ''
         ecn_no = ''
-        form_no = 'FDJL-JS-037'
-        company = '上海电气风电集团股份有限公司'
+        form_no = config.form_no_default
+        company = config.company_default
 
         cover_sheets = [s for s in sheet_info if '封面' in s[0]]
         if cover_sheets:

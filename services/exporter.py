@@ -10,6 +10,7 @@ from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.utils.units import pixels_to_EMU
 from PIL import Image as PILImage
 from .database import get_db, find_template_path
+from .config import config
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -92,7 +93,7 @@ def export_project_sbom(project_id, output_path, embed_manuals=False):
     ws_cover['C8'].value = now.year
     ws_cover['E8'].value = now.month
     # A11: 表单编号
-    ws_cover['A11'].value = project['form_no'] or '  FDJL-JS-037'
+    ws_cover['A11'].value = project['form_no'] or f'  {config.form_no_default}'
 
     # ================= 2. 签字页 (Signatures) =================
     if '签字页' in wb.sheetnames:

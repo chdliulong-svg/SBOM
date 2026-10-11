@@ -196,18 +196,20 @@ if __name__ == '__main__':
         print(f"  * 其他网卡访问:   {other_ips_str}")
 
     print("-----------------------------------------------------")
+    print(f"  * 配置文件:       {config.config_file}")
+    print(f"  * 监听端口:       {port}")
     print(f"  * 访问控制:       {config.auth_mode_label}")
-    print("  * 模式说明:       系统免登录，局域网所有成员可直接打开网址访问与协同维护")
-
+    print(f"  * 默认所属单位:   {config.company_default}")
+    print(f"  * 默认表单编号:   {config.form_no_default}")
+    print(f"  * 上传体积上限:   {config.upload_max_mb} MB")
 
     has_waitress = False
     try:
         import waitress  # noqa: F401
         has_waitress = True
-        print(f"  * 运行引擎:       Waitress 生产级多线程服务器 (24 线程高并发)")
+        print(f"  * 运行引擎:       Waitress 生产级多线程服务器 ({config.threads} 线程并发)")
     except ImportError:
         print(f"  * 运行引擎:       Flask 内置开发服务器")
-    print(f"  * 上传体积上限:   {config.upload_max_mb} MB")
     print("=====================================================")
 
     if not config.headless and host in ['0.0.0.0', '127.0.0.1', 'localhost']:
@@ -215,7 +217,7 @@ if __name__ == '__main__':
 
     if has_waitress:
         import waitress
-        waitress.serve(app, host=host, port=port, threads=24, connection_limit=120)
+        waitress.serve(app, host=host, port=port, threads=config.threads, connection_limit=config.connection_limit)
     else:
         app.run(host=host, port=port, debug=False, threaded=True)
 

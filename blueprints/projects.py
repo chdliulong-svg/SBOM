@@ -10,6 +10,7 @@ import sqlite3
 from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from services.database import get_db, find_template_path
+from services.config import config
 from services.exporter import export_project_sbom
 from services.offline_packager import generate_offline_package
 from services.backup_manager import create_backup_snapshot
@@ -255,7 +256,7 @@ def save_project():
             WHERE id=?
             ''', (code, name, system_name, platform,
                   data.get('doc_no', ''), data.get('ecn_no', ''),
-                  data.get('form_no', 'FDJL-JS-037'), data.get('company', '上海电气风电集团股份有限公司'),
+                  data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                   project_id))
         else:
             base_code = code
@@ -274,7 +275,7 @@ def save_project():
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'))
                     ''', (candidate_code, name, system_name, (data.get('platform') or '').strip(),
                           data.get('doc_no', ''), data.get('ecn_no', ''),
-                          data.get('form_no', 'FDJL-JS-037'), data.get('company', '上海电气风电集团股份有限公司'),
+                          data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                           client_tag))
                     project_id = cursor.lastrowid
                     code = candidate_code
@@ -410,7 +411,7 @@ def copy_project():
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (user_code, user_name, user_system_name,
               orig['doc_no'] or '', orig['ecn_no'] or '',
-              orig['form_no'] or 'FDJL-JS-037', orig['company'] or '上海电气风电集团股份有限公司'))
+              orig['form_no'] or config.form_no_default, orig['company'] or config.company_default))
         new_project_id = cursor.lastrowid
 
         cursor.execute('SELECT * FROM subsystems WHERE project_id = ? ORDER BY sort_order, id', (project_id,))

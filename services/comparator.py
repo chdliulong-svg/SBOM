@@ -4,6 +4,7 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from .database import get_db
+from .config import config
 
 def parse_float_qty(val):
     """Safely parse a quantity value to float."""
@@ -381,7 +382,7 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                 'system_name': proj_a['system_name'] or '',
                 'code': proj_a['code'] or '',
                 'display_name': proj_a_name,
-                'form_no': proj_a['form_no'] or 'FDJL-JS-037',
+                'form_no': proj_a['form_no'] or config.form_no_default,
                 'subsystem_count': len(subs_a),
                 'material_types_count': len(map_a),
                 'total_pieces': format_qty_display(total_qty_a)
@@ -392,7 +393,7 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                 'system_name': proj_b['system_name'] or '',
                 'code': proj_b['code'] or '',
                 'display_name': proj_b_name,
-                'form_no': proj_b['form_no'] or 'FDJL-JS-037',
+                'form_no': proj_b['form_no'] or config.form_no_default,
                 'subsystem_count': len(subs_b),
                 'material_types_count': len(map_b),
                 'total_pieces': format_qty_display(total_qty_b)

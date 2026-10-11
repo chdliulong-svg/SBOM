@@ -21,15 +21,15 @@ import shutil
 import threading
 from flask import g, has_request_context
 from .database import get_db, _create_connection
-from .config import PROJECT_ROOT
+from .config import PROJECT_ROOT, config
 
 BACKUP_DIR = os.path.join(PROJECT_ROOT, 'backups')
 ASSETS_DIR = os.path.join(PROJECT_ROOT, 'assets')
 MANIFEST_PATH = os.path.join(BACKUP_DIR, 'manifest.json')
 
 def _sync_to_remote_backup(local_path):
-    """若配置了 SBOM_REMOTE_BACKUP_DIR 环境变量，自动异步拷贝至局域网远端/NAS共享目录。"""
-    remote_dir = os.environ.get('SBOM_REMOTE_BACKUP_DIR', '').strip()
+    """若配置了 remote_backup_dir，自动异步拷贝至局域网远端/NAS共享目录。"""
+    remote_dir = config.remote_backup_dir or os.environ.get('SBOM_REMOTE_BACKUP_DIR', '').strip()
     if not remote_dir or not os.path.exists(local_path):
         return
     def _do_copy():
@@ -43,8 +43,8 @@ def _sync_to_remote_backup(local_path):
 
 
 # 资产归档相对较大，保留份数少于数据库快照
-MAX_KEEP_DB = 30
-MAX_KEEP_ASSETS = 7
+MAX_KEEP_DB = config.max_keep_db
+MAX_KEEP_ASSETS = config.max_keep_assets
 
 REASON_LABELS = {
     'manual': '手动备份',
