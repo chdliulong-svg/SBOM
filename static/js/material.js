@@ -202,7 +202,7 @@
                     <td title="${escapeHtml(m.description || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.description || '')}</div></td>
                     <td title="${escapeHtml(m.spec_model || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.spec_model || '')}</div></td>
                     <td title="${escapeHtml(m.manufacturer || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.manufacturer || '')}</div></td>
-                    <td class="col-center">${escapeHtml(m.unit || 'PCS')}</td>
+                    <td class="col-center">${escapeHtml(m.unit || 'PC')}</td>
                     <td title="${escapeHtml(m.drawing_no || '/')}"><div class="cell-text-ellipsis">${escapeHtml(m.drawing_no || '/')}</div></td>
                     <td class="col-center">${imgTag}</td>
                     <td class="col-center">${manTag}</td>
@@ -443,7 +443,7 @@
                     manufacturer: mat ? (mat.manufacturer || '') : '',
                     m_mfr: mat ? (mat.manufacturer || '') : '',
                     qty: 1,
-                    unit: mat ? (mat.unit || 'PCS') : 'PCS',
+                    unit: mat ? (mat.unit || 'PC') : 'PC',
                     drawing_no: mat ? (mat.drawing_no || '/') : '/',
                     level_str: '●',
                     level_num: 1,
@@ -519,8 +519,19 @@
         function handleMmImgSelected(event) {
             const file = event.target.files && event.target.files[0];
             if (!file) return;
+
+            if (window.Step3dViewer && window.Step3dViewer.is3dFile(file)) {
+                window.Step3dViewer.open(file, {
+                    onConfirm: (snapshotFile) => {
+                        handleMm3dSnapshotReady(snapshotFile, file.name);
+                    }
+                });
+                event.target.value = '';
+                return;
+            }
+
             if (!file.type.startsWith('image/')) {
-                alert('请选择有效的图片文件（PNG / JPG / WEBP）！');
+                alert('请选择有效的图片文件（PNG / JPG / WEBP）或 3D CAD 模型（.step / .stp）！');
                 return;
             }
             mmRemoveImageFlag = false;
@@ -540,6 +551,28 @@
             };
             reader.readAsDataURL(file);
         }
+
+        function handleMm3dSnapshotReady(snapshotFile, originalName) {
+            mmRemoveImageFlag = false;
+            mmPendingImgFile = snapshotFile;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                setMmImgPreview(e.target.result, false);
+                const status = document.getElementById('mm-img-status');
+                if (status) {
+                    status.innerHTML = `<span style="color: #16a34a; font-weight: 500;">✓ 已从 3D 模型生成实物图：${escapeHtml(originalName || snapshotFile.name)}</span>（保存后生效）`;
+                }
+                const badge = document.getElementById('mm-pending-upload-badge');
+                if (badge) {
+                    badge.textContent = '已生成3D截图';
+                    badge.style.display = 'inline';
+                }
+                const removeBtn = document.getElementById('mm-remove-img-btn');
+                if (removeBtn) removeBtn.style.display = 'inline-block';
+            };
+            reader.readAsDataURL(snapshotFile);
+        }
+        window.handleMm3dSnapshotReady = handleMm3dSnapshotReady;
 
         async function pasteMmImgFromClipboard() {
             if (!navigator.clipboard || !navigator.clipboard.read) {
@@ -822,10 +855,10 @@
                     const dt = e.dataTransfer;
                     if (dt && dt.files && dt.files.length > 0) {
                         const file = dt.files[0];
-                        if (file.type.startsWith('image/')) {
+                        if (file.type.startsWith('image/') || (window.Step3dViewer && window.Step3dViewer.is3dFile(file))) {
                             handleMmImgSelected({ target: { files: [file] } });
                         } else {
-                            alert('拖入的文件不是图片格式，请拖拽 PNG / JPG / WEBP 图片！');
+                            alert('拖入的文件不是图片或 3D CAD 模型格式，请拖拽 PNG / JPG / WEBP 或 .step / .stp 文件！');
                         }
                     }
                 });
@@ -915,7 +948,7 @@
             document.getElementById('mm-name').value = '';
             document.getElementById('mm-spec-model').value = '';
             document.getElementById('mm-manufacturer').value = '';
-            document.getElementById('mm-unit').value = 'PCS';
+            document.getElementById('mm-unit').value = 'PC';
             document.getElementById('mm-drawing-no').value = '/';
             document.getElementById('mm-substitute').value = '';
             document.getElementById('mm-description').value = '';
@@ -971,7 +1004,7 @@
             document.getElementById('mm-name').value = mat.name || '';
             document.getElementById('mm-spec-model').value = mat.spec_model || '';
             document.getElementById('mm-manufacturer').value = mat.manufacturer || '';
-            document.getElementById('mm-unit').value = mat.unit || 'PCS';
+            document.getElementById('mm-unit').value = mat.unit || 'PC';
             document.getElementById('mm-drawing-no').value = mat.drawing_no || '/';
             document.getElementById('mm-substitute').value = mat.substitute || '';
             document.getElementById('mm-description').value = mat.description || '';
@@ -1068,7 +1101,7 @@
                 description: desc,
                 spec_model: document.getElementById('mm-spec-model').value.trim(),
                 manufacturer: document.getElementById('mm-manufacturer').value.trim(),
-                unit: document.getElementById('mm-unit').value.trim() || 'PCS',
+                unit: document.getElementById('mm-unit').value.trim() || 'PC',
                 drawing_no: document.getElementById('mm-drawing-no').value.trim() || '/',
                 substitute: document.getElementById('mm-substitute').value.trim(),
                 notes: document.getElementById('mm-notes').value.trim(),
@@ -1249,7 +1282,7 @@
                 document.getElementById('hier-level-num').value = defaultLvl;
             }
             document.getElementById('hier-qty').value = '1';
-            document.getElementById('hier-unit').value = 'PCS';
+            document.getElementById('hier-unit').value = 'PC';
             document.getElementById('hier-drawing').value = '/';
             document.getElementById('hierSubmitBtn').innerHTML = '加入结构';
             const drop = document.getElementById('hierFuzzyDropdown');
@@ -1351,7 +1384,7 @@
                             <td>${escapeHtml(matName)}</td>
                             <td><div class="cell-text-ellipsis" style="max-width: 280px;" title="${escapeHtml(matDesc)}">${escapeHtml(matDesc)}${modelTag}</div></td>
                             <td class="col-center">${c.qty}</td>
-                            <td class="col-center">${escapeHtml(c.unit || 'PCS')}</td>
+                            <td class="col-center">${escapeHtml(c.unit || 'PC')}</td>
                             <td>${escapeHtml(c.drawing_no || '/')}</td>
                         `;
                         tbody.appendChild(tr);
@@ -1365,7 +1398,7 @@
             document.getElementById('hier-child-search').value = c.child_material_no;
             document.getElementById('hier-level-num').value = c.child_level_num || c.level_num || 2;
             document.getElementById('hier-qty').value = c.qty || 1;
-            document.getElementById('hier-unit').value = c.unit || 'PCS';
+            document.getElementById('hier-unit').value = c.unit || 'PC';
             document.getElementById('hier-drawing').value = c.drawing_no || '/';
             document.getElementById('hierSubmitBtn').innerHTML = '保存更新';
             document.getElementById('hier-qty').focus();
@@ -1394,7 +1427,7 @@
                 child_level_num: parseInt(document.getElementById('hier-level-num').value) || 2,
                 level_num: parseInt(document.getElementById('hier-level-num').value) || 2,
                 qty: document.getElementById('hier-qty').value.trim() || '1',
-                unit: document.getElementById('hier-unit').value.trim() || 'PCS',
+                unit: document.getElementById('hier-unit').value.trim() || 'PC',
                 drawing_no: document.getElementById('hier-drawing').value.trim() || '/'
             };
 
@@ -1577,7 +1610,7 @@
                 manufacturer: mat ? (mat.manufacturer || '') : '',
                 m_mfr: mat ? (mat.manufacturer || '') : '',
                 qty: 1,
-                unit: mat ? (mat.unit || 'PCS') : 'PCS',
+                unit: mat ? (mat.unit || 'PC') : 'PC',
                 drawing_no: mat ? (mat.drawing_no || '/') : '/',
                 level_str: '●',
                 level_num: 1,
@@ -1938,5 +1971,160 @@
                 applyColumnWidths('masterTable');
             }, 50);
         }
+
+        // ==========================================
+        // AI Large Language Model Extraction Handlers
+        // ==========================================
+        function highlightField(elem) {
+            if (!elem) return;
+            const origTransition = elem.style.transition;
+            const origBorder = elem.style.borderColor;
+            const origBg = elem.style.backgroundColor;
+            elem.style.transition = 'all 0.3s ease';
+            elem.style.borderColor = '#2563eb';
+            elem.style.backgroundColor = '#eff6ff';
+            setTimeout(() => {
+                elem.style.borderColor = origBorder;
+                elem.style.backgroundColor = origBg;
+                elem.style.transition = origTransition;
+            }, 1800);
+        }
+
+        async function aiExtractMasterItem() {
+            const descInput = document.getElementById('mm-description');
+            const desc = (descInput ? descInput.value : '').trim();
+            if (!desc) {
+                alert('请先输入或粘贴物料描述，然后再点击【大模型智能提取】！');
+                if (descInput) descInput.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-ai-parse-mm');
+            const origHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span>⏳ 大模型推断中...</span>';
+                btn.style.opacity = '0.75';
+            }
+
+            try {
+                const resp = await fetch('/api/materials/ai-parse', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description: desc })
+                });
+                const res = await resp.json();
+                if (!res.success) {
+                    alert('大模型推断失败: ' + (res.error || '未知错误'));
+                    return;
+                }
+
+                const data = res.data || {};
+                const nameInput = document.getElementById('mm-name');
+                if (nameInput && data.name) {
+                    nameInput.value = data.name;
+                    highlightField(nameInput);
+                }
+
+                const specInput = document.getElementById('mm-spec-model');
+                if (specInput && data.spec_model) {
+                    specInput.value = data.spec_model;
+                    highlightField(specInput);
+                }
+
+                const mfrInput = document.getElementById('mm-manufacturer');
+                if (mfrInput && data.manufacturer) {
+                    mfrInput.value = data.manufacturer;
+                    highlightField(mfrInput);
+                }
+
+                if (typeof triggerRealtimeDuplicateCheck === 'function') {
+                    triggerRealtimeDuplicateCheck();
+                }
+
+                const costStr = data.cost_seconds ? ` (耗时 ${data.cost_seconds}s)` : '';
+                const engineTag = res.engine === 'local_llm' ? '离线大模型' : '智能引擎';
+                if (typeof showToast === 'function') {
+                    showToast(`✨ ${engineTag}推断成功${costStr}：名称【${data.name || '-'}】、型号【${data.spec_model || '-'}】、制造商【${data.manufacturer || '-'}】`, 'success');
+                }
+            } catch (e) {
+                alert('请求大模型服务异常: ' + e.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = origHtml;
+                    btn.style.opacity = '1';
+                }
+            }
+        }
+
+        async function aiExtractBomItem() {
+            const descInput = document.getElementById('bm-desc');
+            const desc = (descInput ? descInput.value : '').trim();
+            if (!desc) {
+                alert('请先输入或粘贴物料描述，然后再点击【大模型智能提取】！');
+                if (descInput) descInput.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-ai-parse-bm');
+            const origHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span>⏳ 大模型推断中...</span>';
+                btn.style.opacity = '0.75';
+            }
+
+            try {
+                const resp = await fetch('/api/materials/ai-parse', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description: desc })
+                });
+                const res = await resp.json();
+                if (!res.success) {
+                    alert('大模型推断失败: ' + (res.error || '未知错误'));
+                    return;
+                }
+
+                const data = res.data || {};
+                const nameInput = document.getElementById('bm-name');
+                if (nameInput && data.name) {
+                    nameInput.value = data.name;
+                    highlightField(nameInput);
+                }
+
+                const modelInput = document.getElementById('bm-model');
+                if (modelInput && data.spec_model) {
+                    modelInput.value = data.spec_model;
+                    highlightField(modelInput);
+                }
+
+                const mfrInput = document.getElementById('bm-mfr');
+                if (mfrInput && data.manufacturer) {
+                    mfrInput.value = data.manufacturer;
+                    highlightField(mfrInput);
+                }
+
+                const costStr = data.cost_seconds ? ` (耗时 ${data.cost_seconds}s)` : '';
+                const engineTag = res.engine === 'local_llm' ? '离线大模型' : '智能引擎';
+                if (typeof showToast === 'function') {
+                    showToast(`✨ ${engineTag}推断成功${costStr}：名称【${data.name || '-'}】、型号【${data.spec_model || '-'}】、制造商【${data.manufacturer || '-'}】`, 'success');
+                }
+            } catch (e) {
+                alert('请求大模型服务异常: ' + e.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = origHtml;
+                    btn.style.opacity = '1';
+                }
+            }
+        }
+
+        window.aiExtractMasterItem = aiExtractMasterItem;
+        window.aiExtractBomItem = aiExtractBomItem;
+        window.highlightField = highlightField;
+
 
 

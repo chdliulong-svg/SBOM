@@ -334,8 +334,8 @@ def execute_master_import(file_path, sheet_name=None, header_row=None, mapping=N
 
         spec_model = str(ws.cell(r, spec_col).value or '').strip() if spec_col else ''
         manufacturer = str(ws.cell(r, mfr_col).value or '').strip() if mfr_col else ''
-        unit = str(ws.cell(r, unit_col).value or '').strip() if unit_col else 'PCS'
-        if not unit: unit = 'PCS'
+        unit = str(ws.cell(r, unit_col).value or '').strip() if unit_col else 'PC'
+        if not unit or unit.upper() == 'PCS': unit = 'PC'
         drawing_no = str(ws.cell(r, dwg_col).value or '').strip() if dwg_col else '/'
         if not drawing_no: drawing_no = '/'
         substitute = str(ws.cell(r, sub_col).value or '').strip() if sub_col else ''

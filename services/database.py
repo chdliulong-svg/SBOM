@@ -53,11 +53,11 @@ def close_db(e=None):
 
 def find_template_path():
     """
-    Locates the SBOM Excel template file in 'Excel 模版' directory.
+    Locates the SBOM Excel template file 'SBOM_模版V2.xlsx' in 'Excel 模版' directory.
     """
     tpl_dir = os.path.join(PROJECT_ROOT, 'Excel 模版')
     if os.path.exists(tpl_dir):
-        primary = os.path.join(tpl_dir, 'SBOM_模版.xlsx')
+        primary = os.path.join(tpl_dir, 'SBOM_模版V2.xlsx')
         if os.path.exists(primary):
             return primary
         for fname in os.listdir(tpl_dir):
@@ -107,7 +107,7 @@ def init_db():
         name TEXT DEFAULT '',
         spec_model TEXT DEFAULT '',
         manufacturer TEXT DEFAULT '',
-        unit TEXT DEFAULT 'PCS',
+        unit TEXT DEFAULT 'PC',
         drawing_no TEXT DEFAULT '/',
         image_path TEXT DEFAULT '',
         manual_path TEXT DEFAULT '',
@@ -128,7 +128,7 @@ def init_db():
         material_no TEXT NOT NULL,
         drawing_no TEXT DEFAULT '/',
         qty TEXT DEFAULT '1',
-        unit TEXT DEFAULT 'PCS',
+        unit TEXT DEFAULT 'PC',
         notes TEXT DEFAULT '',
         substitute TEXT DEFAULT '',
         FOREIGN KEY (subsystem_id) REFERENCES subsystems(id) ON DELETE CASCADE,
@@ -154,6 +154,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER NOT NULL,
         ecn_no TEXT DEFAULT '',
+        change_pos TEXT DEFAULT '',
         change_desc TEXT DEFAULT '',
         changer TEXT DEFAULT '',
         change_date TEXT DEFAULT '',
@@ -171,7 +172,7 @@ def init_db():
         child_level_str TEXT DEFAULT '••',
         sort_order INTEGER DEFAULT 1,
         qty TEXT DEFAULT '1',
-        unit TEXT DEFAULT 'PCS',
+        unit TEXT DEFAULT 'PC',
         drawing_no TEXT DEFAULT '/',
         notes TEXT DEFAULT '',
         substitute TEXT DEFAULT '',
@@ -186,7 +187,7 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bom_items_sub_id ON bom_items(subsystem_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_subsystems_proj_id ON subsystems(project_id)')
 
-    # Migration for projects: add is_locked, locked_by, locked_at columns if not present
+    # Migration for projects: add is_locked, locked_by, locked_at, platform columns if not present
     cursor.execute("PRAGMA table_info(projects)")
     proj_cols = [r['name'] for r in cursor.fetchall()]
     if 'is_locked' not in proj_cols:
@@ -195,6 +196,15 @@ def init_db():
         cursor.execute("ALTER TABLE projects ADD COLUMN locked_by TEXT DEFAULT ''")
     if 'locked_at' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN locked_at TIMESTAMP")
+    if 'platform' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN platform TEXT DEFAULT ''")
+    conn.commit()
+
+    # Migration for ecn_records: add change_pos column if not present
+    cursor.execute("PRAGMA table_info(ecn_records)")
+    ecn_cols = [r['name'] for r in cursor.fetchall()]
+    if 'change_pos' not in ecn_cols:
+        cursor.execute("ALTER TABLE ecn_records ADD COLUMN change_pos TEXT DEFAULT ''")
     conn.commit()
 
     # Migration for materials: add drawing_no column if not present
@@ -243,7 +253,7 @@ def init_db():
                 material_no TEXT NOT NULL,
                 drawing_no TEXT DEFAULT '/',
                 qty TEXT DEFAULT '1',
-                unit TEXT DEFAULT 'PCS',
+                unit TEXT DEFAULT 'PC',
                 notes TEXT DEFAULT '',
                 substitute TEXT DEFAULT '',
                 parent_material_no TEXT DEFAULT '',
@@ -264,6 +274,20 @@ def init_db():
             print("Warning migrating seq_num to TEXT:", e)
     else:
         conn.commit()
+
+    # Automatic V2 migration: if any old dotted seq_num exists, upgrade all to V2 step-10 format
+    cursor.execute("SELECT id FROM bom_items WHERE seq_num LIKE '%.%' LIMIT 1")
+    if cursor.fetchone():
+        try:
+            from blueprints.common import renumber_subsystem
+            cursor.execute("SELECT id FROM subsystems")
+            all_subs = cursor.fetchall()
+            for sub in all_subs:
+                renumber_subsystem(cursor, sub['id'], mode='step10')
+            conn.commit()
+        except Exception as e:
+            print("Warning renumbering subsystems to step-10:", e)
+
     conn.close()
 
 def sync_material_structures(conn):
@@ -290,7 +314,7 @@ def sync_material_structures(conn):
         mat_no = r['material_no']
         dwg = r['drawing_no'] or '/'
         qty = r['qty'] or '1'
-        unit = r['unit'] or 'PCS'
+        unit = r['unit'] or 'PC'
         notes = r['notes'] or ''
         sub = r['substitute'] or ''
         

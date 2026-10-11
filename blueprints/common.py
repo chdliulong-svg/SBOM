@@ -155,11 +155,12 @@ def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None,
                 pass
 
 
-def compute_bom_hierarchy_numbers(items, mode='dotted'):
+def compute_bom_hierarchy_numbers(items, mode='step10'):
     """
     Computes hierarchical sequence numbers (seq_num) and 1-based sequential row numbers.
     items: list of dicts with 'level_num' or 'level_str'.
-    mode: 'dotted' -> '1', '1.1', '1.2', '1.2.1'...
+    mode: 'step10' -> 10, 20, 30... for each hierarchy level (V2 模版规范：每个层级序号从10开始递增)
+          'dotted' -> '1', '1.1', '1.2', '1.2.1'...
           'single' -> '1', '1', '2', '1'...
     """
     parsed_levels = []
@@ -194,7 +195,9 @@ def compute_bom_hierarchy_numbers(items, mode='dotted'):
         counters = counters[:effective_lvl]
         counters[effective_lvl - 1] += 1
 
-        if mode == 'dotted':
+        if mode == 'step10':
+            seq_val = str(counters[effective_lvl - 1] * 10)
+        elif mode == 'dotted':
             seq_val = '.'.join(str(c) for c in counters)
         else:
             seq_val = str(counters[effective_lvl - 1])
@@ -204,11 +207,11 @@ def compute_bom_hierarchy_numbers(items, mode='dotted'):
     return results
 
 
-def renumber_subsystem(cursor, subsystem_id, mode='dotted'):
+def renumber_subsystem(cursor, subsystem_id, mode='step10'):
     """
     Renumbers:
     - row_num sequentially (1, 2, 3...)
-    - seq_num hierarchically by tree depth (1, 1.1, 1.2, 1.2.1...)
+    - seq_num hierarchically by tree depth (V2 模版：每层从10递增: 10, 20, 30...)
     """
     cursor.execute('''
     SELECT id, level_num, level_str, parent_material_no
@@ -226,7 +229,7 @@ def renumber_subsystem(cursor, subsystem_id, mode='dotted'):
                        (row_num, str(seq_num), r['id']))
 
 
-def upsert_material(cursor, material_no, name='', description='', spec_model='', manufacturer='', unit='PCS', drawing_no='', notes='', substitute='', remove_image=False, remove_manual=False):
+def upsert_material(cursor, material_no, name='', description='', spec_model='', manufacturer='', unit='PC', drawing_no='', notes='', substitute='', remove_image=False, remove_manual=False):
     """
     Ensure material exists in materials master table and sync its master metadata.
     If the material is new, it is inserted into the database.
@@ -244,7 +247,7 @@ def upsert_material(cursor, material_no, name='', description='', spec_model='',
         drawing_no = CASE WHEN excluded.drawing_no != '' AND excluded.drawing_no != '/' THEN excluded.drawing_no ELSE materials.drawing_no END,
         notes = CASE WHEN excluded.notes != '' THEN excluded.notes ELSE materials.notes END,
         substitute = CASE WHEN excluded.substitute != '' THEN excluded.substitute ELSE materials.substitute END
-    ''', (material_no, name, description, spec_model, manufacturer, unit or 'PCS', drawing_no or '/', notes, substitute))
+    ''', (material_no, name, description, spec_model, manufacturer, unit or 'PC', drawing_no or '/', notes, substitute))
 
     if remove_image:
         cursor.execute('UPDATE materials SET image_path = "" WHERE material_no = ?', (material_no,))

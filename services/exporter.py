@@ -1,6 +1,7 @@
 import os
 import io
 import zipfile
+from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.drawing.image import Image as OpenpyxlImage
@@ -29,7 +30,7 @@ def ensure_company_logo(tpl_path):
             print("Warning extracting logo:", e)
     return logo_path
 
-def export_project_sbom(project_id, output_path):
+def export_project_sbom(project_id, output_path, embed_manuals=False):
     """
     Exports the project and all its subsystems to a standardized Excel workbook
     strictly preserving the original template's Cover (封面), Signatures & ECN (签字及修改页),
@@ -67,68 +68,86 @@ def export_project_sbom(project_id, output_path):
     link_font = Font(name='微软雅黑', size=9, color='0055CC', underline='single')
 
     # ================= 1. 封面 (Cover) =================
-    # Locate 封面 sheet
-    cover_sheets = [name for name in wb.sheetnames if '封面' in name]
-    if cover_sheets:
-        ws_cover = wb[cover_sheets[0]]
-        # In-place dynamic values strictly retaining original template formatting,
-        # merges (A2:D2, A4:D4, A9:D9, A11:B11), fonts, and logo
-        ws_cover['A2'].value = project['code'] or 'EW6.25-220'
-        ws_cover['A4'].value = project['name'] or '风力发电机组'
-        ws_cover['C6'].value = project['doc_no'] or ''
-        ws_cover['C7'].value = project['ecn_no'] or ''
-        # Ensure ECN No (C7) strictly uses the exact same font (宋体, 16pt) as Document No (C6)
-        c6_font = ws_cover['C6'].font
-        target_name = c6_font.name if (c6_font and c6_font.name) else '宋体'
-        target_size = c6_font.size if (c6_font and c6_font.size) else 16.0
-        ws_cover['C7'].font = Font(name=target_name, size=target_size, bold=False)
-        ws_cover['C8'].value = project['system_name'] or ''
-        ws_cover['A9'].value = project['company'] or '上海电气风电集团股份有限公司'
-        ws_cover['A11'].value = project['form_no'] or '  FDJL-JS-037'
+    # ================= 1. 封面 (Cover) =================
+    cover_sheet_name = '封面' if '封面' in wb.sheetnames else ([s for s in wb.sheetnames if '封面' in s] or ['封面'])[0]
+    ws_cover = wb[cover_sheet_name]
 
-    # ================= 2. 签字及修改页 (Signatures & ECN) =================
-    sig_sheets = [name for name in wb.sheetnames if '签字' in name or '修改' in name]
-    if sig_sheets:
-        ws_sig = wb[sig_sheets[0]]
-        # Clear rows 3 to 32 ECN slots
-        for r in range(3, 33):
-            ws_sig[f'A{r}'].value = None
-            ws_sig[f'E{r}'].value = None
-            ws_sig[f'I{r}'].value = None
-            ws_sig[f'K{r}'].value = None
+    # V2 模版封面布局：
+    # A2: 标题/部套大类（如：风力发电机组）
+    ws_cover['A2'].value = project['name'] or '风力发电机组'
+    # A3: 平台（举例：WL，若无平台则留空）
+    ws_cover['A3'].value = (project['platform'] if 'platform' in project.keys() and project['platform'] else '') or ''
+    # E3: 机型（举例：EW6.25-220。注释说明：平台通用的话，机型不用填）
+    ws_cover['E3'].value = project['code'] or 'EW6.25-220'
+    # A4: 供应商名称+部套名称+SBOM+型号（举例：变桨轴承润滑系统SBOM_40116237600。注释：属于系统集成，没有型号的，型号可以省略）
+    ws_cover['A4'].value = project['system_name'] or f"{project['code']}变桨轴承润滑系统SBOM"
+    # A5: 文件号 (DFD...)
+    ws_cover['A5'].value = project['doc_no'] or ''
+    # E5: ECN 号
+    ws_cover['E5'].value = project['ecn_no'] or ''
+    # A7: 公司名称
+    ws_cover['A7'].value = project['company'] or '上海电气风电集团股份有限公司'
+    # Row 8: 年 / 月 (C8=年, E8=月)
+    now = datetime.now()
+    ws_cover['C8'].value = now.year
+    ws_cover['E8'].value = now.month
+    # A11: 表单编号
+    ws_cover['A11'].value = project['form_no'] or '  FDJL-JS-037'
 
-        # Fetch and write ECN records
-        cursor.execute('SELECT * FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
-        ecn_list = cursor.fetchall()
-        for i, ecn in enumerate(ecn_list):
-            r = 3 + i
-            if r <= 32:
-                ws_sig[f'A{r}'].value = ecn['ecn_no']
-                ws_sig[f'E{r}'].value = ecn['change_desc']
-                ws_sig[f'I{r}'].value = ecn['changer']
-                ws_sig[f'K{r}'].value = ecn['change_date']
-
-        # Fetch and write Signatures into designated cells (rows 33 to 35)
-        # Row 33: 编制 (C33=签字, D33=日期)
-        # Row 34: 校核 (C34=签字, D34=日期)
-        # Row 35: 审定 (C35=签字, D35=日期)
-        # Note: F33 has formula =封面!C8, J33 has formula =封面!C6, all intact!
+    # ================= 2. 签字页 (Signatures) =================
+    if '签字页' in wb.sheetnames:
+        ws_sig = wb['签字页']
+        # Note: A3 包含公式 =封面!A4（注释：直接引用封面文件名），J1 包含公式 =封面!A5，保持不变
         cursor.execute('SELECT * FROM signatures WHERE project_id = ?', (project_id,))
         sigs = {s['role']: (s['sign_name'], s['sign_date']) for s in cursor.fetchall()}
 
-        ws_sig['C33'].value = sigs.get('编制', ('', ''))[0]
-        ws_sig['D33'].value = sigs.get('编制', ('', ''))[1]
-        ws_sig['C34'].value = sigs.get('校核', ('', ''))[0]
-        ws_sig['D34'].value = sigs.get('校核', ('', ''))[1]
-        ws_sig['C35'].value = sigs.get('审定', ('', ''))[0]
-        ws_sig['D35'].value = sigs.get('审定', ('', ''))[1]
+        # 模版行号：编制(11), 校对/校核(14), 审核(17), 会签(20), 标审(23), 审定(26)
+        role_map = [
+            (['编制'], 11),
+            (['校对', '校核'], 14),
+            (['审核'], 17),
+            (['会签'], 20),
+            (['标审'], 23),
+            (['审定'], 26),
+        ]
+        for role_aliases, r in role_map:
+            name_val, date_val = '', ''
+            for r_alias in role_aliases:
+                if r_alias in sigs:
+                    name_val, date_val = sigs[r_alias]
+                    break
+            ws_sig[f'F{r}'].value = name_val or None
+            ws_sig[f'I{r}'].value = date_val or None
 
-    # ================= 3. BOM Subsystem Sheets =================
+    # ================= 3. 更改页 (ECN Records) =================
+    if '更改页' in wb.sheetnames:
+        ws_change = wb['更改页']
+        # Note: A3 包含公式 =封面!A4（注释：直接引用封面文件名），L1 包含公式 =封面!A5，保持不变
+        # 清空模版占位行 (第8至32行)
+        for r in range(8, 33):
+            ws_change[f'B{r}'].value = None
+            ws_change[f'F{r}'].value = None
+            ws_change[f'H{r}'].value = None
+            ws_change[f'K{r}'].value = None
+            ws_change[f'M{r}'].value = None
+
+        cursor.execute('SELECT * FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
+        ecn_list = cursor.fetchall()
+        for i, ecn in enumerate(ecn_list):
+            r = 8 + i
+            if r <= 32:
+                ws_change[f'B{r}'].value = ecn['ecn_no']
+                ws_change[f'F{r}'].value = ecn['change_pos'] if 'change_pos' in ecn.keys() else ''
+                ws_change[f'H{r}'].value = ecn['change_desc']
+                ws_change[f'K{r}'].value = ecn['changer']
+                ws_change[f'M{r}'].value = ecn['change_date']
+
+    # ================= 4. BOM Subsystem Sheets =================
     cursor.execute('SELECT * FROM subsystems WHERE project_id = ? ORDER BY sort_order, id', (project_id,))
     subsystems = cursor.fetchall()
 
     # Identify prototype BOM template sheet (e.g. 盘古SBOM or first BOM sheet)
-    proto_candidates = [name for name in wb.sheetnames if name not in cover_sheets and name not in sig_sheets]
+    proto_candidates = [name for name in wb.sheetnames if name not in ['封面', '签字页', '更改页']]
     proto_sheet = wb[proto_candidates[0]] if proto_candidates else None
 
     # Track sheet names in this export
@@ -240,9 +259,9 @@ def export_project_sbom(project_id, output_path):
 
             row_data = [
                 ('A', item['row_num'], tnr_font, Alignment(horizontal='center', vertical='center')),
-                ('B', level_str_val, level_font, Alignment(horizontal='right', vertical='center')),
+                ('B', f'=REPT("•",C{r})', level_font, Alignment(horizontal='right', vertical='center')),
                 ('C', level_num_val, level_font, Alignment(horizontal='left', vertical='center')),
-                ('D', item['seq_num'] or item['row_num'], tnr_font, Alignment(horizontal='center', vertical='center')),
+                ('D', item['seq_num'] or (item['row_num'] * 10), tnr_font, Alignment(horizontal='center', vertical='center')),
                 ('E', item['material_no'], tnr_font, Alignment(horizontal='center', vertical='center')),
                 ('F', item['m_desc'] or '', song_font, Alignment(horizontal='center', vertical='center', wrap_text=True)),
                 ('G', item['m_name'] or '', song_font, Alignment(horizontal='center', vertical='center', wrap_text=True)),
@@ -250,7 +269,7 @@ def export_project_sbom(project_id, output_path):
                 ('I', item['m_model'] or '', song_font, Alignment(horizontal='center', vertical='center', wrap_text=True)),
                 ('J', item['m_mfr'] or '', song_font, Alignment(horizontal='center', vertical='center', wrap_text=True)),
                 ('K', item['qty'], song_font, Alignment(horizontal='center', vertical='center')),
-                ('L', item['unit'] or item['m_unit'] or 'PCS', tnr_font, Alignment(horizontal='center', vertical='center')),
+                ('L', item['unit'] or item['m_unit'] or 'PC', tnr_font, Alignment(horizontal='center', vertical='center')),
                 ('M', '', tnr_font, Alignment(horizontal='center', vertical='center')),
                 ('N', '', tnr_font, Alignment(horizontal='center', vertical='center')),
                 ('O', item['notes'] or '', song_font, Alignment(horizontal='center', vertical='center', wrap_text=True)),
@@ -267,9 +286,9 @@ def export_project_sbom(project_id, output_path):
                     cell.fill = dup_mat_fill
                     cell.font = dup_mat_font
 
-            # Column M: Manual Link / Info
+            # Column M: Manual Link / Info (Hyperlink mode)
             manual_path = item['manual_path']
-            if manual_path:
+            if manual_path and not embed_manuals:
                 full_m_path = os.path.join(BASE_DIR, manual_path)
                 if os.path.exists(full_m_path):
                     m_cell = ws[f'M{r}']
@@ -334,24 +353,16 @@ def export_project_sbom(project_id, output_path):
                         print(f"Warning: failed to add image for {item['material_no']}: {e}")
 
 
-    # ================= 4. Cleanup and Reorder Sheets =================
+    # ================= 4. Cleanup and Reorder Sheets (Strictly V2) =================
     # Remove any extra template sample BOM sheets that are not in the current project's subsystems
-    keep_sheets = set(cover_sheets + sig_sheets + exported_sub_sheets)
+    standard_sheets = ['封面', '签字页', '更改页']
+    keep_sheets = set(standard_sheets + exported_sub_sheets)
     sheets_to_remove = [name for name in wb.sheetnames if name not in keep_sheets]
     for sname in sheets_to_remove:
         wb.remove(wb[sname])
 
-    # Ensure precise ordering: 封面 -> 签字及修改页 -> 各子系统
-    desired_order = []
-    for s in cover_sheets:
-        if s in wb.sheetnames and s not in desired_order:
-            desired_order.append(s)
-    for s in sig_sheets:
-        if s in wb.sheetnames and s not in desired_order:
-            desired_order.append(s)
-    for s in exported_sub_sheets:
-        if s in wb.sheetnames and s not in desired_order:
-            desired_order.append(s)
+    # Ensure precise ordering: 封面 -> 签字页 -> 更改页 -> 各子系统
+    desired_order = [s for s in standard_sheets if s in wb.sheetnames] + [s for s in exported_sub_sheets if s in wb.sheetnames]
     for s in wb.sheetnames:
         if s not in desired_order:
             desired_order.append(s)
@@ -362,7 +373,178 @@ def export_project_sbom(project_id, output_path):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     wb.save(output_path)
     print(f"Exported successfully to: {output_path}")
+
+    if embed_manuals:
+        embed_manuals_into_excel(output_path, project_id)
+
     return output_path
+
+
+def get_pdf_icon():
+    """
+    获取系统中真实的 PDF 专用图标文件及图标索引。
+    1. 优先使用本地内置的高清红标 PDF 专用图标 assets/pdf_icon.ico
+    2. 其次查询 Windows 注册表当前默认关联的 PDF 应用程序官方文档图标
+    3. 常见 Foxit / Adobe Acrobat 安装路径兜底
+    """
+    local_ico = os.path.join(BASE_DIR, 'assets', 'pdf_icon.ico')
+    if os.path.exists(local_ico):
+        return local_ico, 0
+
+    try:
+        import winreg
+        for subkey in [r'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\UserChoice', r'.pdf']:
+            try:
+                root = winreg.HKEY_CURRENT_USER if 'UserChoice' in subkey else winreg.HKEY_CLASSES_ROOT
+                with winreg.OpenKey(root, subkey) as k:
+                    prog_id = winreg.QueryValueEx(k, 'ProgId' if 'UserChoice' in subkey else '')[0]
+                    if prog_id:
+                        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, rf'{prog_id}\DefaultIcon') as ik:
+                            raw_val = winreg.QueryValueEx(ik, '')[0].strip().strip('"')
+                            parts = raw_val.split(',')
+                            path = parts[0].strip().strip('"')
+                            idx = int(parts[1].strip()) if len(parts) > 1 else 0
+                            if os.path.exists(path):
+                                return path, idx
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    candidates = [
+        (r'C:\Program Files (x86)\Foxit Software\Foxit PDF Editor\FoxitPDFEditor.exe', 1),
+        (r'C:\Program Files\Foxit Software\Foxit PDF Editor\FoxitPDFEditor.exe', 1),
+        (r'C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe', 1),
+        (r'C:\Program Files (x86)\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe', 0),
+    ]
+    for p, idx in candidates:
+        if os.path.exists(p):
+            return p, idx
+
+    return r'C:\Windows\System32\packager.dll', 0
+
+
+def embed_manuals_into_excel(excel_path, project_id):
+    """
+    通过 Windows Excel COM 自动化将零部件关联的 PDF 技术手册以 OLE 对象直接嵌入到 Excel 表格 M 列中。
+    嵌入后，Excel 成为自包含独立文件，接收者双击单元格内 PDF 图标即可直接打开查看手册。
+    """
+    abs_excel_path = os.path.abspath(excel_path)
+    if not os.path.exists(abs_excel_path):
+        raise FileNotFoundError(f"Excel 文件不存在: {abs_excel_path}")
+
+    # 查询该项目中所有挂载了有效手册的子系统物料
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT s.name as sheet_name, b.row_num, m.material_no, m.name as mat_name, m.manual_path
+        FROM bom_items b
+        JOIN subsystems s ON b.subsystem_id = s.id
+        LEFT JOIN materials m ON b.material_no = m.material_no
+        WHERE s.project_id = ? AND m.manual_path IS NOT NULL AND m.manual_path != ''
+        ORDER BY s.sort_order, s.id, b.row_num
+    ''', (project_id,))
+    manual_rows = cursor.fetchall()
+    conn.close()
+
+    if not manual_rows:
+        return abs_excel_path
+
+    import gc
+    try:
+        import comtypes.client
+    except ImportError:
+        raise RuntimeError("系统未安装 comtypes 库，无法执行 Excel OLE 对象嵌入。")
+
+    icon_file, icon_index = get_pdf_icon()
+    print(f"Using PDF icon: {icon_file}, index: {icon_index}")
+
+    excel = None
+    wb = None
+    try:
+        excel = comtypes.client.CreateObject('Excel.Application')
+        excel.Visible = False
+        excel.DisplayAlerts = False
+
+        wb = excel.Workbooks.Open(abs_excel_path)
+        embedded_count = 0
+
+        for row in manual_rows:
+            sheet_name = row['sheet_name']
+            row_idx = 4 + (row['row_num'] - 1)
+            m_path = row['manual_path']
+            full_m_path = os.path.abspath(m_path)
+            if not os.path.exists(full_m_path):
+                continue
+
+            try:
+                ws = wb.Sheets(sheet_name)
+            except Exception:
+                continue
+
+            cell = ws.Range(f'M{row_idx}')
+            cell.ClearContents()
+
+            lbl = os.path.basename(m_path)
+            if len(lbl) > 22:
+                lbl = lbl[:20] + '..'
+
+            try:
+                # OLEObjects.Add(ClassType, Filename, Link, DisplayAsIcon, IconFileName, IconIndex, IconLabel, Left, Top, Width, Height)
+                ole = ws.OLEObjects().Add(
+                    None,
+                    full_m_path,
+                    False,  # Link = False (真正嵌入为内部二进制数据包)
+                    True,   # DisplayAsIcon = True
+                    icon_file,
+                    icon_index,
+                    lbl,
+                    float(cell.Left),
+                    float(cell.Top),
+                    60,
+                    45
+                )
+
+                # 精确计算水平和垂直居中位置，放置在单元格正中间
+                ole_w = float(ole.Width)
+                ole_h = float(ole.Height)
+                ole.Left = float(cell.Left) + max(0.0, (float(cell.Width) - ole_w) / 2.0)
+                ole.Top = float(cell.Top) + max(0.0, (float(cell.Height) - ole_h) / 2.0)
+                ole.Placement = 2  # xlMove: 单元格变动或增删行时位置随单元格移动且不失真变形
+                embedded_count += 1
+            except Exception as e:
+                print(f"Warning: 嵌入手册 {lbl} 失败: {e}")
+
+        # 使用 SaveAs 51 (xlOpenXMLWorkbook) 保存，确保 OLE 复合二进制流完整写入
+        temp_saved_path = abs_excel_path + '.embedded.xlsx'
+        if os.path.exists(temp_saved_path):
+            try: os.remove(temp_saved_path)
+            except: pass
+        wb.SaveAs(temp_saved_path, 51)
+        wb.Close(False)
+        wb = None
+        excel.Quit()
+        excel = None
+        gc.collect()
+
+        # 替换原文件
+        if os.path.exists(temp_saved_path):
+            if os.path.exists(abs_excel_path):
+                os.remove(abs_excel_path)
+            os.rename(temp_saved_path, abs_excel_path)
+
+        print(f"成功将 {embedded_count} 份技术手册嵌入至 Excel: {abs_excel_path}")
+        return abs_excel_path
+    except Exception as e:
+        if wb:
+            try: wb.Close(False)
+            except: pass
+        if excel:
+            try: excel.Quit()
+            except: pass
+        gc.collect()
+        raise RuntimeError(f"Excel 文档嵌入处理失败: {str(e)}")
+
 
 if __name__ == '__main__':
     test_out = os.path.join(BASE_DIR, 'exports', 'test_export_sbom.xlsx')

@@ -342,7 +342,7 @@ def build_offline_html(project_info, materials_summary, items_list):
                         <td>${{escapeHtml(it.m_mfr || '-')}}</td>
                         <td style="color: #64748b;">${{escapeHtml(it.drawing_no || '/')}}</td>
                         <td style="text-align: center; font-weight: 600;">${{escapeHtml(it.qty || '1')}}</td>
-                        <td style="text-align: center; color: #64748b;">${{escapeHtml(it.unit || 'PCS')}}</td>
+                        <td style="text-align: center; color: #64748b;">${{escapeHtml(it.unit || 'PC')}}</td>
                         <td>${{attachHtml}}</td>
                         <td style="color: #64748b; font-size: 11px;">${{escapeHtml(it.notes || '')}}</td>
                     </tr>`;
@@ -478,7 +478,7 @@ def generate_offline_package(project_id):
             'm_mfr': it.get('m_mfr') or '',
             'drawing_no': it.get('drawing_no') or '/',
             'qty': it.get('qty') or '1',
-            'unit': it.get('unit') or 'PCS',
+            'unit': it.get('unit') or 'PC',
             'notes': it.get('notes') or '',
             'photo_rel': photo_rel,
             'manual_rel': manual_rel

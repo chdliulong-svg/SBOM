@@ -75,6 +75,7 @@
                     
                     // Fill cover form
                     document.getElementById('cov-code').value = data.code || '';
+                    if (document.getElementById('cov-platform')) document.getElementById('cov-platform').value = data.platform || '';
                     document.getElementById('cov-name').value = data.name || '风力发电机组';
                     document.getElementById('cov-system').value = data.system_name || '';
                     document.getElementById('cov-doc').value = data.doc_no || '';
@@ -212,7 +213,7 @@
             }
 
             // Cover Form inputs and save button
-            ['cov-code', 'cov-name', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
+            ['cov-code', 'cov-platform', 'cov-name', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.disabled = isLocked;
             });
@@ -459,6 +460,7 @@
             try {
                 // 1. 提取当前封面表单最新值（若页面未显示该元素则回退为缓存数据）
                 const codeEl = document.getElementById('cov-code');
+                const platformEl = document.getElementById('cov-platform');
                 const nameEl = document.getElementById('cov-name');
                 const systemEl = document.getElementById('cov-system');
                 const docEl = document.getElementById('cov-doc');
@@ -469,6 +471,7 @@
                 const payload = {
                     id: currentProjectId,
                     code: (codeEl && codeEl.value.trim()) ? codeEl.value.trim() : (currentProjectData.code || ''),
+                    platform: (platformEl && platformEl.value.trim()) ? platformEl.value.trim() : (currentProjectData.platform || ''),
                     name: (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : (currentProjectData.name || '风力发电机组'),
                     system_name: (systemEl && systemEl.value.trim()) ? systemEl.value.trim() : (currentProjectData.system_name || ''),
                     doc_no: (codeEl && docEl) ? docEl.value.trim() : (currentProjectData.doc_no || ''),
@@ -488,25 +491,17 @@
                     return;
                 }
 
-                // 2. 如果页面有签字字段，同步保存签字
+                // 2. 如果页面有签字字段，同步保存 6 级签字
                 const sigAuthor = document.getElementById('sig-author-name');
                 if (sigAuthor) {
+                    const getSigVal = (id) => (document.getElementById(id) ? document.getElementById(id).value.trim() : '');
                     const signatures = [
-                        {
-                            role: '编制',
-                            sign_name: (document.getElementById('sig-author-name')?.value || '').trim(),
-                            sign_date: (document.getElementById('sig-author-date')?.value || '').trim()
-                        },
-                        {
-                            role: '校核',
-                            sign_name: (document.getElementById('sig-reviewer-name')?.value || '').trim(),
-                            sign_date: (document.getElementById('sig-reviewer-date')?.value || '').trim()
-                        },
-                        {
-                            role: '审定',
-                            sign_name: (document.getElementById('sig-approver-name')?.value || '').trim(),
-                            sign_date: (document.getElementById('sig-approver-date')?.value || '').trim()
-                        }
+                        { role: '编制', sign_name: getSigVal('sig-author-name'), sign_date: getSigVal('sig-author-date') },
+                        { role: '校对', sign_name: getSigVal('sig-reviewer-name'), sign_date: getSigVal('sig-reviewer-date') },
+                        { role: '审核', sign_name: getSigVal('sig-checker-name'), sign_date: getSigVal('sig-checker-date') },
+                        { role: '会签', sign_name: getSigVal('sig-countersign-name'), sign_date: getSigVal('sig-countersign-date') },
+                        { role: '标审', sign_name: getSigVal('sig-standard-name'), sign_date: getSigVal('sig-standard-date') },
+                        { role: '审定', sign_name: getSigVal('sig-approver-name'), sign_date: getSigVal('sig-approver-date') }
                     ];
                     try {
                         await safeFetchJson(`/api/project/${currentProjectId}/signatures/save`, {
@@ -558,30 +553,36 @@
             const sigList = currentProjectData.signatures || [];
             const isLocked = currentProjectData.is_locked == 1;
 
-            // 1. Render Signatures
+            // 1. Render Signatures (6 roles for V2 签字页)
             const sigMap = {};
             sigList.forEach(s => {
                 if (s.role) sigMap[s.role] = s;
             });
             const author = sigMap['编制'] || {};
-            const reviewer = sigMap['校核'] || {};
+            const reviewer = sigMap['校对'] || sigMap['校核'] || {};
+            const checker = sigMap['审核'] || {};
+            const countersign = sigMap['会签'] || {};
+            const standard = sigMap['标审'] || {};
             const approver = sigMap['审定'] || {};
 
-            const elAuthorName = document.getElementById('sig-author-name');
-            const elAuthorDate = document.getElementById('sig-author-date');
-            const elReviewerName = document.getElementById('sig-reviewer-name');
-            const elReviewerDate = document.getElementById('sig-reviewer-date');
-            const elApproverName = document.getElementById('sig-approver-name');
-            const elApproverDate = document.getElementById('sig-approver-date');
+            const setSigVal = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.value = val || '';
+            };
+            setSigVal('sig-author-name', author.sign_name);
+            setSigVal('sig-author-date', author.sign_date);
+            setSigVal('sig-reviewer-name', reviewer.sign_name);
+            setSigVal('sig-reviewer-date', reviewer.sign_date);
+            setSigVal('sig-checker-name', checker.sign_name);
+            setSigVal('sig-checker-date', checker.sign_date);
+            setSigVal('sig-countersign-name', countersign.sign_name);
+            setSigVal('sig-countersign-date', countersign.sign_date);
+            setSigVal('sig-standard-name', standard.sign_name);
+            setSigVal('sig-standard-date', standard.sign_date);
+            setSigVal('sig-approver-name', approver.sign_name);
+            setSigVal('sig-approver-date', approver.sign_date);
 
-            if (elAuthorName) elAuthorName.value = author.sign_name || '';
-            if (elAuthorDate) elAuthorDate.value = author.sign_date || '';
-            if (elReviewerName) elReviewerName.value = reviewer.sign_name || '';
-            if (elReviewerDate) elReviewerDate.value = reviewer.sign_date || '';
-            if (elApproverName) elApproverName.value = approver.sign_name || '';
-            if (elApproverDate) elApproverDate.value = approver.sign_date || '';
-
-            // 2. Render ECN Records Table
+            // 2. Render ECN Records Table (7 columns for V2 更改页)
             const tbody = document.getElementById('ecnTableBody');
             if (!tbody) return;
 
@@ -589,7 +590,7 @@
             if (ecnList.length === 0) {
                 html += `
                     <tr>
-                        <td colspan="6" style="text-align: center; padding: 36px 12px; color: #94a3b8; font-size: 13px;">
+                        <td colspan="7" style="text-align: center; padding: 36px 12px; color: #94a3b8; font-size: 13px;">
                             <div style="font-size: 26px; margin-bottom: 6px;">📋</div>
                             暂无工程变更修改记录。<br>
                             ${isLocked ? '<span style="color: #ef4444; font-size: 12px; margin-top: 4px; display: inline-block;">当前工程处于锁定保护状态，如需添加请先在顶部点击【已锁定】进行解锁</span>' : '<span style="color: #2563eb; font-size: 12px; cursor: pointer; text-decoration: underline; margin-top: 4px; display: inline-block;" onclick="openAddEcnModal()">➕ 点击添加第一条修改记录</span>'}
@@ -600,6 +601,7 @@
                 ecnList.forEach((ecn, idx) => {
                     const rowNo = idx + 1;
                     const ecnNoSafe = escapeHtml(ecn.ecn_no || '');
+                    const changePosSafe = escapeHtml(ecn.change_pos || '');
                     const descSafe = escapeHtml(ecn.change_desc || '');
                     const changerSafe = escapeHtml(ecn.changer || '');
                     const dateSafe = escapeHtml(ecn.change_date || '');
@@ -612,6 +614,7 @@
                                     ${ecnNoSafe || '—'}
                                 </span>
                             </td>
+                            <td style="padding: 12px 10px; color: #475569; font-weight: 500; border-right: 1px solid #e2e8f0;">${changePosSafe || '—'}</td>
                             <td style="padding: 12px 14px; color: #334155; line-height: 1.6; white-space: pre-wrap; word-break: break-word; border-right: 1px solid #e2e8f0;">${descSafe || '—'}</td>
                             <td style="padding: 12px 10px; color: #475569; font-weight: 500; border-right: 1px solid #e2e8f0;">${changerSafe || '—'}</td>
                             <td style="padding: 12px 10px; color: #64748b; border-right: 1px solid #e2e8f0; font-family: monospace;">${dateSafe || '—'}</td>
@@ -632,7 +635,7 @@
                 if (!isLocked) {
                     html += `
                         <tr style="background: #fafafa; border-top: 1px dashed #cbd5e1; cursor: pointer;" onclick="openAddEcnModal()" title="点击在此追加填入下一行修改记录">
-                            <td colspan="6" style="text-align: center; padding: 10px; color: #2563eb; font-size: 13px; font-weight: 500;">
+                            <td colspan="7" style="text-align: center; padding: 10px; color: #2563eb; font-size: 13px; font-weight: 500;">
                                 ➕ 点击在此添加下一行修改记录...
                             </td>
                         </tr>
@@ -657,6 +660,7 @@
 
             const projEcn = (currentProjectData && currentProjectData.ecn_no) || '';
             document.getElementById('ecnModalEcnNo').value = projEcn;
+            document.getElementById('ecnModalChangePos').value = '';
 
             let defaultChanger = '';
             if (currentProjectData && currentProjectData.ecn_records && currentProjectData.ecn_records.length > 0) {
@@ -690,6 +694,7 @@
             document.getElementById('ecnModalTitle').textContent = '✏️ 编辑修改记录';
             document.getElementById('ecnModalRecordId').value = record.id;
             document.getElementById('ecnModalEcnNo').value = record.ecn_no || '';
+            document.getElementById('ecnModalChangePos').value = record.change_pos || '';
             document.getElementById('ecnModalChanger').value = record.changer || '';
             document.getElementById('ecnModalChangeDate').value = record.change_date || '';
             document.getElementById('ecnModalChangeDesc').value = record.change_desc || '';
@@ -705,6 +710,7 @@
             if (!currentProjectId) return;
             const recordId = document.getElementById('ecnModalRecordId').value;
             const ecnNo = document.getElementById('ecnModalEcnNo').value.trim();
+            const changePos = (document.getElementById('ecnModalChangePos').value || '').trim();
             const changer = document.getElementById('ecnModalChanger').value.trim();
             const changeDate = document.getElementById('ecnModalChangeDate').value.trim();
             const changeDesc = document.getElementById('ecnModalChangeDesc').value.trim();
@@ -716,6 +722,7 @@
 
             const payload = {
                 ecn_no: ecnNo,
+                change_pos: changePos,
                 changer: changer,
                 change_date: changeDate,
                 change_desc: changeDesc
@@ -798,22 +805,15 @@
                 return;
             }
 
+            const getSigVal = (id) => (document.getElementById(id) ? document.getElementById(id).value.trim() : '');
+
             const signatures = [
-                {
-                    role: '编制',
-                    sign_name: (document.getElementById('sig-author-name').value || '').trim(),
-                    sign_date: (document.getElementById('sig-author-date').value || '').trim()
-                },
-                {
-                    role: '校核',
-                    sign_name: (document.getElementById('sig-reviewer-name').value || '').trim(),
-                    sign_date: (document.getElementById('sig-reviewer-date').value || '').trim()
-                },
-                {
-                    role: '审定',
-                    sign_name: (document.getElementById('sig-approver-name').value || '').trim(),
-                    sign_date: (document.getElementById('sig-approver-date').value || '').trim()
-                }
+                { role: '编制', sign_name: getSigVal('sig-author-name'), sign_date: getSigVal('sig-author-date') },
+                { role: '校对', sign_name: getSigVal('sig-reviewer-name'), sign_date: getSigVal('sig-reviewer-date') },
+                { role: '审核', sign_name: getSigVal('sig-checker-name'), sign_date: getSigVal('sig-checker-date') },
+                { role: '会签', sign_name: getSigVal('sig-countersign-name'), sign_date: getSigVal('sig-countersign-date') },
+                { role: '标审', sign_name: getSigVal('sig-standard-name'), sign_date: getSigVal('sig-standard-date') },
+                { role: '审定', sign_name: getSigVal('sig-approver-name'), sign_date: getSigVal('sig-approver-date') }
             ];
 
             const btnSave = document.getElementById('btnSaveSignatures');
@@ -871,21 +871,115 @@
                 });
         }
 
-        // --- Export Excel ---
-        function exportCurrentProject() {
-            if (!currentProjectId) return;
-            window.location.href = `/api/export/${currentProjectId}`;
-        }
+        // --- Export Deliverables Options (Option 1 vs Option 2) ---
+        let currentSelectedExportOption = 1;
 
-        // --- Export Offline Field Maintenance Package (.zip) ---
-        function exportOfflinePackage() {
+        function exportCurrentProject() {
             if (!currentProjectId) {
-                alert('请先选择或载入工程项目！');
+                showToast('请先选择或载入工程项目！', 'warning');
                 return;
             }
-            showToast('正在生成并打包整机离线运维资料包（包含SBOM、实物图库、技术PDF与免安装速查网页）...', 'info');
+            // Populate project title in modal
+            const nameEl = document.getElementById('export-modal-project-name');
+            if (nameEl) {
+                let projTitle = '当前工程项目';
+                if (currentProjectData) {
+                    projTitle = [currentProjectData.platform, currentProjectData.code, currentProjectData.system_name || currentProjectData.name]
+                        .filter(Boolean)
+                        .join(' - ');
+                }
+                nameEl.textContent = projTitle || `项目 #${currentProjectId}`;
+            }
+            selectExportOption(1);
+            openModal('exportOptionModal');
+        }
+
+        function selectExportOption(opt) {
+            currentSelectedExportOption = opt;
+            const card1 = document.getElementById('exportCardOption1');
+            const card2 = document.getElementById('exportCardOption2');
+            const radio1 = document.getElementById('exportRadioOption1');
+            const radio2 = document.getElementById('exportRadioOption2');
+            const textLabel = document.getElementById('selectedExportOptionText');
+
+            if (opt === 1 || opt === 'link') {
+                currentSelectedExportOption = 1;
+                if (radio1) radio1.checked = true;
+                if (card1) {
+                    card1.style.border = '2px solid #2563eb';
+                    card1.style.background = '#eff6ff';
+                }
+                if (card2) {
+                    card2.style.border = '1px solid #cbd5e1';
+                    card2.style.background = '#ffffff';
+                }
+                if (textLabel) {
+                    textLabel.textContent = '选项 1 (超链接模式)';
+                    textLabel.style.color = '#1e3a8a';
+                }
+            } else {
+                currentSelectedExportOption = 2;
+                if (radio2) radio2.checked = true;
+                if (card1) {
+                    card1.style.border = '1px solid #cbd5e1';
+                    card1.style.background = '#ffffff';
+                }
+                if (card2) {
+                    card2.style.border = '2px solid #7c3aed';
+                    card2.style.background = '#f5f3ff';
+                }
+                if (textLabel) {
+                    textLabel.textContent = '选项 2 (文档嵌入模式)';
+                    textLabel.style.color = '#6d28d9';
+                }
+            }
+        }
+
+        function executeSelectedExportOption() {
+            confirmExportOption(currentSelectedExportOption);
+        }
+
+        function confirmExportOption(opt) {
+            if (!currentProjectId) {
+                showToast('请先选择或载入工程项目！', 'warning');
+                return;
+            }
+            closeModal('exportOptionModal');
+            if (opt === 1 || opt === 'link') {
+                showToast('正在导出超链接版 Excel 表格 (.xlsx)...', 'info');
+                window.location.href = `/api/export/${currentProjectId}?mode=link`;
+            } else {
+                showToast('正在通过 Excel 引擎将 PDF 技术手册原件嵌入表格，请稍候...', 'info');
+                window.location.href = `/api/export/${currentProjectId}?mode=embed`;
+            }
+        }
+
+        // --- Export Offline Field Maintenance Package (.zip) directly ---
+        function exportOfflinePackage() {
+            if (!currentProjectId) {
+                showToast('请先选择或载入工程项目！', 'warning');
+                return;
+            }
+            showToast('正在打包整机离线运维资料包（包含SBOM、实物图库、技术PDF与免安装速查网页）...', 'info');
             window.location.href = `/api/project/${currentProjectId}/export_offline_package`;
         }
+
+        // Shortcut listener for export option modal (1, 2, Enter)
+        document.addEventListener('keydown', function(e) {
+            const modal = document.getElementById('exportOptionModal');
+            if (!modal || !modal.classList.contains('show')) return;
+
+            if (e.key === '1') {
+                e.preventDefault();
+                selectExportOption(1);
+            } else if (e.key === '2') {
+                e.preventDefault();
+                selectExportOption(2);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                executeSelectedExportOption();
+            }
+        });
 
         let isRenameProjSystemManual = false;
 

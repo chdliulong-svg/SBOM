@@ -132,7 +132,7 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                     group[mat_key] = {
                         'material_no': mat_no,
                         'total_qty': 0.0,
-                        'unit': (it['unit'] or it['m_unit'] or 'PCS').strip(),
+                        'unit': (it['unit'] or it['m_unit'] or 'PC').strip(),
                         'level_num': it['level_num'] or 2,
                         'level_str': it['level_str'] or '••',
                         'drawing_no': (it['drawing_no'] or it['m_dwg'] or '/').strip(),
@@ -757,7 +757,7 @@ def generate_procurement_excel(res):
                 'qty_b': ib.get('total_qty_str', '0'),
                 'inc_qty_num': q_diff,
                 'inc_qty_str': format_qty_display(q_diff),
-                'unit': ib.get('unit') or 'PCS',
+                'unit': ib.get('unit') or 'PC',
                 'drawing_no': ib.get('drawing_no') or '/',
                 'subsystems': ", ".join(ib.get('subsystems', [])) if ib.get('subsystems') else '-',
                 'substitute': ib.get('substitute') or '-',
@@ -774,7 +774,7 @@ def generate_procurement_excel(res):
                 'qty_b': ib.get('total_qty_str', '0'),
                 'inc_qty_num': q_diff,
                 'inc_qty_str': format_qty_display(q_diff),
-                'unit': ib.get('unit') or ia.get('unit') or 'PCS',
+                'unit': ib.get('unit') or ia.get('unit') or 'PC',
                 'drawing_no': ib.get('drawing_no') or ia.get('drawing_no') or '/',
                 'subsystems': ", ".join(ib.get('subsystems', [])) if ib.get('subsystems') else ia.get('subsystems', '-'),
                 'substitute': ib.get('substitute') or ia.get('substitute') or '-',
@@ -994,7 +994,7 @@ def generate_ecn_change_description(res):
             subs = ", ".join(ib.get('subsystems', [])) if ib.get('subsystems') else '-'
             md_lines.append(
                 f"| {idx} | `{it['material_no']}` | {it['name'] or '-'} | {it['spec_model'] or '-'} | "
-                f"{it['manufacturer'] or '-'} | **{ib.get('total_qty_str', '1')}** | {ib.get('unit', 'PCS')} | {subs} | {ib.get('drawing_no') or '/'} |"
+                f"{it['manufacturer'] or '-'} | **{ib.get('total_qty_str', '1')}** | {ib.get('unit', 'PC')} | {subs} | {ib.get('drawing_no') or '/'} |"
             )
         md_lines.append("")
 
@@ -1010,7 +1010,7 @@ def generate_ecn_change_description(res):
             subs = ", ".join(ia.get('subsystems', [])) if ia.get('subsystems') else '-'
             md_lines.append(
                 f"| {idx} | `{it['material_no']}` | {it['name'] or '-'} | {it['spec_model'] or '-'} | "
-                f"{it['manufacturer'] or '-'} | **{ia.get('total_qty_str', '1')}** | {ia.get('unit', 'PCS')} | {subs} | {ia.get('drawing_no') or '/'} |"
+                f"{it['manufacturer'] or '-'} | **{ia.get('total_qty_str', '1')}** | {ia.get('unit', 'PC')} | {subs} | {ia.get('drawing_no') or '/'} |"
             )
         md_lines.append("")
 

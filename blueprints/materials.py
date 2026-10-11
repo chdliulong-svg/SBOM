@@ -149,7 +149,7 @@ def save_material():
     description = data.get('description', '').strip()
     spec_model = data.get('spec_model', '').strip()
     manufacturer = data.get('manufacturer', '').strip()
-    unit = data.get('unit', 'PCS').strip() or 'PCS'
+    unit = data.get('unit', 'PC').strip() or 'PC'
     substitute = data.get('substitute', '').strip()
     drawing_no = data.get('drawing_no', '/').strip() or '/'
     notes = data.get('notes', '').strip()
@@ -382,7 +382,7 @@ def save_material_structure():
     lvl = parent_lvl + 1
     lvl_str = '•' * lvl
     qty = str(data.get('qty', '1')).strip()
-    unit = data.get('unit', 'PCS').strip()
+    unit = data.get('unit', 'PC').strip() or 'PC'
     dwg = data.get('drawing_no', '/').strip()
     notes = data.get('notes', '').strip()
     substitute = data.get('substitute', '').strip()
@@ -580,7 +580,7 @@ def export_materials_excel():
             r['description'] or '',
             r['spec_model'] or '',
             r['manufacturer'] or '',
-            r['unit'] or 'PCS',
+            r['unit'] or 'PC',
             r['drawing_no'] or '/',
             r['child_count'] if r['child_count'] > 0 else 0,
             "已配备" if r['image_path'] else "无",
@@ -729,3 +729,20 @@ def api_check_duplicate():
         return jsonify({'success': True, 'matches': matches})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ----------------- AI Material Extraction API -----------------
+@materials_bp.route('/api/materials/ai-parse', methods=['POST'])
+def api_ai_parse_material():
+    data = request.json or {}
+    desc = (data.get('description') or '').strip()
+    if not desc:
+        return jsonify({'success': False, 'error': '物料描述不能为空'}), 400
+
+    from services.ai_service import extract_material_semantics
+    try:
+        result = extract_material_semantics(desc)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+

@@ -73,11 +73,29 @@ def import_excel_sbom(excel_path):
                         if t == 's' and val.isdigit():
                             val = sst[int(val)]
                         val = val.strip()
-                        if coord == 'A2' and val: project_code = val
-                        elif coord == 'A4' and val: project_name = val
-                        elif coord in ['B8', 'C8'] and val and 'SBOM' in val: system_name = val
-                        elif coord == 'A9' and val: company = val
-                        elif coord == 'A11' and val: form_no = val
+                        # V2 封面字段解析
+                        if coord == 'E3' and val and '举例' not in val:
+                            project_code = val
+                        elif coord == 'A2' and val:
+                            if '机组' in val or '风力' in val or not project_name:
+                                project_name = val
+                            elif not project_code:
+                                project_code = val
+                        elif coord == 'A4' and val:
+                            if '举例' not in val:
+                                system_name = val
+                            elif not project_name:
+                                project_name = val
+                        elif coord in ['B8', 'C8'] and val and 'SBOM' in val:
+                            system_name = val
+                        elif coord == 'A5' and val:
+                            doc_no = val
+                        elif coord == 'E5' and val:
+                            ecn_no = val
+                        elif coord in ['A7', 'A9'] and val:
+                            company = val
+                        elif coord == 'A11' and val:
+                            form_no = val
 
         # Insert or update project
         cursor.execute('''
@@ -93,15 +111,19 @@ def import_excel_sbom(excel_path):
         cursor.execute('SELECT id FROM projects WHERE code = ?', (project_code,))
         project_id = cursor.fetchone()[0]
 
-        # 2. Parse 签字及修改页 (Signatures & ECN)
-        sig_sheets = [s for s in sheet_info if '签字' in s[0] or '修改' in s[0]]
+        # 2. Parse 签字页与更改页 (Signatures & ECN Records for V2)
+        sig_sheets = [s for s in sheet_info if s[0] == '签字页' or ('签字' in s[0] and '修改' not in s[0] and '更改' not in s[0])]
+        change_sheets = [s for s in sheet_info if s[0] == '更改页' or '更改' in s[0] or ('修改' in s[0] and '签字' not in s[0])]
+
+        cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
+        cursor.execute('DELETE FROM ecn_records WHERE project_id = ?', (project_id,))
+
         if sig_sheets:
+            # V2 独立《签字页》
             _, sig_path = sig_sheets[0]
             if sig_path in z.namelist():
                 sig_root = ET.fromstring(z.read(sig_path))
                 ns_s = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-                cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
-                cursor.execute('DELETE FROM ecn_records WHERE project_id = ?', (project_id,))
                 for r in sig_root.findall('.//main:row', ns_s):
                     row_idx = int(r.attrib.get('r', 0))
                     cells = {}
@@ -113,29 +135,46 @@ def import_excel_sbom(excel_path):
                         if t == 's' and val.isdigit():
                             val = sst[int(val)]
                         cells[col] = val.strip()
-                    
-                    # 1. ECN Modification Records (Rows 3 to 32)
-                    if 3 <= row_idx <= 32:
-                        ecn_no = cells.get('A', '')
-                        change_desc = cells.get('E', '')
-                        changer = cells.get('I', '')
-                        change_date = cells.get('K', '')
-                        if ecn_no or change_desc or changer or change_date:
-                            cursor.execute('''
-                            INSERT INTO ecn_records (project_id, ecn_no, change_desc, changer, change_date)
-                            VALUES (?, ?, ?, ?, ?)
-                            ''', (project_id, ecn_no, change_desc, changer, change_date))
 
-                    # 2. Signatures (编制, 校核, 审定)
-                    role = cells.get('A', '').replace(' ', '')
-                    if role in ['编制', '校核', '审定']:
-                        sign_name = cells.get('C', '')
-                        sign_date = cells.get('D', '')
+                    role_raw = cells.get('E', '').replace('：', '').replace(':', '').replace('\n', '').replace(' ', '')
+                    sign_name = cells.get('F', '')
+                    sign_date = cells.get('I', '')
+                    if role_raw and (sign_name or sign_date):
                         cursor.execute('INSERT INTO signatures (project_id, role, sign_name, sign_date) VALUES (?, ?, ?, ?)',
-                                       (project_id, role, sign_name, sign_date))
+                                       (project_id, role_raw, sign_name, sign_date))
 
-        # 3. Parse BOM Subsystem Sheets (e.g. 盘古SBOM, 润盈SBOM, etc.)
-        bom_sheets = [s for s in sheet_info if '封面' not in s[0] and '签字' not in s[0]]
+        if change_sheets:
+            # V2 独立《更改页》
+            _, chg_path = change_sheets[0]
+            if chg_path in z.namelist():
+                chg_root = ET.fromstring(z.read(chg_path))
+                ns_s = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+                for r in chg_root.findall('.//main:row', ns_s):
+                    row_idx = int(r.attrib.get('r', 0))
+                    if 8 <= row_idx <= 32:
+                        cells = {}
+                        for c in r.findall('main:c', ns_s):
+                            col = ''.join([ch for ch in c.attrib.get('r') if ch.isalpha()])
+                            t = c.attrib.get('t')
+                            v = c.find('main:v', ns_s)
+                            val = v.text if v is not None else ''
+                            if t == 's' and val.isdigit():
+                                val = sst[int(val)]
+                            cells[col] = val.strip()
+
+                        ecn_no = cells.get('B', '')
+                        change_pos = cells.get('F', '')
+                        change_desc = cells.get('H', '')
+                        changer = cells.get('K', '')
+                        change_date = cells.get('M', '')
+                        if ecn_no and ecn_no != 'XXXXX':
+                            cursor.execute('''
+                            INSERT INTO ecn_records (project_id, ecn_no, change_pos, change_desc, changer, change_date)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ''', (project_id, ecn_no, change_pos, change_desc, changer, change_date))
+
+        # 3. Parse BOM Subsystem Sheets (exclude 封面, 签字页, 更改页)
+        bom_sheets = [s for s in sheet_info if '封面' not in s[0] and '签字' not in s[0] and '更改' not in s[0] and '修改' not in s[0]]
         
         for sort_order, (sub_name, ws_path) in enumerate(bom_sheets):
             ws_dir = os.path.dirname(ws_path)
@@ -262,7 +301,9 @@ def import_excel_sbom(excel_path):
                 spec_model = cells.get('I', '')
                 manufacturer = cells.get('J', '')
                 qty = cells.get('K', '1')
-                unit = cells.get('L', 'PCS')
+                unit = cells.get('L', 'PC')
+                if unit.upper() == 'PCS':
+                    unit = 'PC'
                 notes = cells.get('O', '')
                 substitute = cells.get('P', '')
 

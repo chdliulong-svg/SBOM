@@ -248,11 +248,12 @@ def save_project():
             if cursor.fetchone():
                 return jsonify({'success': False, 'error': f'机型/项目代号 "{code}" 已被其他项目占用，请更换代号'}), 400
 
+            platform = (data.get('platform') or '').strip()
             cursor.execute('''
             UPDATE projects SET
-                code=?, name=?, system_name=?, doc_no=?, ecn_no=?, form_no=?, company=?
+                code=?, name=?, system_name=?, platform=?, doc_no=?, ecn_no=?, form_no=?, company=?
             WHERE id=?
-            ''', (code, name, system_name,
+            ''', (code, name, system_name, platform,
                   data.get('doc_no', ''), data.get('ecn_no', ''),
                   data.get('form_no', 'FDJL-JS-037'), data.get('company', '上海电气风电集团股份有限公司'),
                   project_id))
@@ -269,9 +270,9 @@ def save_project():
                 try:
                     client_tag = get_client_identity()
                     cursor.execute('''
-                    INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'))
-                    ''', (candidate_code, name, system_name,
+                    INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'))
+                    ''', (candidate_code, name, system_name, (data.get('platform') or '').strip(),
                           data.get('doc_no', ''), data.get('ecn_no', ''),
                           data.get('form_no', 'FDJL-JS-037'), data.get('company', '上海电气风电集团股份有限公司'),
                           client_tag))
@@ -287,7 +288,7 @@ def save_project():
                 try:
                     import openpyxl
                     wb_tpl = openpyxl.load_workbook(tpl_path, read_only=True)
-                    candidates = [s for s in wb_tpl.sheetnames if '封面' not in s and '签字' not in s and '修改' not in s]
+                    candidates = [s for s in wb_tpl.sheetnames if '封面' not in s and '签字' not in s and '修改' not in s and '更改' not in s]
                     if candidates:
                         default_subs = candidates
                     wb_tpl.close()
@@ -443,13 +444,13 @@ def copy_project():
                 VALUES (?, ?, ?, ?)
             ''', (new_project_id, s['role'], s['sign_name'] or '', s['sign_date'] or ''))
 
-        cursor.execute('SELECT ecn_no, change_desc, changer, change_date FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
+        cursor.execute('SELECT ecn_no, change_pos, change_desc, changer, change_date FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
         ecn_records = cursor.fetchall()
         for e in ecn_records:
             cursor.execute('''
-                INSERT INTO ecn_records (project_id, ecn_no, change_desc, changer, change_date)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (new_project_id, e['ecn_no'] or '', e['change_desc'] or '', e['changer'] or '', e['change_date'] or ''))
+                INSERT INTO ecn_records (project_id, ecn_no, change_pos, change_desc, changer, change_date)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (new_project_id, e['ecn_no'] or '', e['change_pos'] or '', e['change_desc'] or '', e['changer'] or '', e['change_date'] or ''))
 
         client_tag = get_client_identity()
         cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, new_project_id))
@@ -547,6 +548,7 @@ def project_ecn_api(project_id):
 
     data = request.get_json(silent=True) or {}
     ecn_no = (data.get('ecn_no') or '').strip()
+    change_pos = (data.get('change_pos') or '').strip()
     change_desc = (data.get('change_desc') or '').strip()
     changer = (data.get('changer') or '').strip()
     change_date = (data.get('change_date') or '').strip()
@@ -558,9 +560,9 @@ def project_ecn_api(project_id):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-        INSERT INTO ecn_records (project_id, ecn_no, change_desc, changer, change_date)
-        VALUES (?, ?, ?, ?, ?)
-        ''', (project_id, ecn_no, change_desc, changer, change_date))
+        INSERT INTO ecn_records (project_id, ecn_no, change_pos, change_desc, changer, change_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''', (project_id, ecn_no, change_pos, change_desc, changer, change_date))
         new_id = cursor.lastrowid
         conn.commit()
         return jsonify({
@@ -570,6 +572,7 @@ def project_ecn_api(project_id):
                 'id': new_id,
                 'project_id': project_id,
                 'ecn_no': ecn_no,
+                'change_pos': change_pos,
                 'change_desc': change_desc,
                 'changer': changer,
                 'change_date': change_date
@@ -609,15 +612,16 @@ def project_ecn_item_api(project_id, ecn_id):
 
         data = request.get_json(silent=True) or {}
         ecn_no = (data.get('ecn_no') or '').strip()
+        change_pos = (data.get('change_pos') or '').strip()
         change_desc = (data.get('change_desc') or '').strip()
         changer = (data.get('changer') or '').strip()
         change_date = (data.get('change_date') or '').strip()
 
         cursor.execute('''
         UPDATE ecn_records SET
-            ecn_no = ?, change_desc = ?, changer = ?, change_date = ?
+            ecn_no = ?, change_pos = ?, change_desc = ?, changer = ?, change_date = ?
         WHERE id = ?
-        ''', (ecn_no, change_desc, changer, change_date, ecn_id))
+        ''', (ecn_no, change_pos, change_desc, changer, change_date, ecn_id))
         conn.commit()
         return jsonify({'success': True, 'message': '修改记录已更新'})
     except Exception as e:
@@ -762,7 +766,7 @@ def check_master_sync_api(project_id):
                 'm_substitute': '',
                 'curr_substitute': p_info['rows'][0]['b_substitute'] if p_info['rows'] else '',
                 'm_unit': '',
-                'curr_unit': p_info['rows'][0]['b_unit'] if p_info['rows'] else 'PCS',
+                'curr_unit': p_info['rows'][0]['b_unit'] if p_info['rows'] else 'PC',
                 'm_notes': '',
                 'curr_notes': p_info['rows'][0]['b_notes'] if p_info['rows'] else ''
             })
@@ -837,7 +841,7 @@ def check_master_sync_api(project_id):
 
         curr_dwg = p_info['rows'][0]['b_drawing_no'] if p_info['rows'] else '/'
         curr_sub = p_info['rows'][0]['b_substitute'] if p_info['rows'] else ''
-        curr_unit = p_info['rows'][0]['b_unit'] if p_info['rows'] else 'PCS'
+        curr_unit = p_info['rows'][0]['b_unit'] if p_info['rows'] else 'PC'
         curr_notes = p_info['rows'][0]['b_notes'] if p_info['rows'] else ''
 
         items.append({
@@ -1284,14 +1288,23 @@ def export_excel(project_id):
         raw_name = 'Service_BOM'
 
     safe_name = "".join(c for c in raw_name if c not in r'\/:*?"<>|').strip() or "Service_BOM"
-    if not safe_name.lower().endswith('.xlsx'):
-        filename = f"{safe_name}.xlsx"
+
+    mode = request.args.get('mode', 'link').strip().lower()
+    is_embed = (mode in ['embed', 'embedded', '2'])
+
+    if is_embed:
+        base_name = f"{safe_name}_文档嵌入版"
     else:
-        filename = safe_name
+        base_name = safe_name
+
+    if not base_name.lower().endswith('.xlsx'):
+        filename = f"{base_name}.xlsx"
+    else:
+        filename = base_name
 
     out_path = os.path.join(EXPORT_DIR, filename)
     try:
-        export_project_sbom(project_id, out_path)
+        export_project_sbom(project_id, out_path, embed_manuals=is_embed)
         return send_file(out_path, as_attachment=True, download_name=filename)
     except Exception as e:
         return jsonify({'error': f'导出失败: {str(e)}'}), 500

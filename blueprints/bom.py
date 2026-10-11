@@ -65,7 +65,7 @@ def add_bom_item():
     description = (data.get('description') or data.get('m_desc') or (existing_mat['description'] if existing_mat else '') or '').strip()
     spec_model = (data.get('spec_model') or data.get('m_model') or (existing_mat['spec_model'] if existing_mat else '') or '').strip()
     manufacturer = (data.get('manufacturer') or data.get('m_mfr') or (existing_mat['manufacturer'] if existing_mat else '') or '').strip()
-    unit = (data.get('unit') or data.get('m_unit') or (existing_mat['unit'] if existing_mat else 'PCS') or 'PCS').strip()
+    unit = (data.get('unit') or data.get('m_unit') or (existing_mat['unit'] if existing_mat else 'PC') or 'PC').strip()
     notes = (data.get('notes') or (existing_mat['notes'] if existing_mat else '') or '').strip()
     substitute = (data.get('substitute') or (existing_mat['substitute'] if existing_mat else '') or '').strip()
     remove_image = bool(data.get('remove_image'))
@@ -116,7 +116,7 @@ def add_bom_item():
         c_lvl_str = '•' * c_lvl_num
         c_dwg = child.get('drawing_no') or child.get('m_drawing_no') or '/'
         c_qty = str(child.get('qty', '1'))
-        c_unit = child.get('unit') or child.get('m_unit') or 'PCS'
+        c_unit = child.get('unit') or child.get('m_unit') or 'PC'
         c_notes = child.get('notes', '')
         c_sub = child.get('substitute', '')
         c_parent = child.get('parent_material_no') or material_no
@@ -162,7 +162,7 @@ def batch_add_bom_items():
     level_num = int(data.get('level_num', 2))
     insert_after_row = data.get('insert_after_row')
     default_qty = str(data.get('default_qty', '1')).strip() or '1'
-    default_unit = str(data.get('default_unit', 'PCS')).strip() or 'PCS'
+    default_unit = str(data.get('default_unit', 'PC')).strip() or 'PC'
 
     conn = get_db()
     cursor = conn.cursor()
@@ -277,7 +277,7 @@ def update_bom_item():
     description = (data.get('description') or data.get('m_desc') or '').strip()
     spec_model = (data.get('spec_model') or data.get('m_model') or '').strip()
     manufacturer = (data.get('manufacturer') or data.get('m_mfr') or '').strip()
-    unit = (data.get('unit') or data.get('m_unit') or 'PCS').strip()
+    unit = (data.get('unit') or data.get('m_unit') or 'PC').strip()
     notes = (data.get('notes') or '').strip()
     substitute = (data.get('substitute') or '').strip()
     remove_image = bool(data.get('remove_image'))

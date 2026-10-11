@@ -332,7 +332,7 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
             mat.get('description', ''),
             mat.get('spec_model', ''),
             mat.get('manufacturer', ''),
-            mat.get('unit', 'PCS'),
+            'PC' if (mat.get('unit') or '').upper() == 'PCS' else mat.get('unit', 'PC'),
             mat.get('drawing_no', '/'),
             mat.get('image_path', ''),
             mat.get('manual_path', ''),
@@ -360,7 +360,7 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
                 st.get('child_level_str', '••'),
                 st.get('sort_order', 1),
                 st.get('qty', '1'),
-                st.get('unit', 'PCS'),
+                'PC' if (st.get('unit') or '').upper() == 'PCS' else st.get('unit', 'PC'),
                 st.get('drawing_no', '/'),
                 st.get('notes', ''),
                 st.get('substitute', '')
@@ -461,7 +461,7 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
                 it.get('parent_material_no'),
                 it.get('drawing_no', '/'),
                 it.get('qty', '1'),
-                it.get('unit', 'PCS'),
+                'PC' if (it.get('unit') or '').upper() == 'PCS' else it.get('unit', 'PC'),
                 it.get('notes', ''),
                 it.get('substitute', '')
             ))

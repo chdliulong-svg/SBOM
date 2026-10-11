@@ -166,7 +166,7 @@
 
             if (!items || items.length === 0) {
                 const emptyText = isFilterDuplicatesOnly ? '当前表中未发现相同物料行' : '暂无物料行，请点击上方“添加物料行”';
-                tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; color: var(--text-muted); padding: 30px;">${emptyText}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="16" style="text-align: center; color: var(--text-muted); padding: 30px;">${emptyText}</td></tr>`;
                 clearRowSelection();
                 return;
             }
@@ -364,11 +364,12 @@
                     <td title="${it.m_model || ''}"><div class="cell-text-ellipsis">${it.m_model || ''}</div></td>
                     <td title="${it.m_mfr || ''}"><div class="cell-text-ellipsis">${it.m_mfr || ''}</div></td>
                     <td class="col-center">${it.qty}</td>
-                    <td class="col-center">${it.unit || it.m_unit || 'PCS'}</td>
+                    <td class="col-center">${it.unit || it.m_unit || 'PC'}</td>
                     <td class="col-center">${manualHtml}</td>
                     <td class="col-center">${imgHtml}</td>
                     <td title="${(it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/')}"><div class="cell-text-ellipsis">${(it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/')}</div></td>
                     <td title="${it.notes || ''}"><div class="cell-text-ellipsis">${it.notes || ''}</div></td>
+                    <td title="${it.substitute || it.m_substitute || ''}"><div class="cell-text-ellipsis">${it.substitute || it.m_substitute || ''}</div></td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -858,7 +859,7 @@
                             ${childBadge}
                         </div>
                         <div class="fuzzy-desc">${m.description || ''}</div>
-                        <div class="fuzzy-sub">${m.spec_model ? '型号: ' + m.spec_model + ' | ' : ''}单位: ${m.unit || 'PCS'}</div>
+                        <div class="fuzzy-sub">${m.spec_model ? '型号: ' + m.spec_model + ' | ' : ''}单位: ${m.unit || 'PC'}</div>
                     </div>
                 `;
                 itemDiv.onclick = () => {
@@ -915,7 +916,7 @@
                                     <span style="color: #64748b; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.m_desc || ''}">${c.m_desc || ''}</span>
                                 </div>
                                 <div style="color: #475569; font-weight: 500;">
-                                    用量: ${c.qty || '1'} ${c.unit || c.m_unit || 'PCS'}
+                                    用量: ${c.qty || '1'} ${c.unit || c.m_unit || 'PC'}
                                 </div>
                             `;
                             container.appendChild(itemDiv);
@@ -943,7 +944,7 @@
             document.getElementById('bm-desc').value = m.description || '';
             document.getElementById('bm-model').value = m.spec_model || '';
             document.getElementById('bm-mfr').value = m.manufacturer || '';
-            document.getElementById('bm-unit').value = m.unit || 'PCS';
+            document.getElementById('bm-unit').value = m.unit || 'PC';
             document.getElementById('bm-drawing').value = m.drawing_no || '/';
             if (m.substitute) document.getElementById('bm-substitute').value = m.substitute;
             if (m.notes) document.getElementById('bm-notes').value = m.notes;
@@ -1016,7 +1017,7 @@
                 if (!document.getElementById('bm-desc').value) document.getElementById('bm-desc').value = found.description || '';
                 if (!document.getElementById('bm-model').value) document.getElementById('bm-model').value = found.spec_model || '';
                 if (!document.getElementById('bm-mfr').value) document.getElementById('bm-mfr').value = found.manufacturer || '';
-                if (!document.getElementById('bm-unit').value) document.getElementById('bm-unit').value = found.unit || 'PCS';
+                if (!document.getElementById('bm-unit').value) document.getElementById('bm-unit').value = found.unit || 'PC';
                 const curDrawing = document.getElementById('bm-drawing').value.trim();
                 if ((!curDrawing || curDrawing === '/') && found.drawing_no) {
                     document.getElementById('bm-drawing').value = found.drawing_no || '/';
@@ -1114,6 +1115,17 @@
             removeImageFlag = false;
             const file = event.target.files && event.target.files[0];
             if (!file) return;
+
+            if (window.Step3dViewer && window.Step3dViewer.is3dFile(file)) {
+                window.Step3dViewer.open(file, {
+                    onConfirm: (snapshotFile) => {
+                        applyModalImgFile(snapshotFile, '已从3D模型生成截图');
+                    }
+                });
+                event.target.value = '';
+                return;
+            }
+
             applyModalImgFile(file, '已选定本地照片');
         }
 
@@ -1266,8 +1278,14 @@
                         if (file.type && file.type.startsWith('image/')) {
                             applyModalImgFile(file, '已拖拽添加新照片');
                             showPasteSuccessFeedback();
+                        } else if (window.Step3dViewer && window.Step3dViewer.is3dFile(file)) {
+                            window.Step3dViewer.open(file, {
+                                onConfirm: (snapshotFile) => {
+                                    applyModalImgFile(snapshotFile, '已从3D模型生成截图');
+                                }
+                            });
                         } else {
-                            alert('拖拽的文件不是图片格式，请上传 PNG / JPG / JPEG 格式图片！');
+                            alert('拖拽的文件不是图片或 3D CAD 模型格式，请上传图片或 .step / .stp 文件！');
                         }
                     }
                 });
@@ -1625,7 +1643,7 @@
             document.getElementById('bm-model').value = '';
             document.getElementById('bm-mfr').value = '';
             document.getElementById('bm-qty').value = '1';
-            document.getElementById('bm-unit').value = 'PCS';
+            document.getElementById('bm-unit').value = 'PC';
             document.getElementById('bm-drawing').value = '/';
             document.getElementById('bm-substitute').value = '';
             document.getElementById('bm-notes').value = '';
@@ -1700,7 +1718,7 @@
             document.getElementById('bm-model').value = it.m_model || '';
             document.getElementById('bm-mfr').value = it.m_mfr || '';
             document.getElementById('bm-qty').value = it.qty;
-            document.getElementById('bm-unit').value = it.unit || it.m_unit || 'PCS';
+            document.getElementById('bm-unit').value = it.unit || it.m_unit || 'PC';
             document.getElementById('bm-drawing').value = it.drawing_no || '/';
             document.getElementById('bm-substitute').value = it.substitute || it.m_substitute || '';
             document.getElementById('bm-notes').value = it.notes || '';
@@ -1866,7 +1884,7 @@
             if (qtyEl) qtyEl.value = '1';
 
             const unitEl = document.getElementById('batch-bm-unit');
-            if (unitEl) unitEl.value = 'PCS';
+            if (unitEl) unitEl.value = 'PC';
 
             const dedupEl = document.getElementById('batch-opt-dedup');
             if (dedupEl) dedupEl.checked = false;
@@ -1916,7 +1934,7 @@
             if (!rawText.trim()) return [];
 
             const defaultQty = (document.getElementById('batch-bm-qty')?.value || '1').trim() || '1';
-            const defaultUnit = (document.getElementById('batch-bm-unit')?.value || 'PCS').trim() || 'PCS';
+            const defaultUnit = (document.getElementById('batch-bm-unit')?.value || 'PC').trim() || 'PC';
             const doDedup = document.getElementById('batch-opt-dedup')?.checked || false;
 
             const lines = rawText.split(/\r?\n/);
@@ -1941,7 +1959,7 @@
                 let qty = defaultQty;
                 let unit = defaultUnit;
 
-                // If line explicitly contains quantity, e.g. "DFB00014350  2  PCS"
+                // If line explicitly contains quantity, e.g. "DFB00014350  2  PC"
                 if (parts.length > 1 && !isNaN(parseFloat(parts[1]))) {
                     qty = parts[1];
                 } else if (batchCustomQtyMap.has(lowerKey)) {
@@ -2044,7 +2062,7 @@
                                        value="${escapeHtml(it.qty)}" 
                                        oninput="handleBatchItemQtyChange(${idx}, this.value)" 
                                        title="可直接修改该物料的导入数量">
-                                <span style="font-size: 11px; color: #64748b;">${escapeHtml(it.unit || 'PCS')}</span>
+                                <span style="font-size: 11px; color: #64748b;">${escapeHtml(it.unit || 'PC')}</span>
                             </div>
                         </td>
                         <td style="padding: 6px 10px; text-align: center;">${statusBadge}</td>
@@ -2101,7 +2119,7 @@
             const [lvlStr, lvlNum] = (document.getElementById('batch-bm-level')?.value || '••|2').split('|');
             const insertPos = document.getElementById('batch-insert-pos')?.value || 'end';
             const defaultQty = (document.getElementById('batch-bm-qty')?.value || '1').trim() || '1';
-            const defaultUnit = (document.getElementById('batch-bm-unit')?.value || 'PCS').trim() || 'PCS';
+            const defaultUnit = (document.getElementById('batch-bm-unit')?.value || 'PC').trim() || 'PC';
 
             const payload = {
                 subsystem_id: currentSubsystemId,
@@ -2152,6 +2170,19 @@
         function handleSingleImgUpload(event) {
             const file = event.target.files[0];
             if (!file || !uploadTargetMatNo) return;
+
+            // Check if 3D CAD model file (.step / .stp / etc.)
+            if (window.Step3dViewer && window.Step3dViewer.is3dFile(file)) {
+                const targetMatNo = uploadTargetMatNo;
+                window.Step3dViewer.open(file, {
+                    onConfirm: async (snapshotFile) => {
+                        await window.Step3dViewer.uploadSnapshotForMaterial(snapshotFile, targetMatNo);
+                    }
+                });
+                event.target.value = '';
+                return;
+            }
+
             const formData = new FormData();
             formData.append('file', file);
             formData.append('material_no', uploadTargetMatNo);

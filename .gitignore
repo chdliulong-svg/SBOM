@@ -23,12 +23,13 @@ exports/
 *.key
 auth.json
 
-# ---------- 编辑器 / 系统 ----------
+# ---------- 编辑器 / 系统 / 测试临时 ----------
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 desktop.ini
+scratch/
 
 # ---------- 日志 ----------
 logs/
