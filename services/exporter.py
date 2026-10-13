@@ -260,7 +260,7 @@ def export_project_sbom(project_id, output_path, embed_manuals=False):
 
             row_data = [
                 ('A', item['row_num'], tnr_font, Alignment(horizontal='center', vertical='center')),
-                ('B', f'=REPT("•",C{r})', level_font, Alignment(horizontal='right', vertical='center')),
+                ('B', level_str_val, level_font, Alignment(horizontal='right', vertical='center')),
                 ('C', level_num_val, level_font, Alignment(horizontal='left', vertical='center')),
                 ('D', item['seq_num'] or (item['row_num'] * 10), tnr_font, Alignment(horizontal='center', vertical='center')),
                 ('E', item['material_no'], tnr_font, Alignment(horizontal='center', vertical='center')),
@@ -371,6 +371,9 @@ def export_project_sbom(project_id, output_path, embed_manuals=False):
     wb._sheets = [wb[name] for name in desired_order]
 
     conn.close()
+    if hasattr(wb, 'calculation'):
+        wb.calculation.calcMode = 'auto'
+        wb.calculation.fullCalcOnLoad = True
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     wb.save(output_path)
     print(f"Exported successfully to: {output_path}")
