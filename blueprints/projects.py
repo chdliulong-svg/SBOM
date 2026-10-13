@@ -245,10 +245,6 @@ def save_project():
     cursor = conn.cursor()
     try:
         if project_id:
-            cursor.execute('SELECT id FROM projects WHERE code = ? AND id != ?', (code, project_id))
-            if cursor.fetchone():
-                return jsonify({'success': False, 'error': f'机型/项目代号 "{code}" 已被其他项目占用，请更换代号'}), 400
-
             platform = (data.get('platform') or '').strip()
             cursor.execute('''
             UPDATE projects SET
@@ -259,29 +255,15 @@ def save_project():
                   data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                   project_id))
         else:
-            base_code = code
-            suffix = 1
-            inserted = False
-            while not inserted:
-                candidate_code = base_code if suffix == 1 else f"{base_code}_{suffix}"
-                cursor.execute('SELECT id FROM projects WHERE code = ?', (candidate_code,))
-                if cursor.fetchone():
-                    suffix += 1
-                    continue
-                try:
-                    client_tag = get_client_identity()
-                    cursor.execute('''
-                    INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'))
-                    ''', (candidate_code, name, system_name, (data.get('platform') or '').strip(),
-                          data.get('doc_no', ''), data.get('ecn_no', ''),
-                          data.get('form_no', config.form_no_default), data.get('company', config.company_default),
-                          client_tag))
-                    project_id = cursor.lastrowid
-                    code = candidate_code
-                    inserted = True
-                except sqlite3.IntegrityError:
-                    suffix += 1
+            client_tag = get_client_identity()
+            cursor.execute('''
+            INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'))
+            ''', (code, name, system_name, (data.get('platform') or '').strip(),
+                  data.get('doc_no', ''), data.get('ecn_no', ''),
+                  data.get('form_no', config.form_no_default), data.get('company', config.company_default),
+                  client_tag))
+            project_id = cursor.lastrowid
 
             default_subs = ['SBOM']
             tpl_path = find_template_path()
@@ -340,9 +322,6 @@ def rename_project():
         final_name = custom_product_name or proj['name'] or '风力发电机组'
 
         final_code = new_code or proj['code']
-        cursor.execute('SELECT id FROM projects WHERE code = ? AND id != ?', (final_code, project_id))
-        if cursor.fetchone():
-            return jsonify({'success': False, 'error': f'代号 "{final_code}" 已被其他项目占用，请指定其他代号'}), 400
 
         cursor.execute('''
         UPDATE projects SET name = ?, system_name = ?, code = ? WHERE id = ?
@@ -391,20 +370,7 @@ def copy_project():
             user_system_name = f"{orig_system_name}_副本" if orig_system_name else f"{orig_code}_副本"
 
         if not user_code:
-            base_code = f"{orig_code}_copy"
-            candidate = base_code
-            suffix = 2
-            while True:
-                cursor.execute('SELECT id FROM projects WHERE code = ?', (candidate,))
-                if not cursor.fetchone():
-                    user_code = candidate
-                    break
-                candidate = f"{base_code}_{suffix}"
-                suffix += 1
-        else:
-            cursor.execute('SELECT id FROM projects WHERE code = ?', (user_code,))
-            if cursor.fetchone():
-                return jsonify({'success': False, 'error': f'机型代号 "{user_code}" 已被占用，请指定新的代号'}), 400
+            user_code = orig_code
 
         cursor.execute('''
             INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company)

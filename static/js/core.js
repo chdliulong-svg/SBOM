@@ -67,8 +67,8 @@
 
         // BOM Hierarchy Numbering Calculator
         // 行号：按行顺序全局递增 (1, 2, 3...)
-        // 序号：按层级树状点分编号 (1, 1.1, 1.2, 1.2.1, 2, 2.1...)
-        function computeBomHierarchyNumbers(items, mode = 'dotted') {
+        // 序号：按层级树状编号，每个层级序号从10开始递增 (10, 20, 30...)
+        function computeBomHierarchyNumbers(items, mode = 'step10') {
             if (!items || !items.length) return items || [];
             const parsedLevels = items.map(it => {
                 let lvl = it.level_num;
@@ -100,7 +100,13 @@
                 }
                 counters = counters.slice(0, effectiveLvl);
                 counters[effectiveLvl - 1] += 1;
-                it.seq_num = mode === 'dotted' ? counters.join('.') : String(counters[effectiveLvl - 1]);
+                if (mode === 'step10') {
+                    it.seq_num = String(counters[effectiveLvl - 1] * 10);
+                } else if (mode === 'dotted') {
+                    it.seq_num = counters.join('.');
+                } else {
+                    it.seq_num = String(counters[effectiveLvl - 1]);
+                }
             });
             return items;
         }

@@ -52,7 +52,7 @@
             }
             safeFetchJson(`/api/subsystem/${subsystemId}/items`)
                 .then(items => {
-                    computeBomHierarchyNumbers(items, 'dotted');
+                    computeBomHierarchyNumbers(items, 'step10');
                     currentBomItems = items;
                     defaultBomItemsOrder = JSON.parse(JSON.stringify(items));
                     if (typeof resetSortIconsOnly === 'function') {

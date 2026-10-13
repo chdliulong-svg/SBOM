@@ -233,10 +233,13 @@ def inspect_saved_project_file(file_path):
     signatures = bundle_data.get('signatures', [])
     ecn_records = bundle_data.get('ecn_records', [])
 
-    # Check for existing project in database
+    # Check for existing project in database by system_name (not code, which can be shared)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, name, code, system_name FROM projects WHERE code = ? OR name = ?', (code, name))
+    if system_name and system_name != '风力发电机组':
+        cursor.execute('SELECT id, name, code, system_name FROM projects WHERE system_name = ?', (system_name,))
+    else:
+        cursor.execute('SELECT id, name, code, system_name FROM projects WHERE 1 = 0')
     existing = cursor.fetchone()
     conn.close()
 
@@ -387,22 +390,10 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
         cursor.execute('DELETE FROM subsystems WHERE project_id = ?', (project_id,))
 
     else:
-        # Create as new project, resolving code / name conflict
-        cursor.execute('SELECT id FROM projects WHERE code = ?', (code,))
+        # Create as new project (preserve code as-is; if system_name already exists, add disambiguation note)
+        cursor.execute('SELECT id FROM projects WHERE system_name = ?', (system_name,))
         if cursor.fetchone():
-            base_code = code
-            suffix = 2
-            while True:
-                candidate = f"{base_code}_{suffix}"
-                cursor.execute('SELECT id FROM projects WHERE code = ?', (candidate,))
-                if not cursor.fetchone():
-                    code = candidate
-                    break
-                suffix += 1
-
-        cursor.execute('SELECT id FROM projects WHERE name = ?', (name,))
-        if cursor.fetchone():
-            name = f"{name} (已打开)"
+            system_name = f"{system_name} (已导入)"
 
         cursor.execute('''
         INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company)

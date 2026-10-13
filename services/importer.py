@@ -98,19 +98,12 @@ def import_excel_sbom(excel_path):
                         elif coord == 'A11' and val:
                             form_no = val
 
-        # Insert or update project
+        # Insert project
         cursor.execute('''
         INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(code) DO UPDATE SET
-            name=excluded.name,
-            system_name=excluded.system_name,
-            company=excluded.company,
-            form_no=excluded.form_no
         ''', (project_code, project_name, system_name, doc_no, ecn_no, form_no, company))
-        
-        cursor.execute('SELECT id FROM projects WHERE code = ?', (project_code,))
-        project_id = cursor.fetchone()[0]
+        project_id = cursor.lastrowid
 
         # 2. Parse 签字页与更改页 (Signatures & ECN Records for V2)
         sig_sheets = [s for s in sheet_info if s[0] == '签字页' or ('签字' in s[0] and '修改' not in s[0] and '更改' not in s[0])]
@@ -370,6 +363,9 @@ def import_excel_sbom(excel_path):
                         INSERT INTO material_structures (parent_material_no, child_material_no, child_level_num, child_level_str, sort_order, qty, unit, drawing_no, notes, substitute)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (parent_mat_no, mat_no, level_num, level_str, next_sort, qty, unit, drawing_no, notes, substitute))
+
+            from blueprints.common import renumber_subsystem
+            renumber_subsystem(cursor, subsystem_id, mode='step10')
 
         conn.commit()
         conn.close()

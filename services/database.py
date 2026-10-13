@@ -73,16 +73,18 @@ def init_db():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        code TEXT UNIQUE NOT NULL,
+        code TEXT NOT NULL DEFAULT '',
         name TEXT DEFAULT '风力发电机组',
-        system_name TEXT NOT NULL,
+        system_name TEXT NOT NULL DEFAULT '',
         doc_no TEXT DEFAULT '',
         ecn_no TEXT DEFAULT '',
+        form_no TEXT DEFAULT 'FDJL-JS-037',
         company TEXT DEFAULT '上海电气风电集团股份有限公司',
         is_locked INTEGER DEFAULT 1,
         locked_by TEXT DEFAULT '',
         locked_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        platform TEXT DEFAULT ''
     )
     ''')
 
@@ -287,6 +289,50 @@ def init_db():
             conn.commit()
         except Exception as e:
             print("Warning renumbering subsystems to step-10:", e)
+
+    # Automatic migration: Remove UNIQUE constraint on projects.code
+    # Projects are identified by integer primary key id; project codes (机型/项目代号) are output fields that can be repeated
+    try:
+        cursor.execute("PRAGMA index_list('projects')")
+        has_unique_code = False
+        for idx_row in cursor.fetchall():
+            if idx_row['unique'] == 1:
+                cursor.execute(f"PRAGMA index_info('{idx_row['name']}')")
+                cols = [col['name'] for col in cursor.fetchall()]
+                if cols == ['code']:
+                    has_unique_code = True
+                    break
+        if has_unique_code:
+            cursor.execute("PRAGMA foreign_keys = OFF")
+            cursor.execute('''
+            CREATE TABLE projects_migrated (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL DEFAULT '',
+                name TEXT DEFAULT '风力发电机组',
+                system_name TEXT NOT NULL DEFAULT '',
+                doc_no TEXT DEFAULT '',
+                ecn_no TEXT DEFAULT '',
+                form_no TEXT DEFAULT 'FDJL-JS-037',
+                company TEXT DEFAULT '上海电气风电集团股份有限公司',
+                is_locked INTEGER DEFAULT 1,
+                locked_by TEXT DEFAULT '',
+                locked_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                platform TEXT DEFAULT ''
+            )
+            ''')
+            cursor.execute('''
+            INSERT INTO projects_migrated (id, code, name, system_name, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, platform)
+            SELECT id, code, name, system_name, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, platform
+            FROM projects
+            ''')
+            cursor.execute('DROP TABLE projects')
+            cursor.execute('ALTER TABLE projects_migrated RENAME TO projects')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_projects_code ON projects(code)')
+            cursor.execute('PRAGMA foreign_keys = ON')
+            conn.commit()
+    except Exception as e:
+        print("Warning migrating projects table to remove unique constraint on code:", e)
 
     conn.close()
 

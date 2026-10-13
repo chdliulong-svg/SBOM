@@ -331,7 +331,7 @@
 
             if (defaultBomItemsOrder && defaultBomItemsOrder.length > 0) {
                 currentBomItems = JSON.parse(JSON.stringify(defaultBomItemsOrder));
-                computeBomHierarchyNumbers(currentBomItems, 'dotted');
+                computeBomHierarchyNumbers(currentBomItems, 'step10');
                 renderBomTable(currentBomItems);
 
                 if (currentProjectData && currentProjectData.is_locked == 1) {
@@ -489,7 +489,7 @@
             sortNodeTree(tree, field, currentSortDir);
             const sortedItems = flattenBomTree(tree);
 
-            computeBomHierarchyNumbers(sortedItems, 'dotted');
+            computeBomHierarchyNumbers(sortedItems, 'step10');
 
             currentBomItems = sortedItems;
             renderBomTable(sortedItems);

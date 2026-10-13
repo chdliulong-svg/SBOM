@@ -462,7 +462,7 @@
                                 </th>
                                 <th data-col="row_num" style="width: 55px;" class="col-center sortable-th" onclick="handleTableSort('row_num')" title="行号：按全局行顺序递增编号 (1, 2, 3...)">行号 <span class="sort-icon" id="sort-icon-row_num">⇅</span></th>
                                 <th data-col="level_num" style="width: 95px;" class="col-center">BOM层级</th>
-                                <th data-col="seq_num" style="width: 68px;" class="col-center sortable-th" onclick="handleTableSort('seq_num')" title="序号：按层级树状结构编号 (1, 1.1, 1.2.1...)">序号 <span class="sort-icon" id="sort-icon-seq_num">⇅</span></th>
+                                <th data-col="seq_num" style="width: 68px;" class="col-center sortable-th" onclick="handleTableSort('seq_num')" title="序号：各层级自 10 起按 10 步进编号 (10, 20, 30...)">序号 <span class="sort-icon" id="sort-icon-seq_num">⇅</span></th>
                                 <th data-col="material_no" style="width: 140px;" class="sortable-th" onclick="handleTableSort('material_no')" title="点击正/负向排序（子层级自动整组跟随）">物料号 <span class="sort-icon" id="sort-icon-material_no">⇅</span></th>
                                 <th data-col="m_name" style="width: 180px;" class="sortable-th" onclick="handleTableSort('m_name')" title="点击正/负向排序（子层级自动整组跟随）">元器件名称 <span class="sort-icon" id="sort-icon-m_name">⇅</span></th>
                                 <th data-col="m_desc" style="width: 320px;" class="sortable-th" onclick="handleTableSort('m_desc')" title="点击正/负向排序（子层级自动整组跟随）">物料完整描述 <span class="sort-icon" id="sort-icon-m_desc">⇅</span></th>
@@ -1749,7 +1749,7 @@
                 <!-- Conflict banner & options -->
                 <div id="open-conflict-banner" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 14px 16px;">
                     <div style="font-size: 13px; font-weight: 700; color: #92400e; margin-bottom: 6px;">
-                        冲突提示：系统中已存在同名或同代号项目：
+                        提示：系统中已存在相同系统名称的工程项目：
                     </div>
                     <div style="font-size: 12px; color: #78350f; margin-bottom: 12px;">
                         现有项目：<b id="open-existing-name">-</b>，请选择您希望执行的打开方式：
