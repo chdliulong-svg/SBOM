@@ -137,4 +137,25 @@
                 .replace(/'/g, '&#39;');
         }
 
+        // 统一格式化工程项目的展示名称: 项目名称[平台名称][机型代号]
+        function formatProjectDisplayName(p) {
+            if (!p) return '';
+            const projName = (p.system_name && p.system_name.trim()) 
+                ? p.system_name.trim() 
+                : ((p.name && p.name.trim() && p.name !== '风力发电机组') ? p.name.trim() : (p.code || '未命名项目'));
+            
+            let platStr = (p.platform && p.platform.trim()) ? p.platform.trim() : '';
+            if (platStr) {
+                platStr = (platStr.startsWith('[') && platStr.endsWith(']')) ? platStr : `[${platStr}]`;
+            }
+            
+            let codeStr = (p.code && p.code.trim()) ? p.code.trim() : '';
+            if (codeStr) {
+                codeStr = (codeStr.startsWith('[') && codeStr.endsWith(']')) ? codeStr : `[${codeStr}]`;
+            }
+            
+            return `${projName}${platStr}${codeStr}`;
+        }
+
+
 

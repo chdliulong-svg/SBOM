@@ -9,13 +9,13 @@
             projects.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
-                const mainTitle = (p.system_name && p.system_name !== '风力发电机组') ? p.system_name : ((p.name && p.name !== '风力发电机组') ? p.name : p.code);
-                const subInfo = (p.code && p.code !== mainTitle) ? ` [${p.code}]` : '';
+                const formattedTitle = formatProjectDisplayName(p);
                 const isLocked = (p.is_locked === 1 || p.is_locked === undefined);
                 const lockIcon = isLocked ? '🔒 ' : '🟢 ';
                 const lockedBy = (p.locked_by || '').trim();
                 const lockTag = isLocked ? ' (只读)' : (lockedBy ? ` (编辑中: ${lockedBy})` : ' (编辑中)');
-                opt.textContent = `${lockIcon}${mainTitle}${subInfo}${lockTag}`;
+                opt.textContent = `${lockIcon}${formattedTitle}${lockTag}`;
+                opt.title = `${formattedTitle}${lockTag}`;
                 sel.appendChild(opt);
             });
             if (selectedId) sel.value = selectedId;
@@ -318,7 +318,7 @@
 
         async function unlockCurrentProject(force = false) {
             if (!currentProjectId || !currentProjectData) return;
-            const pTitle = currentProjectData.system_name || currentProjectData.code || '当前工程';
+            const pTitle = formatProjectDisplayName(currentProjectData) || '当前工程';
 
             if (!force) {
                 if (!confirm(`确认解锁工程【${pTitle}】以进行编辑？\n\n（独立工程锁机制：解锁本工程不会影响其他同事正在编辑的其他机型）`)) {
@@ -359,7 +359,7 @@
 
         async function lockCurrentProject() {
             if (!currentProjectId || !currentProjectData) return;
-            const pTitle = currentProjectData.system_name || currentProjectData.code || '当前工程';
+            const pTitle = formatProjectDisplayName(currentProjectData) || '当前工程';
 
             try {
                 const res = await safeFetchJson(`/api/project/${currentProjectId}/lock`, {
@@ -400,7 +400,7 @@
                 alert('当前工程处于【锁定保护】状态，无法删除！如需删除请先在顶部点击【解锁编辑】。');
                 return;
             }
-            const projTitle = (currentProjectData.code ? `[${currentProjectData.code}] ` : '') + (currentProjectData.name || currentProjectData.system_name || '当前项目');
+            const projTitle = formatProjectDisplayName(currentProjectData) || '当前项目';
             const confirmMsg = `确定要彻底删除项目【${projTitle}】吗？\n\n删除后：\n1. 该项目的所有子系统 Sheet 将被永久移除；\n2. 该项目的所有 BOM 编制明细行将被永久清除；\n3. 全局通用物料主库将完整保留，不受影响。\n\n此操作不可撤销，确定删除吗？`;
             if (!confirm(confirmMsg)) return;
 
@@ -882,12 +882,7 @@
             // Populate project title in modal
             const nameEl = document.getElementById('export-modal-project-name');
             if (nameEl) {
-                let projTitle = '当前工程项目';
-                if (currentProjectData) {
-                    projTitle = [currentProjectData.platform, currentProjectData.code, currentProjectData.system_name || currentProjectData.name]
-                        .filter(Boolean)
-                        .join(' - ');
-                }
+                let projTitle = currentProjectData ? formatProjectDisplayName(currentProjectData) : '当前工程项目';
                 nameEl.textContent = projTitle || `项目 #${currentProjectId}`;
             }
             selectExportOption(1);
@@ -1209,7 +1204,7 @@
                 alert('请先选择一个项目！');
                 return;
             }
-            const displayName = (currentProjectData.system_name && currentProjectData.system_name !== '风力发电机组') ? currentProjectData.system_name : ((currentProjectData.name && currentProjectData.name !== '风力发电机组') ? currentProjectData.name : currentProjectData.code);
+            const displayName = formatProjectDisplayName(currentProjectData);
             document.getElementById('save-proj-title-display').textContent = displayName;
             const subCount = currentProjectData.subsystems ? currentProjectData.subsystems.length : 1;
             document.getElementById('save-proj-stats-display').textContent = `包含 ${subCount} 个子系统 Sheet，机型代号 [${currentProjectData.code || '未设'}]`;

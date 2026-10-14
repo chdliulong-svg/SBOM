@@ -20,7 +20,7 @@
 
                 if (projects.length === 1) {
                     const p = projects[0];
-                    const pTitle = p.system_name || p.name || p.code || '当前项目';
+                    const pTitle = formatProjectDisplayName(p) || '当前项目';
                     if (confirm(`当前系统中仅有 1 个项目【${pTitle}】。\n\n比对功能需要至少 2 个项目。您是否要先【快速复制】该项目作为新版本，然后再进行比对分析？`)) {
                         openCopyProjectModal();
                     }
@@ -43,18 +43,17 @@
                 }
 
                 projects.forEach(p => {
-                    const name = p.system_name || p.name || p.code;
-                    const code = p.code ? ` [${p.code}]` : '';
+                    const label = formatProjectDisplayName(p);
                     
                     const optA = document.createElement('option');
                     optA.value = p.id;
-                    optA.textContent = `${name}${code}`;
+                    optA.textContent = label;
                     if (p.id == chosenA) optA.selected = true;
                     selA.appendChild(optA);
 
                     const optB = document.createElement('option');
                     optB.value = p.id;
-                    optB.textContent = `${name}${code}`;
+                    optB.textContent = label;
                     if (p.id == chosenB) optB.selected = true;
                     selB.appendChild(optB);
                 });
