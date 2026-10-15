@@ -4,7 +4,9 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            loadProjects();
+            const urlParams = new URLSearchParams(window.location.search);
+            const initProjId = urlParams.get('proj') || urlParams.get('p') || null;
+            loadProjects(initProjId ? parseInt(initProjId) : null);
             loadMasterMaterials();
             initTableColumnResizing('bomTable');
 
@@ -138,6 +140,32 @@
         // Page initialization
         document.addEventListener('DOMContentLoaded', () => {
 
+            const qMaster = new URLSearchParams(window.location.search).get('open_master');
+            if (qMaster) {
+                setTimeout(() => { if (typeof openMasterModal === 'function') openMasterModal(); }, 800);
+            }
+            const qAiDemo = new URLSearchParams(window.location.search).get('open_ai_demo');
+            if (qAiDemo) {
+                setTimeout(() => {
+                    if (typeof openAddMasterModal === 'function') {
+                        openAddMasterModal();
+                    } else if (typeof openModal === 'function') {
+                        openModal('editMasterItemModal');
+                    }
+                    setTimeout(() => {
+                        const d = document.getElementById('mm-description');
+                        if (d) d.value = '变桨备件_传感器撞块_DBJ00.004.1386.01_电力电子';
+                        const n = document.getElementById('mm-name');
+                        if (n) { n.value = '传感器撞块'; n.style.borderColor = '#10b981'; n.style.backgroundColor = '#ecfdf5'; }
+                        const s = document.getElementById('mm-spec-model');
+                        if (s) { s.value = 'DBJ00.004.1386.01'; s.style.borderColor = '#10b981'; s.style.backgroundColor = '#ecfdf5'; }
+                        const m = document.getElementById('mm-manufacturer');
+                        if (m) { m.value = '电力电子'; m.style.borderColor = '#10b981'; m.style.backgroundColor = '#ecfdf5'; }
+                        const no = document.getElementById('mm-mat-no');
+                        if (no) no.value = 'DFB00166343';
+                    }, 300);
+                }, 800);
+            }
             const qHier = new URLSearchParams(window.location.search).get('open_hier');
             if (qHier) openMasterHierarchyModal(qHier);
             const qEdit = new URLSearchParams(window.location.search).get('open_edit');
