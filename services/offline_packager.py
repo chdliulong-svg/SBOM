@@ -302,6 +302,17 @@ def build_offline_html(project_info, materials_summary, items_list):
                 .replace(/'/g, '&#039;');
         }}
 
+        function formatPipeMultilineHtml(val) {{
+            if (!val) return '';
+            const rawStr = String(val).trim();
+            if (!/[|｜\n]/.test(rawStr)) return escapeHtml(rawStr);
+            const lines = rawStr.split(/[|｜\n]/).map(s => s.trim()).filter(s => s.length > 0);
+            if (lines.length <= 1) return escapeHtml(lines[0] || rawStr);
+            return '<div style="display:flex; flex-direction:column; gap:2px;">' +
+                lines.map(l => `<span style="line-height:1.35;">${{escapeHtml(l)}}</span>`).join('') +
+                '</div>';
+        }}
+
         function renderTable(list) {{
             const tbody = document.getElementById('tableBody');
             const statText = document.getElementById('statText');
@@ -335,16 +346,16 @@ def build_offline_html(project_info, materials_summary, items_list):
                         <td style="text-align: center; color: #94a3b8;">${{idx + 1}}</td>
                         <td style="font-weight: 500; color: #1e293b;">${{escapeHtml(it.subsystem_name || '-')}}</td>
                         <td style="text-align: center;"><span class="lvl-badge ${{lvlClass}}">${{lvlLabel}}</span></td>
-                        <td class="mat-no">${{escapeHtml(it.material_no || '-')}}</td>
-                        <td style="font-weight: 600;">${{escapeHtml(it.m_name || '-')}}</td>
-                        <td class="desc-text" title="${{escapeHtml(it.m_desc || '')}}">${{escapeHtml(it.m_desc || '-')}}</td>
-                        <td class="spec">${{escapeHtml(it.m_model || '-')}}</td>
-                        <td>${{escapeHtml(it.m_mfr || '-')}}</td>
-                        <td style="color: #64748b;">${{escapeHtml(it.drawing_no || '/')}}</td>
+                        <td class="mat-no">${{formatPipeMultilineHtml(it.material_no || '-')}}</td>
+                        <td style="font-weight: 600;">${{formatPipeMultilineHtml(it.m_name || '-')}}</td>
+                        <td class="desc-text" title="${{escapeHtml(it.m_desc || '')}}">${{formatPipeMultilineHtml(it.m_desc || '-')}}</td>
+                        <td class="spec">${{formatPipeMultilineHtml(it.m_model || '-')}}</td>
+                        <td>${{formatPipeMultilineHtml(it.m_mfr || '-')}}</td>
+                        <td style="color: #64748b;">${{formatPipeMultilineHtml(it.drawing_no || '/')}}</td>
                         <td style="text-align: center; font-weight: 600;">${{escapeHtml(it.qty || '1')}}</td>
                         <td style="text-align: center; color: #64748b;">${{escapeHtml(it.unit || 'PC')}}</td>
                         <td>${{attachHtml}}</td>
-                        <td style="color: #64748b; font-size: 11px;">${{escapeHtml(it.notes || '')}}</td>
+                        <td style="color: #64748b; font-size: 11px;">${{formatPipeMultilineHtml(it.notes || '')}}</td>
                     </tr>`;
             }});
             tbody.innerHTML = html;

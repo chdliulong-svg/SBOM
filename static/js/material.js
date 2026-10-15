@@ -196,14 +196,14 @@
 
                 tr.innerHTML = `
                     ${selectCellHtml}
-                    <td title="${escapeHtml(m.material_no)}"><div style="display: flex; align-items: center; gap: 4px; overflow: hidden;"><span class="cell-text-ellipsis" style="flex-shrink: 0; max-width: 100%; font-weight: bold;">${escapeHtml(m.material_no)}</span>${childBadge}</div></td>
-                    <td title="${escapeHtml(m.name || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.name || '')}</div></td>
+                    <td>${formatPipeMultilineMatNo(m.material_no, childBadge)}</td>
+                    <td>${formatPipeMultilineHtml(m.name || '')}</td>
                     <td>${projCellHtml}</td>
-                    <td title="${escapeHtml(m.description || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.description || '')}</div></td>
-                    <td title="${escapeHtml(m.spec_model || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.spec_model || '')}</div></td>
-                    <td title="${escapeHtml(m.manufacturer || '')}"><div class="cell-text-ellipsis">${escapeHtml(m.manufacturer || '')}</div></td>
-                    <td class="col-center">${escapeHtml(m.unit || 'PC')}</td>
-                    <td title="${escapeHtml(m.drawing_no || '/')}"><div class="cell-text-ellipsis">${escapeHtml(m.drawing_no || '/')}</div></td>
+                    <td>${formatPipeMultilineHtml(m.description || '')}</td>
+                    <td>${formatPipeMultilineHtml(m.spec_model || '')}</td>
+                    <td>${formatPipeMultilineHtml(m.manufacturer || '')}</td>
+                    <td class="col-center">${formatPipeMultilineHtml(m.unit || 'PC', true)}</td>
+                    <td>${formatPipeMultilineHtml(m.drawing_no || '/')}</td>
                     <td class="col-center">${imgTag}</td>
                     <td class="col-center">${manTag}</td>
                 `;
@@ -1380,12 +1380,12 @@
                                     <button class="btn btn-outline btn-sm" style="padding: 1px 4px; font-size: 10px;" onclick="moveMasterChild(${c.id}, 'down', '${escapeHtml(parentMatNo)}')" ${idx === children.length - 1 ? 'disabled' : ''} title="下移">▼</button>
                                 </div>
                             </td>
-                            <td><b style="color: #1e3a8a;">${escapeHtml(c.child_material_no)}</b></td>
-                            <td>${escapeHtml(matName)}</td>
-                            <td><div class="cell-text-ellipsis" style="max-width: 280px;" title="${escapeHtml(matDesc)}">${escapeHtml(matDesc)}${modelTag}</div></td>
-                            <td class="col-center">${c.qty}</td>
-                            <td class="col-center">${escapeHtml(c.unit || 'PC')}</td>
-                            <td>${escapeHtml(c.drawing_no || '/')}</td>
+                            <td>${formatPipeMultilineMatNo(c.child_material_no)}</td>
+                            <td>${formatPipeMultilineHtml(matName)}</td>
+                            <td>${formatPipeMultilineHtml(matDesc ? (matModel ? `${matDesc} (${matModel})` : matDesc) : '')}</td>
+                            <td class="col-center">${formatPipeMultilineHtml(c.qty, true)}</td>
+                            <td class="col-center">${formatPipeMultilineHtml(c.unit || 'PC', true)}</td>
+                            <td>${formatPipeMultilineHtml(c.drawing_no || '/')}</td>
                         `;
                         tbody.appendChild(tr);
                     });

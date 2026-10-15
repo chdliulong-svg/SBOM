@@ -29,6 +29,8 @@ auth.json
 .DS_Store
 Thumbs.db
 desktop.ini
+~$*
+*.tmp
 scratch/
 
 # ---------- 日志 ----------

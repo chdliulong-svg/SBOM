@@ -362,13 +362,13 @@
                 // Group A Cells
                 const aQty = ia.exists ? `<b style="font-family: monospace;">${escapeHtml(ia.total_qty_str)}</b> <span style="font-size: 11px; color: #64748b;">${escapeHtml(ia.unit)}</span>` : '<span style="color: #cbd5e1;">-</span>';
                 const aLvl = ia.exists ? `<span style="font-size: 11px; font-weight: 500;">${escapeHtml(ia.level_str || '')} ${ia.level_num ? ia.level_num + '级' : ''}</span>` : '<span style="color: #cbd5e1;">-</span>';
-                const aDwg = ia.exists ? `<span class="cell-text-ellipsis" style="max-width: 80px;" title="${escapeHtml(ia.drawing_no || '/')}">${escapeHtml(ia.drawing_no || '/')}</span>` : '<span style="color: #cbd5e1;">-</span>';
+                const aDwg = ia.exists ? (formatPipeMultilineHtml(ia.drawing_no || '/') || '<span style="color: #cbd5e1;">-</span>') : '<span style="color: #cbd5e1;">-</span>';
                 const aSheet = ia.exists ? `<span class="cell-text-ellipsis" style="max-width: 80px; color: #1e40af;" title="${escapeHtml((ia.subsystems || []).join(', '))}">[${escapeHtml((ia.subsystems || []).join(','))}]</span>` : '<span style="color: #cbd5e1;">-</span>';
 
                 // Group B Cells
                 const bQty = ib.exists ? `<b style="font-family: monospace;">${escapeHtml(ib.total_qty_str)}</b> <span style="font-size: 11px; color: #64748b;">${escapeHtml(ib.unit)}</span>` : '<span style="color: #cbd5e1;">-</span>';
                 const bLvl = ib.exists ? `<span style="font-size: 11px; font-weight: 500;">${escapeHtml(ib.level_str || '')} ${ib.level_num ? ib.level_num + '级' : ''}</span>` : '<span style="color: #cbd5e1;">-</span>';
-                const bDwg = ib.exists ? `<span class="cell-text-ellipsis" style="max-width: 80px;" title="${escapeHtml(ib.drawing_no || '/')}">${escapeHtml(ib.drawing_no || '/')}</span>` : '<span style="color: #cbd5e1;">-</span>';
+                const bDwg = ib.exists ? (formatPipeMultilineHtml(ib.drawing_no || '/') || '<span style="color: #cbd5e1;">-</span>') : '<span style="color: #cbd5e1;">-</span>';
                 const bSheet = ib.exists ? `<span class="cell-text-ellipsis" style="max-width: 80px; color: #166534;" title="${escapeHtml((ib.subsystems || []).join(', '))}">[${escapeHtml((ib.subsystems || []).join(','))}]</span>` : '<span style="color: #cbd5e1;">-</span>';
 
                 const specMfr = [it.spec_model, it.manufacturer].filter(Boolean).join(' / ') || '-';
@@ -377,12 +377,12 @@
                     <tr style="border-bottom: 1px solid #f1f5f9; ${trBg}">
                         <td style="padding: 6px 8px; text-align: center; color: #94a3b8; font-family: monospace; border-right: 1px solid #f1f5f9;">${idx + 1}</td>
                         <td style="padding: 6px 10px; text-align: center; border-right: 1px solid #f1f5f9;">${badgeHtml}</td>
-                        <td style="padding: 6px 10px; font-family: monospace; font-weight: 700; color: #0f172a; border-right: 1px solid #f1f5f9;">${escapeHtml(it.material_no)}</td>
+                        <td style="padding: 6px 10px; font-family: monospace; font-weight: 700; color: #0f172a; border-right: 1px solid #f1f5f9;">${formatPipeMultilineMatNo(it.material_no)}</td>
                         <td style="padding: 6px 10px; font-weight: 600; color: #334155; border-right: 1px solid #f1f5f9;">
-                            <div class="cell-text-ellipsis" style="max-width: 145px;" title="${escapeHtml(it.name || '-')}">${escapeHtml(it.name || '-')}</div>
+                            ${formatPipeMultilineHtml(it.name || '-')}
                         </td>
                         <td style="padding: 6px 10px; color: #64748b; border-right: 1px solid #f1f5f9;">
-                            <div class="cell-text-ellipsis" style="max-width: 165px;" title="${escapeHtml(specMfr)}">${escapeHtml(specMfr)}</div>
+                            ${formatPipeMultilineHtml(specMfr)}
                         </td>
                         <!-- A Cols -->
                         <td style="padding: 6px 8px; text-align: right; border-right: 1px solid #f1f5f9; background: rgba(239, 246, 255, 0.4);">${aQty}</td>

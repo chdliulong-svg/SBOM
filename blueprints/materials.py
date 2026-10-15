@@ -571,33 +571,39 @@ def export_materials_excel():
         cell.border = thin_border
     ws.row_dimensions[1].height = 28
 
+    from services.exporter import format_pipe_multiline
     data_font = Font(name="微软雅黑", size=10)
     for r_idx, r in enumerate(rows, start=2):
         row_values = [
-            r['material_no'],
-            r['name'] or '',
-            r['referenced_projects'] or '未引用',
-            r['description'] or '',
-            r['spec_model'] or '',
-            r['manufacturer'] or '',
-            r['unit'] or 'PC',
-            r['drawing_no'] or '/',
+            format_pipe_multiline(r['material_no']),
+            format_pipe_multiline(r['name'] or ''),
+            format_pipe_multiline(r['referenced_projects'] or '未引用'),
+            format_pipe_multiline(r['description'] or ''),
+            format_pipe_multiline(r['spec_model'] or ''),
+            format_pipe_multiline(r['manufacturer'] or ''),
+            format_pipe_multiline(r['unit'] or 'PC'),
+            format_pipe_multiline(r['drawing_no'] or '/'),
             r['child_count'] if r['child_count'] > 0 else 0,
             "已配备" if r['image_path'] else "无",
             "已配备" if r['manual_path'] else "无",
-            r['substitute'] or '',
-            r['notes'] or ''
+            format_pipe_multiline(r['substitute'] or ''),
+            format_pipe_multiline(r['notes'] or '')
         ]
         ws.append(row_values)
+        max_lines = 1
         for c_idx in range(1, len(row_values) + 1):
             c = ws.cell(row=r_idx, column=c_idx)
             c.font = data_font
             c.border = thin_border
+            if isinstance(c.value, str) and '\n' in c.value:
+                lines_count = len(c.value.split('\n'))
+                if lines_count > max_lines:
+                    max_lines = lines_count
             if c_idx in [1, 7, 8, 9, 10, 11]:
                 c.alignment = center_align
             else:
                 c.alignment = left_align
-        ws.row_dimensions[r_idx].height = 22
+        ws.row_dimensions[r_idx].height = max(22, max_lines * 18)
 
     col_widths = {
         1: 18, 2: 22, 3: 24, 4: 38, 5: 25, 6: 18,

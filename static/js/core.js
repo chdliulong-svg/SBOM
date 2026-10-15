@@ -157,5 +157,97 @@
             return `${projName}${platStr}${codeStr}`;
         }
 
+        // ==========================================
+        // Pipe Separator Multiline Formatting Helpers
+        // ==========================================
+        function formatPipeMultilineHtml(val, isCentered = false) {
+            if (val === null || val === undefined) return '';
+            const rawStr = String(val).trim();
+            if (!rawStr) return '';
+
+            // Check if it contains | or ｜ or \n
+            if (!/[|｜\n]/.test(rawStr)) {
+                return `<div class="cell-text-ellipsis" title="${escapeHtml(rawStr)}">${escapeHtml(rawStr)}</div>`;
+            }
+
+            // Split into parts by | or ｜ or \n
+            const lines = rawStr.split(/[|｜\n]/).map(s => s.trim()).filter(s => s.length > 0);
+            if (lines.length <= 1) {
+                const text = lines[0] || rawStr;
+                return `<div class="cell-text-ellipsis" title="${escapeHtml(text)}">${escapeHtml(text)}</div>`;
+            }
+
+            const fullTitle = escapeHtml(lines.join('\n'));
+            const itemsHtml = lines.map(line => 
+                `<div class="cell-text-ellipsis" style="line-height: 1.35; ${isCentered ? 'text-align: center;' : ''}">${escapeHtml(line)}</div>`
+            ).join('');
+
+            return `<div class="cell-multiline-wrap" title="${fullTitle}">
+                ${itemsHtml}
+            </div>`;
+        }
+
+        function formatPipeMultilineHierarchy(val, prefixSymbol = '', indentPx = 0, collapsedHint = '') {
+            if (val === null || val === undefined) val = '';
+            const rawStr = String(val).trim();
+
+            const hasPipe = /[|｜\n]/.test(rawStr);
+            const lines = hasPipe ? rawStr.split(/[|｜\n]/).map(s => s.trim()).filter(s => s.length > 0) : [rawStr];
+            const fullTitle = escapeHtml(lines.join('\n'));
+
+            if (lines.length <= 1) {
+                const text = lines[0] || '';
+                if (prefixSymbol) {
+                    return `<div style="padding-left: ${indentPx}px; display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0;" title="${fullTitle}">
+                        <span style="color: #94a3b8; font-family: monospace; font-size: 12px; flex-shrink: 0;">${prefixSymbol}</span>
+                        <span class="cell-text-ellipsis">${escapeHtml(text)}</span>
+                        ${collapsedHint}
+                    </div>`;
+                } else {
+                    return `<div class="cell-text-ellipsis" title="${fullTitle}">${escapeHtml(text)}${collapsedHint}</div>`;
+                }
+            }
+
+            // Multiple lines
+            const linesHtml = lines.map((l, i) => 
+                `<span class="cell-text-ellipsis" style="line-height: 1.35;">${escapeHtml(l)}${i === 0 ? collapsedHint : ''}</span>`
+            ).join('');
+
+            if (prefixSymbol) {
+                return `<div style="padding-left: ${indentPx}px; display: flex; align-items: flex-start; gap: 4px; width: 100%; min-width: 0;" title="${fullTitle}">
+                    <span style="color: #94a3b8; font-family: monospace; font-size: 12px; flex-shrink: 0; line-height: 1.4;">${prefixSymbol}</span>
+                    <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1;">
+                        ${linesHtml}
+                    </div>
+                </div>`;
+            } else {
+                return `<div style="display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0;" title="${fullTitle}">
+                    ${linesHtml}
+                </div>`;
+            }
+        }
+
+        function formatPipeMultilineMatNo(matNo, badgeHtml = '') {
+            if (!matNo) return '';
+            const rawStr = String(matNo).trim();
+            const hasPipe = /[|｜\n]/.test(rawStr);
+            const lines = hasPipe ? rawStr.split(/[|｜\n]/).map(s => s.trim()).filter(s => s.length > 0) : [rawStr];
+            const fullTitle = escapeHtml(lines.join('\n'));
+
+            if (lines.length <= 1) {
+                return `<div style="display: flex; align-items: center; gap: 4px; overflow: hidden;" title="${fullTitle}">
+                    <span class="cell-text-ellipsis" style="flex-shrink: 0; max-width: 100%; font-family: monospace; font-weight: bold;">${escapeHtml(lines[0] || '')}</span>
+                    ${badgeHtml}
+                </div>`;
+            }
+
+            return `<div style="display: flex; align-items: flex-start; gap: 4px; overflow: hidden;" title="${fullTitle}">
+                <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1;">
+                    ${lines.map(l => `<span class="cell-text-ellipsis" style="line-height: 1.35; font-family: monospace; font-weight: bold;">${escapeHtml(l)}</span>`).join('')}
+                </div>
+                ${badgeHtml}
+            </div>`;
+        }
+
 
 

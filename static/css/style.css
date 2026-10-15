@@ -147,6 +147,19 @@
             max-width: 100%;
             display: block;
         }
+
+        /* Multiline wrapper for pipe-separated cells */
+        .cell-multiline-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            justify-content: center;
+            min-width: 0;
+            width: 100%;
+        }
+        .cell-multiline-wrap .cell-text-ellipsis {
+            line-height: 1.35;
+        }
         
         .col-center { text-align: center; }
         .badge-level { font-weight: bold; white-space: nowrap; display: inline-block; }

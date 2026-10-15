@@ -31,6 +31,23 @@ def ensure_company_logo(tpl_path):
             print("Warning extracting logo:", e)
     return logo_path
 
+def format_pipe_multiline(val):
+    """
+    If val is a string and contains '|' or '｜', split into separate lines with '\n'.
+    Trims surrounding whitespace of each line.
+    """
+    if val is None:
+        return ''
+    if isinstance(val, (int, float)):
+        return val
+    s = str(val)
+    if '|' in s or '｜' in s:
+        import re
+        parts = [p.strip() for p in re.split(r'[|｜]', s)]
+        non_empty = [p for p in parts if p]
+        return '\n'.join(non_empty) if non_empty else s
+    return val
+
 def export_project_sbom(project_id, output_path, embed_manuals=False):
     """
     Exports the project and all its subsystems to a standardized Excel workbook
@@ -250,10 +267,6 @@ def export_project_sbom(project_id, output_path, embed_manuals=False):
 
         for idx, item in enumerate(bom_items):
             r = 4 + idx
-            ws.row_dimensions[r].height = 70  # Standard ample height for clear images
-            row_h_pt = float(ws.row_dimensions[r].height or 70)
-            cell_h = max(30, int(row_h_pt * 96 / 72))
-
             level_num_val = item['level_num'] or 1
             level_str_val = item['level_str'] or ('•' * level_num_val)
             is_dup_row = sub_mat_counts.get((item['material_no'] or '').strip(), 0) > 1
@@ -277,15 +290,36 @@ def export_project_sbom(project_id, output_path, embed_manuals=False):
                 ('P', item['substitute'] or '', song_font, Alignment(horizontal='left', vertical='center', wrap_text=True))
             ]
 
-            for col_letter, val, font_obj, align_obj in row_data:
+            max_lines_in_row = 1
+            for col_letter, raw_val, font_obj, align_obj in row_data:
+                val = format_pipe_multiline(raw_val)
                 cell = ws[f'{col_letter}{r}']
                 cell.value = val
                 cell.font = font_obj
-                cell.alignment = align_obj
+
+                # If value is multi-line, ensure wrap_text is True so Excel renders line breaks
+                if isinstance(val, str) and '\n' in val:
+                    lines_count = len(val.split('\n'))
+                    if lines_count > max_lines_in_row:
+                        max_lines_in_row = lines_count
+                    cell.alignment = Alignment(
+                        horizontal=align_obj.horizontal if align_obj else 'center',
+                        vertical=align_obj.vertical if align_obj else 'center',
+                        wrap_text=True
+                    )
+                else:
+                    cell.alignment = align_obj
+
                 cell.border = thin_border
                 if is_dup_row and col_letter == 'E':
                     cell.fill = dup_mat_fill
                     cell.font = dup_mat_font
+
+            # Dynamically adjust row height for multiline text
+            row_height = max(70, max_lines_in_row * 18 + 10)
+            ws.row_dimensions[r].height = row_height
+            row_h_pt = float(row_height)
+            cell_h = max(30, int(row_h_pt * 96 / 72))
 
             # Column M: Manual Link / Info (Hyperlink mode)
             manual_path = item['manual_path']

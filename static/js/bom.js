@@ -219,12 +219,12 @@
 
                 if (lvl === 1) {
                     levelBadgeHtml = `<div style="display: inline-flex; align-items: center; justify-content: center;">${treeToggleHtml}<span class="badge-level lvl-1-badge">● 一级组件</span></div>`;
-                    nameHtml = `<div class="cell-text-ellipsis" title="${it.m_name || ''}">${it.m_name || ''}${collapsedHint}</div>`;
-                    descHtml = `<div class="cell-text-ellipsis" title="${it.m_desc || ''}">${it.m_desc || ''}</div>`;
+                    nameHtml = formatPipeMultilineHierarchy(it.m_name || '', '', 0, collapsedHint);
+                    descHtml = formatPipeMultilineHierarchy(it.m_desc || '', '', 0);
                 } else if (lvl === 2) {
                     levelBadgeHtml = `<div style="display: inline-flex; align-items: center; justify-content: center;">${treeToggleHtml}<span class="badge-level lvl-2-badge">●● 二级</span></div>`;
-                    nameHtml = `<div style="padding-left: 10px; display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0;" title="${it.m_name || ''}"><span style="color: #94a3b8; font-family: monospace; font-size: 12px; flex-shrink: 0;">└</span> <span class="cell-text-ellipsis">${it.m_name || ''}</span>${collapsedHint}</div>`;
-                    descHtml = `<div style="padding-left: 10px; display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0;" title="${it.m_desc || ''}"><span style="color: #94a3b8; font-family: monospace; font-size: 12px; flex-shrink: 0;">└</span> <span class="cell-text-ellipsis">${it.m_desc || ''}</span></div>`;
+                    nameHtml = formatPipeMultilineHierarchy(it.m_name || '', '└', 10, collapsedHint);
+                    descHtml = formatPipeMultilineHierarchy(it.m_desc || '', '└', 10);
                 } else {
                     // 三级增加一个短横 (└─)、四级增加两个短横 (└──)、依次类推
                     const dashes = '─'.repeat(Math.max(1, lvl - 2));
@@ -234,8 +234,8 @@
                         ? `<span class="badge-level lvl-3-badge">●●● 三级</span>` 
                         : `<span class="badge-level" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; padding: 2px 6px; border-radius: 4px; font-size: 11px;">●●●● ${lvl}级</span>`;
                     levelBadgeHtml = `<div style="display: inline-flex; align-items: center; justify-content: center;">${treeToggleHtml}${badgeText}</div>`;
-                    nameHtml = `<div style="padding-left: ${indentPx}px; display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0;" title="${it.m_name || ''}"><span style="color: #94a3b8; font-family: monospace; font-size: 12px; flex-shrink: 0;">${prefixSymbol}</span> <span class="cell-text-ellipsis">${it.m_name || ''}</span>${collapsedHint}</div>`;
-                    descHtml = `<div style="padding-left: ${indentPx}px; display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0;" title="${it.m_desc || ''}"><span style="color: #94a3b8; font-family: monospace; font-size: 12px; flex-shrink: 0;">${prefixSymbol}</span> <span class="cell-text-ellipsis">${it.m_desc || ''}</span></div>`;
+                    nameHtml = formatPipeMultilineHierarchy(it.m_name || '', prefixSymbol, indentPx, collapsedHint);
+                    descHtml = formatPipeMultilineHierarchy(it.m_desc || '', prefixSymbol, indentPx);
                 }
 
                 if (isRowHidden) {
@@ -357,19 +357,19 @@
                     </td>
                     <td class="col-center" style="white-space: nowrap;"><span class="row-drag-handle" title="按住拖拽排序" onmousedown="event.stopPropagation(); selectBomRow(${idx}, ${it.id});">⠿</span>${it.row_num}</td>
                     <td class="col-center">${levelBadgeHtml}</td>
-                    <td class="col-center">${it.seq_num}</td>
-                    <td title="${it.material_no}"><div style="display: flex; align-items: center; gap: 4px; overflow: hidden;"><span class="cell-text-ellipsis" style="flex-shrink: 0; max-width: 100%;">${it.material_no}</span>${dupBadge}</div></td>
+                    <td class="col-center">${formatPipeMultilineHtml(it.seq_num, true)}</td>
+                    <td>${formatPipeMultilineMatNo(it.material_no, dupBadge)}</td>
                     <td>${nameHtml}</td>
                     <td>${descHtml}</td>
-                    <td title="${it.m_model || ''}"><div class="cell-text-ellipsis">${it.m_model || ''}</div></td>
-                    <td title="${it.m_mfr || ''}"><div class="cell-text-ellipsis">${it.m_mfr || ''}</div></td>
-                    <td class="col-center">${it.qty}</td>
-                    <td class="col-center">${it.unit || it.m_unit || 'PC'}</td>
+                    <td>${formatPipeMultilineHtml(it.m_model || '')}</td>
+                    <td>${formatPipeMultilineHtml(it.m_mfr || '')}</td>
+                    <td class="col-center">${formatPipeMultilineHtml(it.qty, true)}</td>
+                    <td class="col-center">${formatPipeMultilineHtml(it.unit || it.m_unit || 'PC', true)}</td>
                     <td class="col-center">${manualHtml}</td>
                     <td class="col-center">${imgHtml}</td>
-                    <td title="${(it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/')}"><div class="cell-text-ellipsis">${(it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/')}</div></td>
-                    <td title="${it.notes || ''}"><div class="cell-text-ellipsis">${it.notes || ''}</div></td>
-                    <td title="${it.substitute || it.m_substitute || ''}"><div class="cell-text-ellipsis">${it.substitute || it.m_substitute || ''}</div></td>
+                    <td>${formatPipeMultilineHtml((it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/'))}</td>
+                    <td>${formatPipeMultilineHtml(it.notes || '')}</td>
+                    <td>${formatPipeMultilineHtml(it.substitute || it.m_substitute || '')}</td>
                 `;
                 tbody.appendChild(tr);
             });

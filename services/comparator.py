@@ -5,6 +5,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from .database import get_db
 from .config import config
+from .exporter import format_pipe_multiline
 
 def parse_float_qty(val):
     """Safely parse a quantity value to float."""
@@ -602,24 +603,32 @@ def generate_comparison_excel(result):
             changes_desc
         ]
 
-        for col_idx, val in enumerate(row_data, start=1):
+        max_lines_in_row = 1
+        for col_idx, raw_val in enumerate(row_data, start=1):
+            val = format_pipe_multiline(raw_val)
             cell = ws_diff.cell(row=row_idx, column=col_idx, value=val)
             cell.font = font_normal
             cell.border = thin_border
             if row_fill:
                 cell.fill = row_fill
 
+            is_multiline = isinstance(val, str) and '\n' in val
+            if is_multiline:
+                lines_count = len(val.split('\n'))
+                if lines_count > max_lines_in_row:
+                    max_lines_in_row = lines_count
+
             if col_idx in [1, 2, 7, 8, 9, 10, 12, 13, 14, 15, 17]:
-                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=is_multiline)
             else:
-                cell.alignment = Alignment(horizontal="left", vertical="center")
+                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=is_multiline)
 
             if col_idx == 2:
                 cell.font = st_font
             elif col_idx == 3:
                 cell.font = font_mono
 
-        ws_diff.row_dimensions[row_idx].height = 20
+        ws_diff.row_dimensions[row_idx].height = max(20, max_lines_in_row * 18)
 
     # Auto column width for ws_diff
     diff_widths = {
@@ -686,24 +695,32 @@ def generate_comparison_excel(result):
             changes_desc
         ]
 
-        for col_idx, val in enumerate(row_data, start=1):
+        max_lines_in_row = 1
+        for col_idx, raw_val in enumerate(row_data, start=1):
+            val = format_pipe_multiline(raw_val)
             cell = ws_all.cell(row=row_idx, column=col_idx, value=val)
             cell.font = font_normal
             cell.border = thin_border
             if row_fill:
                 cell.fill = row_fill
 
+            is_multiline = isinstance(val, str) and '\n' in val
+            if is_multiline:
+                lines_count = len(val.split('\n'))
+                if lines_count > max_lines_in_row:
+                    max_lines_in_row = lines_count
+
             if col_idx in [1, 2, 7, 8, 9, 10, 12, 13, 14, 15, 17]:
-                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=is_multiline)
             else:
-                cell.alignment = Alignment(horizontal="left", vertical="center")
+                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=is_multiline)
 
             if col_idx == 2:
                 cell.font = st_font
             elif col_idx == 3:
                 cell.font = font_mono
 
-        ws_all.row_dimensions[row_idx].height = 20
+        ws_all.row_dimensions[row_idx].height = max(20, max_lines_in_row * 18)
 
     for col_i, w in diff_widths.items():
         ws_all.column_dimensions[get_column_letter(col_i)].width = w
@@ -884,18 +901,26 @@ def generate_procurement_excel(res):
             is_zebra = (row_idx % 2 == 1)
             row_fill = zebra_fill if is_zebra else None
 
-            for col_idx, val in enumerate(row_data, start=1):
+            max_lines_in_row = 1
+            for col_idx, raw_val in enumerate(row_data, start=1):
+                val = format_pipe_multiline(raw_val)
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)
                 cell.font = font_normal
                 cell.border = thin_border
                 if row_fill:
                     cell.fill = row_fill
 
+                is_multiline = isinstance(val, str) and '\n' in val
+                if is_multiline:
+                    lines_count = len(val.split('\n'))
+                    if lines_count > max_lines_in_row:
+                        max_lines_in_row = lines_count
+
                 # Alignments & Styles
                 if col_idx in [1, 2, 7, 8, 9, 10, 11]:
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=is_multiline)
                 else:
-                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=is_multiline)
 
                 if col_idx == 2:
                     if it['procure_type'] == '新增物料':
@@ -911,7 +936,7 @@ def generate_procurement_excel(res):
                 elif col_idx == 9:
                     cell.font = Font(name="Consolas", size=11, bold=True, color="0F766E")
 
-            ws.row_dimensions[row_idx].height = 22
+            ws.row_dimensions[row_idx].height = max(22, max_lines_in_row * 18)
 
     # Column Widths
     col_widths = {
