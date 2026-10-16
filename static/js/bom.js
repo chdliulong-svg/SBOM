@@ -1169,12 +1169,16 @@
 
             // Show status tags
             const tag = document.getElementById('match-status-tag');
-            tag.style.display = 'inline-flex';
-            tag.textContent = `已匹配物料主库: ${m.material_no}`;
-            document.getElementById('mat-exact-hint').style.display = 'inline';
+            if (tag) {
+                tag.style.display = 'inline-flex';
+                tag.textContent = `已匹配物料主库: ${m.material_no}`;
+            }
+            const matExactHint = document.getElementById('mat-exact-hint');
+            if (matExactHint) matExactHint.style.display = 'inline';
 
             // Clear search inputs
-            document.getElementById('bm-quick-search').value = `${m.material_no} ${m.name || ''}`;
+            const quickSearch = document.getElementById('bm-quick-search');
+            if (quickSearch) quickSearch.value = `${m.material_no} ${m.name || ''}`;
 
             // Check and prompt if this material has child levels
             checkMaterialChildren(m.material_no);
@@ -1831,10 +1835,13 @@
 
             document.getElementById('bomModalTitle').textContent = '添加物料明细';
             document.getElementById('edit-bom-id').value = '';
-            document.getElementById('masterSelectGroup').style.display = '';
+            const masterGroup = document.getElementById('masterSelectGroup');
+            if (masterGroup) masterGroup.style.display = '';
             document.getElementById('insertPosGroup').style.display = 'block';
-            document.getElementById('bm-quick-search').value = '';
-            document.getElementById('match-status-tag').style.display = 'none';
+            const quickSearch = document.getElementById('bm-quick-search');
+            if (quickSearch) quickSearch.value = '';
+            const matchTag = document.getElementById('match-status-tag');
+            if (matchTag) matchTag.style.display = 'none';
             document.getElementById('mat-exact-hint').style.display = 'none';
             document.getElementById('mat-new-hint').style.display = 'none';
             hideChildPromptBox();
@@ -1906,10 +1913,13 @@
             }
 
             document.getElementById('edit-bom-id').value = it.id;
-            document.getElementById('masterSelectGroup').style.display = '';
+            const masterGroup = document.getElementById('masterSelectGroup');
+            if (masterGroup) masterGroup.style.display = 'none';
             document.getElementById('insertPosGroup').style.display = 'none';
-            document.getElementById('bm-quick-search').value = '';
-            document.getElementById('match-status-tag').style.display = 'none';
+            const quickSearch = document.getElementById('bm-quick-search');
+            if (quickSearch) quickSearch.value = '';
+            const matchTag = document.getElementById('match-status-tag');
+            if (matchTag) matchTag.style.display = 'none';
             document.getElementById('mat-exact-hint').style.display = 'none';
             document.getElementById('mat-new-hint').style.display = 'none';
             hideChildPromptBox();

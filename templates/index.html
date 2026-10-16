@@ -530,17 +530,6 @@
                 <input type="hidden" id="edit-bom-id">
                 
                 <div class="form-grid">
-                    <!-- 1. Fuzzy Search & Match Bar -->
-                    <div class="form-group full" id="masterSelectGroup" style="position: relative;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                            <label class="form-label" style="color: #1d4ed8;">物料检索匹配（输入物料描述 / 元器件名称 / 规格型号 / 物料号）:</label>
-                            <span id="match-status-tag" class="match-badge" style="display: none;"></span>
-                        </div>
-                        <input type="text" id="bm-quick-search" class="form-input" style="width: 100%; box-sizing: border-box; border-color: #93c5fd; background: #eff6ff;" placeholder="输入关键词（如：润滑泵、分配器、传感器、软管、卡套、SSV 或 DFB...）自动联想" oninput="handleFuzzySearch(this.value)" autocomplete="off">
-                        <!-- Floating Dropdown list -->
-                        <div id="fuzzyDropdownResults" class="fuzzy-dropdown" style="display: none;"></div>
-                    </div>
-
                     <!-- 2. Material Number (Exact Match / Master Key) -->
                     <div class="form-group">
                         <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
@@ -2656,7 +2645,7 @@
     <script src="/static/js/project.js?v=20261016_4"></script>
     <script>window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};</script>
     <script src="/static/js/project_manager.js?v=20261016_5"></script>
-    <script src="/static/js/bom.js?v=20261016_6"></script>
+    <script src="/static/js/bom.js?v=20261016_7"></script>
     <script src="/static/js/material.js?v=20261014_1"></script>
     <script src="/static/js/compare.js?v=20261014_1"></script>
     <script src="/static/js/pdf_viewer.js?v=20261014_1"></script>
