@@ -15,6 +15,7 @@
                 const lockedBy = (p.locked_by || '').trim();
                 const lockTag = isLocked ? ' (只读)' : (lockedBy ? ` (编辑中: ${lockedBy})` : ' (编辑中)');
                 const timeStr = p.updated_at ? `\n上次修改: ${p.updated_at}` : (p.created_at ? `\n创建时间: ${p.created_at}` : '');
+                opt.textContent = `${lockIcon}${formattedTitle}${lockTag}`;
                 opt.title = `${formattedTitle}${lockTag}${timeStr}`;
                 sel.appendChild(opt);
             });
