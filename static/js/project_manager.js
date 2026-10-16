@@ -224,15 +224,15 @@ function renderProjectManagerTable(projects) {
         if (isLocked) {
             const lockUser = p.locked_by ? ` (${escapeHtml(p.locked_by)})` : '';
             statusBadge = `
-                <span class="pm-status-badge pm-status-locked" title="工程处于锁定保护状态${lockUser}">
+                <span class="pm-status-badge pm-status-locked" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;" title="工程处于锁定保护状态${lockUser}">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                     <span>只读保护</span>
                 </span>
             `;
         } else {
             statusBadge = `
-                <span class="pm-status-badge pm-status-unlocked" title="工程处于可编辑状态">
-                    <span class="pm-status-dot"></span>
+                <span class="pm-status-badge pm-status-unlocked" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0;" title="工程处于可编辑状态">
+                    <span class="pm-status-dot" style="display: inline-block; width: 6px; height: 6px; background: #16a34a; border-radius: 50%;"></span>
                     <span>可编辑</span>
                 </span>
             `;
@@ -240,7 +240,7 @@ function renderProjectManagerTable(projects) {
 
         // 当前打开高亮
         const rowClass = `pm-table-row ${isCurrent ? 'pm-row-current' : ''} ${isSelected ? 'pm-row-selected' : ''}`;
-        const currentTag = isCurrent ? `<span class="pm-current-tag">当前打开</span>` : '';
+        const currentTag = isCurrent ? `<span class="pm-current-tag" style="font-size: 10px; font-weight: 600; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 1px 6px; border-radius: 4px; white-space: nowrap;">当前打开</span>` : '';
 
         html += `
             <tr class="${rowClass}" data-id="${p.id}" ondblclick="openProjectFromManager(${p.id})">
@@ -248,16 +248,16 @@ function renderProjectManagerTable(projects) {
                     <input type="checkbox" class="pm-row-cb" value="${p.id}" ${isSelected ? 'checked' : ''} onchange="togglePmRowSelection(${p.id}, this.checked)">
                 </td>
                 <td class="col-center" style="width: 50px; color: #94a3b8; font-size: 12px;">${idx + 1}</td>
+                <td style="min-width: 110px;">
+                    <span class="pm-platform-badge" style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;">${escapeHtml(platform)}</span>
+                </td>
                 <td style="min-width: 170px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <a href="javascript:void(0)" class="pm-code-link" onclick="openProjectFromManager(${p.id})" title="点击进入此工程">${escapeHtml(code)}</a>
+                        <a href="javascript:void(0)" class="pm-code-link" onclick="openProjectFromManager(${p.id})" style="font-weight: 600; color: #2563eb; text-decoration: none;" title="点击进入此工程">${escapeHtml(code)}</a>
                         ${currentTag}
                     </div>
                 </td>
-                <td style="min-width: 100px;">
-                    <span class="pm-platform-badge">${escapeHtml(platform)}</span>
-                </td>
-                <td style="min-width: 200px;">
+                <td style="min-width: 220px;">
                     <div style="font-weight: 500; color: #1e293b;">${escapeHtml(name)}</div>
                     ${sysName ? `<div style="font-size: 12px; color: #64748b; margin-top: 2px;">${escapeHtml(sysName)}</div>` : ''}
                 </td>
@@ -266,14 +266,14 @@ function renderProjectManagerTable(projects) {
                     <div>ECN: <span style="font-family: monospace;">${escapeHtml(ecnNo)}</span></div>
                 </td>
                 <td class="col-center" style="min-width: 120px;">
-                    <span class="pm-scale-badge" title="${sheets} 个分系统 Sheet，包含 ${items} 行 BOM 物料">
+                    <span class="pm-scale-badge" style="display: inline-block; background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; padding: 2px 7px; border-radius: 4px; font-size: 11px; white-space: nowrap;" title="${sheets} 个分系统 Sheet，包含 ${items} 行 BOM 物料">
                         ${sheets} Sheet · ${items} 行
                     </span>
                 </td>
                 <td class="col-center" style="min-width: 95px;">
                     ${statusBadge}
                 </td>
-                <td style="min-width: 155px; font-size: 12px; color: #334155;" title="创建时间: ${createdTime}">
+                <td style="min-width: 160px; font-size: 12px; color: #334155;" title="创建时间: ${createdTime}">
                     <div style="display: inline-flex; align-items: center; gap: 4px;">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                         <b>${escapeHtml(updatedTime)}</b>
