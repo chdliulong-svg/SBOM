@@ -111,10 +111,37 @@
                         applyMasterSortList();
                     }
 
+                    populateMasterDatalists();
                     renderMasterMaterialsTable();
                 })
                 .catch(err => console.error('Error loading master materials:', err));
         }
+
+        function populateMasterDatalists() {
+            const models = new Set();
+            const mfrs = new Set();
+            const names = new Set();
+            (allMasterMaterials || []).forEach(m => {
+                if (m.spec_model && m.spec_model.trim() && m.spec_model.trim() !== '/') {
+                    models.add(m.spec_model.trim());
+                }
+                if (m.manufacturer && m.manufacturer.trim() && m.manufacturer.trim() !== '/') {
+                    mfrs.add(m.manufacturer.trim());
+                }
+                if (m.name && m.name.trim() && m.name.trim() !== '/') {
+                    names.add(m.name.trim());
+                }
+            });
+            const fill = (id, set) => {
+                const dl = document.getElementById(id);
+                if (!dl) return;
+                dl.innerHTML = Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' })).map(v => `<option value="${escapeHtml(v)}">`).join('');
+            };
+            fill('mm-models-datalist', models);
+            fill('mm-mfrs-datalist', mfrs);
+            fill('mm-names-datalist', names);
+        }
+        window.populateMasterDatalists = populateMasterDatalists;
 
         function renderMasterMaterialsTable() {
             const tbody = document.getElementById('masterTableBody');
@@ -936,6 +963,7 @@
 
         // --- Create / Edit Material Modal ---
         function openCreateMasterModal() {
+            populateMasterDatalists();
             document.getElementById('editMasterModalTitle').textContent = '新建物料';
             document.getElementById('mm-is-create').value = 'true';
             document.getElementById('mm-old-mat-no').value = '';
@@ -992,6 +1020,7 @@
         }
 
         function populateEditMasterModal(mat) {
+            populateMasterDatalists();
             document.getElementById('editMasterModalTitle').textContent = `编辑物料 [${mat.material_no}]`;
             document.getElementById('mm-is-create').value = 'false';
             document.getElementById('mm-old-mat-no').value = mat.material_no;

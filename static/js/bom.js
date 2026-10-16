@@ -1012,30 +1012,70 @@
         }
 
         // --- Fuzzy Search & Dropdown Handlers ---
+        function handleFieldFuzzy(fieldKey, kw, containerId) {
+            renderFieldFuzzyDropdown(fieldKey, kw, containerId);
+        }
+
         function handleFuzzySearch(kw) {
-            renderFuzzyDropdown(kw, 'fuzzyDropdownResults');
+            renderFieldFuzzyDropdown('material_no', kw, 'fuzzyDropdownResults');
         }
 
         function handleDescFuzzy(kw) {
-            renderFuzzyDropdown(kw, 'descFuzzyDropdown');
+            renderFieldFuzzyDropdown('description', kw, 'descFuzzyDropdown');
         }
 
         function renderFuzzyDropdown(kw, containerId) {
+            renderFieldFuzzyDropdown('description', kw, containerId);
+        }
+
+        function closeAllFuzzyDropdowns() {
+            document.querySelectorAll('#bomItemModal .fuzzy-dropdown').forEach(d => {
+                d.style.display = 'none';
+            });
+        }
+
+        function renderFieldFuzzyDropdown(fieldKey, kw, containerId) {
             const dropdown = document.getElementById(containerId);
-            const query = kw.trim().toLowerCase();
-            if (!query) {
+            if (!dropdown) return;
+
+            // Close other dropdowns in the modal
+            document.querySelectorAll('#bomItemModal .fuzzy-dropdown').forEach(d => {
+                if (d.id !== containerId) d.style.display = 'none';
+            });
+
+            const query = (kw || '').trim().toLowerCase();
+            if (!query || query === '/') {
                 dropdown.style.display = 'none';
+                dropdown.innerHTML = '';
                 return;
             }
 
-            const terms = query.split(/\s+/);
-            const matched = allMasterMaterials.filter(m => {
-                const combined = `${m.material_no} ${m.name || ''} ${m.description || ''} ${m.spec_model || ''} ${m.manufacturer || ''}`.toLowerCase();
-                return terms.every(t => combined.includes(t));
-            }).slice(0, 10);
+            const terms = query.split(/\s+/).filter(Boolean);
+            if (terms.length === 0) {
+                dropdown.style.display = 'none';
+                dropdown.innerHTML = '';
+                return;
+            }
+
+            // Priority matching: items whose specific field matches get top rank
+            const primary = [];
+            const secondary = [];
+
+            (allMasterMaterials || []).forEach(m => {
+                const targetVal = String(m[fieldKey] || '').toLowerCase();
+                const combined = `${m.material_no || ''} ${m.name || ''} ${m.description || ''} ${m.spec_model || ''} ${m.manufacturer || ''} ${m.drawing_no || ''} ${m.substitute || ''}`.toLowerCase();
+
+                if (terms.every(t => targetVal.includes(t))) {
+                    primary.push(m);
+                } else if (terms.every(t => combined.includes(t))) {
+                    secondary.push(m);
+                }
+            });
+
+            const matched = [...primary, ...secondary].slice(0, 10);
 
             if (matched.length === 0) {
-                dropdown.innerHTML = `<div style="padding: 10px; font-size: 12px; color: #94a3b8; text-align: center;">未在物料库中找到匹配物料（可直接手动输入新物料）</div>`;
+                dropdown.innerHTML = `<div style="padding: 10px; font-size: 12px; color: #94a3b8; text-align: center;">未在物料主库中找到匹配物料（可直接手动输入新物料）</div>`;
                 dropdown.style.display = 'block';
                 return;
             }
@@ -1047,26 +1087,31 @@
                 
                 let thumbHtml = `<div class="fuzzy-thumb-empty">无图</div>`;
                 if (m.image_path) {
-                    thumbHtml = `<img src="/${m.image_path}" class="fuzzy-thumb">`;
+                    thumbHtml = `<img src="/${m.image_path}" class="fuzzy-thumb" onerror="this.onerror=null; this.parentNode.innerHTML='<div class=\\'fuzzy-thumb-empty\\'>无图</div>';">`;
                 }
 
-                let childBadge = (m.child_count > 0) ? `<span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 1px 6px; border-radius: 4px; font-weight: 500;">含 ${m.child_count} 项子层</span>` : '';
+                let childBadge = (m.child_count > 0) ? `<span style="font-size: 10px; background: #dcfce7; color: #166534; padding: 1px 6px; border-radius: 4px; font-weight: 500;">含 ${m.child_count} 项子层</span>` : '';
                 itemDiv.innerHTML = `
                     ${thumbHtml}
-                    <div class="fuzzy-info">
-                        <div class="fuzzy-title">
-                            <span>${m.material_no}</span>
-                            <span style="color: #334155;">${m.name || ''}</span>
-                            ${m.manufacturer ? `<span style="font-size: 11px; background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 4px;">${m.manufacturer}</span>` : ''}
+                    <div class="fuzzy-info" style="min-width: 0; flex: 1;">
+                        <div class="fuzzy-title" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span style="font-weight: 600; color: #1d4ed8;">${escapeHtml(m.material_no)}</span>
+                            <span style="color: #1e293b; font-weight: 500;">${escapeHtml(m.name || '')}</span>
+                            ${m.manufacturer ? `<span style="font-size: 11px; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">${escapeHtml(m.manufacturer)}</span>` : ''}
                             ${childBadge}
                         </div>
-                        <div class="fuzzy-desc">${m.description || ''}</div>
-                        <div class="fuzzy-sub">${m.spec_model ? '型号: ' + m.spec_model + ' | ' : ''}单位: ${m.unit || 'PC'}</div>
+                        ${m.description ? `<div class="fuzzy-desc" style="font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-top: 2px;" title="${escapeHtml(m.description)}">${escapeHtml(m.description)}</div>` : ''}
+                        <div class="fuzzy-sub" style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
+                            ${m.spec_model ? `<span style="color: #475569;">型号: <b>${escapeHtml(m.spec_model)}</b></span> &nbsp;|&nbsp; ` : ''}
+                            ${m.drawing_no && m.drawing_no !== '/' ? `<span>图号: ${escapeHtml(m.drawing_no)}</span> &nbsp;|&nbsp; ` : ''}
+                            <span>单位: ${escapeHtml(m.unit || 'PC')}</span>
+                        </div>
                     </div>
                 `;
-                itemDiv.onclick = () => {
+                itemDiv.onmousedown = (e) => {
+                    e.preventDefault();
                     selectMasterMaterial(m);
-                    dropdown.style.display = 'none';
+                    closeAllFuzzyDropdowns();
                 };
                 dropdown.appendChild(itemDiv);
             });
@@ -1184,13 +1229,18 @@
             checkMaterialChildren(m.material_no);
         }
 
-        // --- Exact Material Number Matching ---
+        // --- Exact Material Number Matching & Fuzzy Suggestion ---
         function handleMatNoInput(val) {
             checkExactMaterialMatch(val);
+            renderFieldFuzzyDropdown('material_no', val, 'matNoFuzzyDropdown');
         }
 
         function handleMatNoBlur(val) {
-            checkExactMaterialMatch(val);
+            setTimeout(() => {
+                const dd = document.getElementById('matNoFuzzyDropdown');
+                if (dd) dd.style.display = 'none';
+                checkExactMaterialMatch(val);
+            }, 200);
         }
 
         function checkExactMaterialMatch(matNo) {
@@ -1845,6 +1895,7 @@
             document.getElementById('mat-exact-hint').style.display = 'none';
             document.getElementById('mat-new-hint').style.display = 'none';
             hideChildPromptBox();
+            closeAllFuzzyDropdowns();
 
             document.getElementById('bm-mat-no').value = '';
             document.getElementById('bm-name').value = '';
@@ -1923,6 +1974,7 @@
             document.getElementById('mat-exact-hint').style.display = 'none';
             document.getElementById('mat-new-hint').style.display = 'none';
             hideChildPromptBox();
+            closeAllFuzzyDropdowns();
 
             document.getElementById('bm-mat-no').value = it.material_no;
             document.getElementById('bm-name').value = it.m_name || '';
@@ -2442,5 +2494,23 @@
             document.getElementById('previewImgTag').src = src;
             openModal('imgPreviewModal');
         }
+
+        // Close fuzzy dropdowns on clicking outside or pressing Escape
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.fuzzy-dropdown')) {
+                document.querySelectorAll('#bomItemModal .fuzzy-dropdown').forEach(d => {
+                    const formGroup = d.closest('.form-group');
+                    if (!formGroup || !formGroup.contains(e.target)) {
+                        d.style.display = 'none';
+                    }
+                });
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAllFuzzyDropdowns();
+            }
+        });
 
 

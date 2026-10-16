@@ -531,19 +531,21 @@
                 
                 <div class="form-grid">
                     <!-- 2. Material Number (Exact Match / Master Key) -->
-                    <div class="form-group">
+                    <div class="form-group" style="position: relative;">
                         <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
                             <span>* 物料号 (唯一区分主键):</span>
                             <span id="mat-exact-hint" style="color: #16a34a; font-size: 11px; font-weight: 500; display: none;">已匹配物料主库</span>
                             <span id="mat-new-hint" style="color: #0284c7; font-size: 11px; font-weight: 500; display: none;">主库新物料（保存时将自动录入）</span>
                         </label>
-                        <input id="bm-mat-no" class="form-input" placeholder="例如 DFB00166343" oninput="handleMatNoInput(this.value)" onblur="handleMatNoBlur(this.value)">
+                        <input id="bm-mat-no" class="form-input" placeholder="例如 DFB00166343" oninput="handleMatNoInput(this.value)" onfocus="if (this.value) handleMatNoInput(this.value)" onblur="handleMatNoBlur(this.value)" autocomplete="off">
+                        <div id="matNoFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
                     </div>
 
                     <!-- 3. Component Name -->
-                    <div class="form-group">
-                        <label class="form-label">元器件名称:</label>
-                        <input id="bm-name" class="form-input" placeholder="例如 润滑泵">
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">元器件名称 (支持自动联想):</label>
+                        <input id="bm-name" class="form-input" placeholder="例如 润滑泵" oninput="handleFieldFuzzy('name', this.value, 'nameFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('name', this.value, 'nameFuzzyDropdown')" autocomplete="off">
+                        <div id="nameFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
                     </div>
 
                     <!-- 3.1 Child Hierarchy Auto-Import Prompt Box -->
@@ -586,18 +588,20 @@
                                 <span id="desc-fuzzy-hint" style="font-size: 11px; color: var(--text-muted);">输入描述关键词可快速检索</span>
                             </div>
                         </div>
-                        <input id="bm-desc" class="form-input" placeholder="例如 备件润滑系统_润滑泵_盘古_050316237703 或 支架_D8-07-02-Q00632-00_绑线支架_X3_SSB" oninput="handleDescFuzzy(this.value)" autocomplete="off">
+                        <input id="bm-desc" class="form-input" placeholder="例如 备件润滑系统_润滑泵_盘古_050316237703 或 支架_D8-07-02-Q00632-00_绑线支架_X3_SSB" oninput="handleDescFuzzy(this.value)" onfocus="if (this.value) handleDescFuzzy(this.value)" autocomplete="off">
                         <div id="descFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
                     </div>
 
                     <!-- 5. Model & Manufacturer -->
-                    <div class="form-group">
-                        <label class="form-label">型号/规格:</label>
-                        <input id="bm-model" class="form-input" placeholder="规格型号">
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">型号/规格 (支持自动联想):</label>
+                        <input id="bm-model" class="form-input" placeholder="规格型号，输入可自动联想" oninput="handleFieldFuzzy('spec_model', this.value, 'modelFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('spec_model', this.value, 'modelFuzzyDropdown')" autocomplete="off">
+                        <div id="modelFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">制造商:</label>
-                        <input id="bm-mfr" class="form-input" placeholder="供应商名称">
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">制造商 (支持自动联想):</label>
+                        <input id="bm-mfr" class="form-input" placeholder="供应商名称，输入可自动联想" oninput="handleFieldFuzzy('manufacturer', this.value, 'mfrFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('manufacturer', this.value, 'mfrFuzzyDropdown')" autocomplete="off">
+                        <div id="mfrFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
                     </div>
 
                     <!-- 6. Quantity & Unit -->
@@ -619,9 +623,10 @@
                             <option value="•••|3">三级零件 (•••)</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" style="position: relative;">
                         <label class="form-label">图纸/文件代号:</label>
-                        <input id="bm-drawing" class="form-input" value="/">
+                        <input id="bm-drawing" class="form-input" value="/" oninput="handleFieldFuzzy('drawing_no', this.value, 'drawingFuzzyDropdown')" onfocus="if (this.value && this.value !== '/') handleFieldFuzzy('drawing_no', this.value, 'drawingFuzzyDropdown')" autocomplete="off">
+                        <div id="drawingFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
                     </div>
 
                     <!-- 8. Component Photo & Technical Manual (Side-by-Side 2 Columns) -->
@@ -713,9 +718,10 @@
                     </div>
 
                     <!-- 10. Substitute -->
-                    <div class="form-group">
-                        <label class="form-label">替代物料号/型号:</label>
-                        <input id="bm-substitute" class="form-input">
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">替代物料号/型号 (支持自动联想):</label>
+                        <input id="bm-substitute" class="form-input" placeholder="输入可自动联想主库" oninput="handleFieldFuzzy('substitute', this.value, 'substituteFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('substitute', this.value, 'substituteFuzzyDropdown')" autocomplete="off">
+                        <div id="substituteFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
                     </div>
 
                     <!-- 11. Notes -->
@@ -1257,7 +1263,8 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">* 元器件名称:</label>
-                        <input id="mm-name" class="form-input" placeholder="例如 润滑泵 / 分配器">
+                        <input id="mm-name" class="form-input" placeholder="例如 润滑泵 / 分配器" list="mm-names-datalist" autocomplete="off">
+                        <datalist id="mm-names-datalist"></datalist>
                     </div>
 
                     <!-- 第二行：物料完整描述 (跨整行) -->
@@ -1274,11 +1281,13 @@
                     <!-- 第三行：规格型号与制造商 -->
                     <div class="form-group">
                         <label class="form-label">规格型号:</label>
-                        <input id="mm-spec-model" class="form-input" placeholder="例如 DFB-10L-400V">
+                        <input id="mm-spec-model" class="form-input" placeholder="例如 DFB-10L-400V" list="mm-models-datalist" autocomplete="off">
+                        <datalist id="mm-models-datalist"></datalist>
                     </div>
                     <div class="form-group">
                         <label class="form-label">制造商:</label>
-                        <input id="mm-manufacturer" class="form-input" placeholder="例如 SKF / Lincoln">
+                        <input id="mm-manufacturer" class="form-input" placeholder="例如 SKF / Lincoln" list="mm-mfrs-datalist" autocomplete="off">
+                        <datalist id="mm-mfrs-datalist"></datalist>
                     </div>
 
                     <!-- 第四行：计量单位与图纸代号 -->
@@ -2645,8 +2654,8 @@
     <script src="/static/js/project.js?v=20261016_4"></script>
     <script>window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};</script>
     <script src="/static/js/project_manager.js?v=20261016_5"></script>
-    <script src="/static/js/bom.js?v=20261016_7"></script>
-    <script src="/static/js/material.js?v=20261014_1"></script>
+    <script src="/static/js/bom.js?v=20261016_8"></script>
+    <script src="/static/js/material.js?v=20261016_2"></script>
     <script src="/static/js/compare.js?v=20261014_1"></script>
     <script src="/static/js/pdf_viewer.js?v=20261014_1"></script>
     <script src="/static/js/backup.js?v=20261014_1"></script>

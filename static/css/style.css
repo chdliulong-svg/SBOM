@@ -374,6 +374,7 @@
         .form-group { display: flex; flex-direction: column; gap: 4px; }
         .form-group.full, .full-row { grid-column: 1 / -1 !important; width: 100% !important; }
         .form-label { font-size: 12px; font-weight: 600; color: #4b5563; }
+        .form-group:focus-within { z-index: 100; }
 
         /* Fuzzy Dropdown */
         .fuzzy-dropdown {
