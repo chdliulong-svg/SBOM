@@ -134,6 +134,32 @@
                     }
                     return;
                 }
+
+                // 6. Ctrl + C: Copy selected BOM row(s) (supports multi-select, cross-sheet and cross-project)
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+                    if (typeof selectedRowIds !== 'undefined' && selectedRowIds && selectedRowIds.size > 0) {
+                        const selText = window.getSelection ? window.getSelection().toString() : '';
+                        if (!selText) {
+                            e.preventDefault();
+                            if (typeof copySelectedBomRows === 'function') {
+                                copySelectedBomRows();
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // 7. Ctrl + V: Paste BOM row(s) (cross-sheet and cross-project)
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+                    const openModal = document.querySelector('.modal-mask.show');
+                    if (!openModal) {
+                        if (typeof pasteBomRows === 'function') {
+                            e.preventDefault();
+                            pasteBomRows();
+                        }
+                    }
+                    return;
+                }
             });
         });
 

@@ -619,14 +619,26 @@
             const btnMoveUp = document.getElementById('btnRowMoveUp');
             const btnMoveDown = document.getElementById('btnRowMoveDown');
             const btnDelete = document.getElementById('btnRowDelete');
+            const btnCopy = document.getElementById('btnRowCopy');
+            const btnPaste = document.getElementById('btnRowPaste');
             const indicator = document.getElementById('selectedRowIndicator');
             const selRowNumBadge = document.getElementById('selRowNumBadge');
             const selRowMatBadge = document.getElementById('selRowMatBadge');
             const count = selectedRowIds.size;
+            const copiedCount = getCopiedBomRowsCount();
 
             const isLocked = currentProjectData && (currentProjectData.is_locked == 1);
 
             if (isLocked) {
+                if (btnCopy) {
+                    btnCopy.disabled = (count === 0);
+                    btnCopy.title = count > 0 ? `复制选中的 ${count} 行物料 (Ctrl+C，支持跨Sheet与跨项目粘贴)` : '请先在下方表格中勾选或点击选中物料行，再执行复制 (Ctrl+C)';
+                }
+                if (btnPaste) {
+                    btnPaste.disabled = true;
+                    btnPaste.innerHTML = copiedCount > 0 ? `📋 粘贴行 (${copiedCount})` : '📋 粘贴行';
+                    btnPaste.title = '当前工程已锁定，如需粘贴物料请先点击【解锁】';
+                }
                 if (btnEdit) {
                     btnEdit.disabled = (count !== 1);
                     btnEdit.innerHTML = '查看明细';
@@ -660,6 +672,29 @@
             }
 
             if (btnEdit) btnEdit.innerHTML = '编辑';
+
+            // 复制与粘贴按钮状态维护
+            if (btnCopy) {
+                if (count > 0) {
+                    btnCopy.disabled = false;
+                    btnCopy.title = `复制选中的 ${count} 行物料 (Ctrl+C，支持跨Sheet与跨项目粘贴)`;
+                } else {
+                    btnCopy.disabled = true;
+                    btnCopy.title = '请先在下方表格中勾选或点击选中物料行，再执行复制 (Ctrl+C)';
+                }
+            }
+
+            if (btnPaste) {
+                if (copiedCount > 0) {
+                    btnPaste.disabled = false;
+                    btnPaste.innerHTML = `📋 粘贴行 (${copiedCount})`;
+                    btnPaste.title = `粘贴剪贴板中的 ${copiedCount} 行物料 (Ctrl+V，插入在选中行之后或末尾，支持跨Sheet与跨项目)`;
+                } else {
+                    btnPaste.disabled = true;
+                    btnPaste.innerHTML = '📋 粘贴行';
+                    btnPaste.title = '剪贴板为空，请先在任意Sheet或项目中选中物料行并点击【复制行】(Ctrl+C)';
+                }
+            }
 
             if (count === 0) {
                 if (btnEdit) { btnEdit.disabled = true; btnEdit.title = '请先在下方表格中勾选或点击选中一行，再进行编辑'; }
@@ -771,6 +806,170 @@
                 }).catch(err => {
                     alert('删除失败: ' + err.message);
                 });
+            }
+        }
+
+        // ==========================================
+        // 跨Sheet、跨项目 BOM 行复制与粘贴 (Clipboard Engine)
+        // ==========================================
+        const BOM_CLIPBOARD_STORAGE_KEY = 'sbom_clipboard_bom_rows';
+
+        function getCopiedBomRowsCount() {
+            try {
+                const raw = localStorage.getItem(BOM_CLIPBOARD_STORAGE_KEY);
+                if (!raw) return 0;
+                const data = JSON.parse(raw);
+                return Array.isArray(data?.items) ? data.items.length : 0;
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        function copySelectedBomRows() {
+            if (!currentBomItems || currentBomItems.length === 0 || selectedRowIds.size === 0) {
+                showToast('请先在表格中勾选或选中要复制的物料行！', 'warning');
+                return;
+            }
+
+            // 按表格原生行号 row_num 升序提取选中的物料行，保持顺序
+            const selectedItems = currentBomItems
+                .filter(it => selectedRowIds.has(it.id))
+                .sort((a, b) => (a.row_num || 0) - (b.row_num || 0));
+
+            if (selectedItems.length === 0) {
+                showToast('未找到选中的物料行数据', 'warning');
+                return;
+            }
+
+            const itemsToCopy = selectedItems.map(it => ({
+                material_no: it.material_no || '',
+                level_str: it.level_str || '••',
+                level_num: it.level_num || 2,
+                parent_material_no: it.parent_material_no || '',
+                drawing_no: (it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/'),
+                qty: String(it.qty || '1'),
+                unit: it.unit || it.m_unit || 'PC',
+                notes: it.notes || '',
+                substitute: it.substitute || '',
+                // 携带主库元数据，保障跨全新项目或跨环境粘贴时主库完整性
+                name: it.m_name || it.name || '',
+                description: it.m_desc || it.description || '',
+                spec_model: it.m_model || it.spec_model || '',
+                manufacturer: it.m_mfr || it.manufacturer || ''
+            }));
+
+            const clipboardPayload = {
+                version: '1.0',
+                timestamp: Date.now(),
+                source_project_id: typeof currentProjectId !== 'undefined' ? currentProjectId : null,
+                source_project_name: (currentProjectData && (currentProjectData.system_name || currentProjectData.code)) || '项目',
+                source_subsystem_id: typeof currentSubsystemId !== 'undefined' ? currentSubsystemId : null,
+                items: itemsToCopy
+            };
+
+            try {
+                localStorage.setItem(BOM_CLIPBOARD_STORAGE_KEY, JSON.stringify(clipboardPayload));
+                updateRowActionButtons();
+                const tip = itemsToCopy.length === 1 
+                    ? `已成功复制物料 [${itemsToCopy[0].material_no}]！\n可在当前/其他 Sheet 或切换至其他项目后点击【粘贴行】(Ctrl+V)` 
+                    : `已成功复制 ${itemsToCopy.length} 行物料！\n可在当前/其他 Sheet 或切换至其他项目后点击【粘贴行】(Ctrl+V)`;
+                showToast(tip, 'success');
+            } catch (err) {
+                console.error('存储剪贴板失败:', err);
+                showToast('复制失败: 无法保存至本地存储: ' + err.message, 'error');
+            }
+        }
+
+        async function pasteBomRows() {
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                alert('当前工程处于【锁定保护】状态，无法粘贴物料行！如需编辑请先点击【解锁编辑】。');
+                return;
+            }
+
+            if (typeof currentSubsystemId === 'undefined' || !currentSubsystemId) {
+                showToast('当前未选择任何 Sheet 子系统，无法执行粘贴！', 'warning');
+                return;
+            }
+
+            let raw = null;
+            try {
+                raw = localStorage.getItem(BOM_CLIPBOARD_STORAGE_KEY);
+            } catch (e) {
+                console.error('读取剪贴板失败:', e);
+            }
+
+            if (!raw) {
+                showToast('剪贴板为空！请先在表格中勾选物料行，点击【复制行】或按 Ctrl+C。', 'warning');
+                return;
+            }
+
+            let clipData = null;
+            try {
+                clipData = JSON.parse(raw);
+            } catch (e) {
+                showToast('剪贴板数据解析失败', 'error');
+                return;
+            }
+
+            const items = clipData?.items;
+            if (!Array.isArray(items) || items.length === 0) {
+                showToast('剪贴板中无有效物料数据！', 'warning');
+                return;
+            }
+
+            // 确定插入目标位置：
+            // 若当前表格已选中某行，则插入在选中的最后一行之后；若未选中则追加到当前 Sheet 末尾
+            let maxSelectedRowNum = null;
+            if (selectedRowIds && selectedRowIds.size > 0 && Array.isArray(currentBomItems) && currentBomItems.length > 0) {
+                currentBomItems.forEach(it => {
+                    if (selectedRowIds.has(it.id)) {
+                        if (maxSelectedRowNum === null || it.row_num > maxSelectedRowNum) {
+                            maxSelectedRowNum = it.row_num;
+                        }
+                    }
+                });
+            }
+
+            const btnPaste = document.getElementById('btnRowPaste');
+            const origHtml = btnPaste ? btnPaste.innerHTML : '📋 粘贴行';
+            if (btnPaste) {
+                btnPaste.disabled = true;
+                btnPaste.innerHTML = '粘贴中...';
+            }
+
+            try {
+                const payload = {
+                    subsystem_id: currentSubsystemId,
+                    insert_after_row: maxSelectedRowNum,
+                    items: items
+                };
+
+                const res = await safeFetchJson('/api/bom/paste', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res && res.success) {
+                    // 自动高亮选中刚粘贴成功的行
+                    selectedRowIds.clear();
+                    if (Array.isArray(res.inserted_ids)) {
+                        res.inserted_ids.forEach(id => selectedRowIds.add(id));
+                    }
+                    loadBomItems(currentSubsystemId);
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') {
+                        refreshCurrentProjectUpdatedAt();
+                    }
+                    const srcInfo = clipData.source_project_name ? ` (来源: ${clipData.source_project_name})` : '';
+                    showToast(`已成功粘贴 ${res.pasted_count || items.length} 行物料！${srcInfo}`, 'success');
+                } else {
+                    showToast((res && res.error) || '粘贴失败', 'error');
+                }
+            } catch (err) {
+                console.error('粘贴请求异常:', err);
+                showToast('粘贴请求异常: ' + (err.message || '网络连接失败'), 'error');
+            } finally {
+                updateRowActionButtons();
             }
         }
 

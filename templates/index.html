@@ -413,6 +413,12 @@
                         <button class="btn btn-outline btn-sm" id="btnRowBatchAdd" onclick="openBatchAddBomModal()" title="批量输入或粘贴多行物料号，按行自动导入并可指定导入级别" style="color: #1d4ed8; border-color: #93c5fd; background: #eff6ff; font-weight: 500;">
                             批量添加
                         </button>
+                        <button class="btn btn-outline btn-sm" id="btnRowCopy" onclick="copySelectedBomRows()" disabled title="复制选中的物料行（支持单选/多选，可跨Sheet与跨项目粘贴）">
+                            📋 复制行
+                        </button>
+                        <button class="btn btn-outline btn-sm" id="btnRowPaste" onclick="pasteBomRows()" disabled title="粘贴已复制的物料行（跨Sheet/跨项目，插入在选中行之后或追加至末尾）">
+                            📋 粘贴行
+                        </button>
                         <button class="btn btn-outline btn-sm" id="btnRowEdit" onclick="editSelectedRow()" disabled title="请先在下方表格中点击选中一行，再进行编辑">
                             编辑
                         </button>
@@ -2498,6 +2504,14 @@
                         <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #dc2626; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Delete</kbd>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">复制选中的 BOM 物料行 (支持多选，可跨Sheet与跨项目)</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #1e40af; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Ctrl + C</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <span style="font-size: 13px; color: #334155; font-weight: 500;">粘贴物料行 (插入在选中行之后或追加至末尾)</span>
+                        <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #1e40af; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">Ctrl + V</kbd>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
                         <span style="font-size: 13px; color: #334155; font-weight: 500;">双击表格中任意物料行</span>
                         <kbd style="background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; color: #059669; box-shadow: 0 1px 1px rgba(0,0,0,0.08);">双击左键 (编辑物料)</kbd>
                     </div>
@@ -2645,12 +2659,12 @@
     <script src="/static/js/project.js?v=20261016_3"></script>
     <script>window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};</script>
     <script src="/static/js/project_manager.js?v=20261016_4"></script>
-    <script src="/static/js/bom.js?v=20261014_1"></script>
+    <script src="/static/js/bom.js?v=20261016_5"></script>
     <script src="/static/js/material.js?v=20261014_1"></script>
     <script src="/static/js/compare.js?v=20261014_1"></script>
     <script src="/static/js/pdf_viewer.js?v=20261014_1"></script>
     <script src="/static/js/backup.js?v=20261014_1"></script>
     <script src="/static/js/audit.js?v=20261014_1"></script>
-    <script src="/static/js/main.js?v=20261014_1"></script>
+    <script src="/static/js/main.js?v=20261016_5"></script>
 </body>
 </html>

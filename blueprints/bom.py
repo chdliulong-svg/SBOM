@@ -254,6 +254,119 @@ def batch_add_bom_items():
             pass
 
 
+@bom_bp.route('/api/bom/paste', methods=['POST'])
+def paste_bom_items():
+    """
+    粘贴物料行（支持单行/多行，保持原有层级结构、图号、数量、单位、备注及替代料，支持跨Sheet与跨项目）。
+    若指定 insert_after_row，则紧接在该行后插入；否则追加至子系统末尾。
+    """
+    data = request.get_json(silent=True) or {}
+    subsystem_id = data.get('subsystem_id')
+    items = data.get('items', [])
+    if not subsystem_id:
+        return jsonify({'success': False, 'error': '缺少子系统ID'}), 400
+    if not items:
+        return jsonify({'success': False, 'error': '粘贴的物料列表为空'}), 400
+
+    is_ok, err_msg = check_project_unlocked(subsystem_id=subsystem_id)
+    if not is_ok:
+        return jsonify({'success': False, 'error': err_msg}), 403
+
+    insert_after_row = data.get('insert_after_row')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('SELECT id FROM subsystems WHERE id = ?', (subsystem_id,))
+        if not cursor.fetchone():
+            return jsonify({'success': False, 'error': '指定的子系统不存在'}), 404
+
+        total_rows = len(items)
+
+        if insert_after_row is not None and str(insert_after_row).isdigit():
+            target_start_row = int(insert_after_row) + 1
+            cursor.execute('''
+            UPDATE bom_items SET row_num = row_num + ? 
+            WHERE subsystem_id = ? AND row_num >= ?
+            ''', (total_rows, subsystem_id, target_start_row))
+        else:
+            cursor.execute('SELECT COALESCE(MAX(row_num), 0) + 1 FROM bom_items WHERE subsystem_id = ?', (subsystem_id,))
+            target_start_row = cursor.fetchone()[0]
+
+        inserted_item_ids = []
+        new_materials_count = 0
+
+        for offset, it in enumerate(items):
+            c_row = target_start_row + offset
+            mat_no = (it.get('material_no') or '').strip()
+            if not mat_no:
+                continue
+
+            level_str = it.get('level_str') or '••'
+            level_num = int(it.get('level_num') or 2)
+            parent_material_no = it.get('parent_material_no') or ''
+            drawing_no = (it.get('drawing_no') or '/').strip() or '/'
+            qty = str(it.get('qty', '1')).strip() or '1'
+            unit = (it.get('unit') or 'PC').strip() or 'PC'
+            notes = (it.get('notes') or '').strip()
+            substitute = (it.get('substitute') or '').strip()
+
+            # 校验并保底同步物料主库
+            cursor.execute('''
+            SELECT material_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute 
+            FROM materials WHERE material_no = ?
+            ''', (mat_no,))
+            existing_mat = cursor.fetchone()
+
+            if not existing_mat:
+                new_materials_count += 1
+                upsert_material(
+                    cursor,
+                    mat_no,
+                    name=(it.get('name') or it.get('m_name') or '').strip(),
+                    description=(it.get('description') or it.get('m_desc') or '').strip(),
+                    spec_model=(it.get('spec_model') or it.get('m_model') or '').strip(),
+                    manufacturer=(it.get('manufacturer') or it.get('m_mfr') or '').strip(),
+                    unit=unit,
+                    drawing_no=drawing_no if drawing_no != '/' else '/'
+                )
+            else:
+                if (not existing_mat['drawing_no'] or existing_mat['drawing_no'] == '/') and drawing_no and drawing_no != '/':
+                    cursor.execute('UPDATE materials SET drawing_no = ? WHERE material_no = ?', (drawing_no, mat_no))
+
+            cursor.execute('''
+            INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, parent_material_no, seq_num, material_no, drawing_no, qty, unit, notes, substitute)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (subsystem_id, c_row, level_str, level_num, parent_material_no,
+                  c_row, mat_no, drawing_no, qty, unit, notes, substitute))
+            inserted_item_ids.append(cursor.lastrowid)
+
+        renumber_subsystem(cursor, subsystem_id)
+        conn.commit()
+
+        msg = f"已成功粘贴 {len(inserted_item_ids)} 行物料！"
+        if new_materials_count > 0:
+            msg += f"（其中 {new_materials_count} 项新物料已自动同步至主库）"
+
+        return jsonify({
+            'success': True,
+            'pasted_count': len(inserted_item_ids),
+            'inserted_ids': inserted_item_ids,
+            'message': msg
+        })
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': f'粘贴失败: {str(e)}'}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @bom_bp.route('/api/bom/update', methods=['POST'])
 def update_bom_item():
     data = request.json
