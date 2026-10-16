@@ -19,13 +19,12 @@
         }
         .login-card {
             width: 100%;
-            max-width: 420px;
+            max-width: 400px;
             background: #ffffff;
             border-radius: 12px;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
-            padding: 36px 32px 28px;
+            padding: 36px 32px 32px;
             box-sizing: border-box;
-            position: relative;
         }
         .logo-box {
             display: flex;
@@ -34,8 +33,8 @@
             margin-bottom: 8px;
         }
         .logo-icon {
-            width: 38px;
-            height: 38px;
+            width: 40px;
+            height: 40px;
             background: #1e3a8a;
             color: #ffffff;
             border-radius: 8px;
@@ -43,7 +42,7 @@
             align-items: center;
             justify-content: center;
             font-weight: 800;
-            font-size: 20px;
+            font-size: 22px;
             letter-spacing: -0.5px;
             box-shadow: 0 4px 10px rgba(30, 58, 138, 0.3);
         }
@@ -54,25 +53,12 @@
             line-height: 1.2;
         }
         .login-sub {
-            font-size: 12px;
+            font-size: 13px;
             color: #64748b;
-            margin-bottom: 20px;
-        }
-        .badge-guard {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            margin-bottom: 18px;
-            padding: 3px 10px;
-            font-size: 11px;
-            font-weight: 600;
-            color: #0369a1;
-            background: #e0f2fe;
-            border: 1px solid #bae6fd;
-            border-radius: 12px;
+            margin-bottom: 24px;
         }
         .form-label {
-            font-size: 12.5px;
+            font-size: 13px;
             font-weight: 600;
             color: #334155;
             margin-bottom: 8px;
@@ -115,7 +101,7 @@
         }
         .login-btn {
             width: 100%;
-            margin-top: 18px;
+            margin-top: 20px;
             padding: 11px;
             font-size: 15px;
             font-weight: 600;
@@ -142,29 +128,13 @@
         .login-error {
             display: none;
             margin-top: 14px;
-            padding: 9px 12px;
-            font-size: 12.5px;
+            padding: 10px 12px;
+            font-size: 13px;
             color: #b91c1c;
             background: #fef2f2;
             border: 1px solid #fecaca;
             border-radius: 6px;
             line-height: 1.4;
-        }
-        .login-hint {
-            margin-top: 22px;
-            padding-top: 14px;
-            border-top: 1px dashed #e2e8f0;
-            font-size: 11.5px;
-            line-height: 1.7;
-            color: #64748b;
-        }
-        .login-hint code {
-            background: #f1f5f9;
-            padding: 1px 5px;
-            border-radius: 3px;
-            font-size: 11px;
-            color: #0f172a;
-            font-family: Consolas, Monaco, monospace;
         }
     </style>
 </head>
@@ -177,20 +147,12 @@
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px;">统一物料主库 · 装配结构管理 · 标准化导出</div>
             </div>
         </div>
-        <div class="login-sub">请输入系统访问口令以进入协同管理工作台</div>
-
-        <div class="badge-guard">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-            <span>{{ auth_mode_label }}</span>
-        </div>
+        <div class="login-sub">请输入系统访问口令以进入协同工作台</div>
 
         <form id="loginForm" autocomplete="off">
             <label class="form-label" for="passwordInput">系统访问口令</label>
             <div class="input-wrap">
-                <input type="password" id="passwordInput" class="login-input" placeholder="请输入团队访问口令" autofocus>
+                <input type="password" id="passwordInput" class="login-input" placeholder="请输入口令" autofocus>
                 <button type="button" class="btn-toggle-eye" id="btnToggleEye" title="显示/隐藏口令">
                     <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -202,14 +164,6 @@
         </form>
 
         <div class="login-error" id="loginError"></div>
-
-        <div class="login-hint">
-            💡 <b>口令提示与说明：</b><br>
-            • 初次启动系统时，访问口令将直接显示在<b>服务启动命令行终端窗口</b>中。<br>
-            • 配置文件直设：可在根目录 <code>config.ini</code> 的 <code>[security]</code> 中配置 <code>admin_password</code>。<br>
-            • 忘记口令：删除 <code>data/auth.json</code> 文件后重启，系统将自动生成新口令。<br>
-            • 防暴力破解保护：连续输入错误 6 次将临时锁定 60 秒。
-        </div>
     </div>
 
     <script>
@@ -261,7 +215,7 @@
                 }
                 showError(data.error || `登录失败 (HTTP ${res.status})`);
             } catch (err) {
-                showError('网络连接异常，请检查服务是否正常启动');
+                showError('网络连接异常，请检查服务是否正常运行');
             } finally {
                 const btn = document.getElementById('loginBtn');
                 btn.disabled = false;

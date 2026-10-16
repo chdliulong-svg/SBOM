@@ -79,9 +79,8 @@ remote_backup_dir =
 # - auto : 局域网访问需口令，本机 (127.0.0.1) 访问免登录
 auth_mode = on
 
-# 自定义访问口令（留空则首次启动由系统在终端自动生成随机口令并保存在 data/auth.json）
-# 例如: ServiceBOM2026
-admin_password = 
+# 访问口令（固定为 102345678）
+admin_password = 102345678
 """
 
 
@@ -153,7 +152,7 @@ class Config:
         if raw_mode not in ('on', 'off', 'auto'):
             raw_mode = 'on'
         self.auth_mode = raw_mode
-        self.admin_password = self._get_str('security', 'admin_password', '')
+        self.admin_password = self._get_str('security', 'admin_password', '102345678')
 
         # --- [storage] ---
         self.upload_max_mb = self._get_int('storage', 'upload_max_mb', 200, 1, 4096)
