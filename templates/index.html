@@ -973,14 +973,34 @@
 
                     <!-- Actions Right Group -->
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <!-- Batch Action Area (Visible when checked) -->
-                        <div id="pmBatchActionArea" style="display: none; align-items: center; gap: 6px; background: #e0f2fe; padding: 2px 8px; border-radius: 6px; border: 1px solid #bae6fd;">
+                        <!-- Selection Action Area (Visible when checked) -->
+                        <div id="pmBatchActionArea" style="display: none; align-items: center; gap: 5px; background: #e0f2fe; padding: 2px 8px; border-radius: 6px; border: 1px solid #bae6fd; flex-wrap: wrap;">
                             <span id="pmSelectedCountText" style="font-size: 12px; font-weight: 600; color: #0369a1;">已选 0 项</span>
-                            <button type="button" class="btn btn-outline btn-sm" onclick="batchExportSbomFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="将选中的多个工程打包为 ZIP 批量下载">
+                            <div id="pmSingleActionBtns" style="display: inline-flex; align-items: center; gap: 4px;">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="openSelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 9px;" title="打开载入当前勾选的工程">
+                                    🚀 打开
+                                </button>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="exportSelectedSbomFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="导出 .sbom 工程包">
+                                    📦 导出.sbom
+                                </button>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="exportSelectedExcelFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="导出标准 Excel Service BOM">
+                                    📊 导出Excel
+                                </button>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="copySelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="复制此工程为新版本">
+                                    📋 复制
+                                </button>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="renameSelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="重命名此工程">
+                                    ✏️ 改名
+                                </button>
+                                <button type="button" class="btn btn-outline btn-sm" id="pmBtnToggleLock" onclick="toggleLockSelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="切换锁定保护状态">
+                                    🔒 锁定/解锁
+                                </button>
+                            </div>
+                            <button type="button" id="pmBatchExportBtn" class="btn btn-outline btn-sm" onclick="batchExportSbomFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff; display: none;" title="将选中的多个工程打包为 ZIP 批量下载">
                                 📦 批量导出 (.sbom)
                             </button>
-                            <button type="button" class="btn btn-danger btn-sm" onclick="batchDeleteProjectsFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px;" title="批量永久删除选中的工程（自动跳过锁定保护项目）">
-                                🗑️ 批量删除
+                            <button type="button" class="btn btn-danger btn-sm" onclick="batchDeleteProjectsFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px;" title="永久删除选中的工程（自动跳过锁定保护项目）">
+                                🗑️ 删除
                             </button>
                         </div>
 
@@ -1015,12 +1035,11 @@
                                 <th class="col-center" style="width: 50px;">#</th>
                                 <th style="min-width: 170px;">机型代号 (Code)</th>
                                 <th style="min-width: 100px;">机型平台</th>
-                                <th style="min-width: 200px;">工程与系统名称</th>
+                                <th style="min-width: 220px;">工程与系统名称</th>
                                 <th style="min-width: 130px;">文件号 / ECN</th>
                                 <th class="col-center" style="min-width: 120px;">结构规模</th>
                                 <th class="col-center" style="min-width: 95px;">状态</th>
-                                <th style="min-width: 155px;">上次修改时间</th>
-                                <th class="col-center" style="min-width: 230px;">高效操作快捷栏</th>
+                                <th style="min-width: 160px;">上次修改时间</th>
                             </tr>
                         </thead>
                         <tbody id="pmTableBody">
@@ -1038,7 +1057,7 @@
 
                 <!-- Footer Tip -->
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #64748b; padding: 2px 4px;">
-                    <div>💡 提示：双击表格中任意一行即可<b>一键切换载入该工程</b>；点击“导出”可无需载入直达下载成果。</div>
+                    <div>💡 提示：双击表格任意行或点击机型代号可<b>一键载入该工程</b>；勾选行可在工具栏进行打开、导出、复制、改名与删除。</div>
                     <button class="btn btn-outline btn-sm" onclick="closeProjectManagerModal()">关闭窗口</button>
                 </div>
             </div>

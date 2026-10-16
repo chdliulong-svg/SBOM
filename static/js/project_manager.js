@@ -279,40 +279,6 @@ function renderProjectManagerTable(projects) {
                         <b>${escapeHtml(updatedTime)}</b>
                     </div>
                 </td>
-                <td class="pm-action-cell" style="min-width: 230px;" onclick="event.stopPropagation()">
-                    <div class="pm-action-btn-group">
-                        <button class="pm-action-btn pm-btn-open" onclick="openProjectFromManager(${p.id})" title="进入此工程进行编制与查阅">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                            <span>打开</span>
-                        </button>
-                        <div class="pm-dropdown-wrapper">
-                            <button class="pm-action-btn" onclick="togglePmExportMenu(event, ${p.id})" title="导出交付成果">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                <span>导出</span>
-                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </button>
-                            <div class="pm-export-menu" id="pmExportMenu-${p.id}">
-                                <a href="javascript:void(0)" onclick="quickExportSbomFromManager(${p.id})">📦 导出工程包 (.sbom)</a>
-                                <a href="javascript:void(0)" onclick="quickExportExcelFromManager(${p.id})">📊 导出标准 Excel</a>
-                                <a href="javascript:void(0)" onclick="quickExportOfflinePkgFromManager(${p.id})">⚡ 导出离线运维包 (.zip)</a>
-                            </div>
-                        </div>
-                        <button class="pm-action-btn" onclick="quickCopyProjectFromManager(${p.id}, '${escapeHtml(code)}', '${escapeHtml(name)}', '${escapeHtml(sysName)}')" title="复制此工程">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                            <span>复制</span>
-                        </button>
-                        <button class="pm-action-btn" onclick="quickRenameProjectFromManager(${p.id}, '${escapeHtml(code)}', '${escapeHtml(name)}', '${escapeHtml(sysName)}')" title="重命名此工程">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
-                            <span>改名</span>
-                        </button>
-                        <button class="pm-action-btn" onclick="toggleProjectLockFromManager(${p.id}, ${p.is_locked || 0})" title="${isLocked ? '点击解锁编辑' : '点击锁定保护'}">
-                            ${isLocked ? '🔓 解锁' : '🔒 锁定'}
-                        </button>
-                        <button class="pm-action-btn pm-btn-del" onclick="quickDeleteProjectFromManager(${p.id}, '${escapeHtml(code)}', '${escapeHtml(name)}', ${p.is_locked || 0})" title="永久删除此项目">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                        </button>
-                    </div>
-                </td>
             </tr>
         `;
     });
@@ -382,14 +348,74 @@ function updatePmBatchButtons() {
     const count = pmSelectedProjectIds.size;
     const batchArea = document.getElementById('pmBatchActionArea');
     const countEl = document.getElementById('pmSelectedCountText');
+    const singleArea = document.getElementById('pmSingleActionBtns');
+    const batchExportBtn = document.getElementById('pmBatchExportBtn');
     if (!batchArea) return;
 
     if (count > 0) {
         batchArea.style.display = 'inline-flex';
         if (countEl) countEl.textContent = `已选 ${count} 项`;
+
+        if (count === 1) {
+            if (singleArea) singleArea.style.display = 'inline-flex';
+            if (batchExportBtn) batchExportBtn.style.display = 'none';
+            const firstId = Array.from(pmSelectedProjectIds)[0];
+            const p = allProjectsData.find(item => item.id == firstId);
+            const lockBtn = document.getElementById('pmBtnToggleLock');
+            if (lockBtn && p) {
+                lockBtn.innerHTML = p.is_locked == 1 ? '🔓 解锁' : '🔒 锁定';
+                lockBtn.title = p.is_locked == 1 ? '点击解锁编辑' : '点击锁定保护';
+            }
+        } else {
+            if (singleArea) singleArea.style.display = 'none';
+            if (batchExportBtn) batchExportBtn.style.display = 'inline-block';
+        }
     } else {
         batchArea.style.display = 'none';
     }
+}
+
+// 选中单个工程时的工具栏代理操作
+function getSingleSelectedProject() {
+    if (pmSelectedProjectIds.size !== 1) return null;
+    const pid = Array.from(pmSelectedProjectIds)[0];
+    return allProjectsData.find(item => item.id == pid) || null;
+}
+
+function openSelectedProjectFromManager() {
+    const p = getSingleSelectedProject();
+    if (!p) return;
+    openProjectFromManager(p.id);
+}
+
+function exportSelectedSbomFromManager() {
+    const p = getSingleSelectedProject();
+    if (!p) return;
+    quickExportSbomFromManager(p.id);
+}
+
+function exportSelectedExcelFromManager() {
+    const p = getSingleSelectedProject();
+    if (!p) return;
+    quickExportExcelFromManager(p.id);
+}
+
+function copySelectedProjectFromManager() {
+    const p = getSingleSelectedProject();
+    if (!p) return;
+    quickCopyProjectFromManager(p.id, p.code, p.name, p.system_name);
+}
+
+function renameSelectedProjectFromManager() {
+    const p = getSingleSelectedProject();
+    if (!p) return;
+    quickRenameProjectFromManager(p.id, p.code, p.name, p.system_name);
+}
+
+function toggleLockSelectedProjectFromManager() {
+    const p = getSingleSelectedProject();
+    if (!p) return;
+    toggleProjectLockFromManager(p.id, p.is_locked || 0);
 }
 
 // --- 快捷操作函数 ---
