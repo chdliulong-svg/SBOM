@@ -248,7 +248,8 @@ def save_project():
             platform = (data.get('platform') or '').strip()
             cursor.execute('''
             UPDATE projects SET
-                code=?, name=?, system_name=?, platform=?, doc_no=?, ecn_no=?, form_no=?, company=?
+                code=?, name=?, system_name=?, platform=?, doc_no=?, ecn_no=?, form_no=?, company=?,
+                updated_at=datetime('now', 'localtime')
             WHERE id=?
             ''', (code, name, system_name, platform,
                   data.get('doc_no', ''), data.get('ecn_no', ''),
@@ -257,8 +258,8 @@ def save_project():
         else:
             client_tag = get_client_identity()
             cursor.execute('''
-            INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'))
+            INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
             ''', (code, name, system_name, (data.get('platform') or '').strip(),
                   data.get('doc_no', ''), data.get('ecn_no', ''),
                   data.get('form_no', config.form_no_default), data.get('company', config.company_default),
@@ -281,8 +282,21 @@ def save_project():
                 cursor.execute('INSERT INTO subsystems (project_id, name, sort_order) VALUES (?, ?, ?)',
                                (project_id, sub_name, idx))
 
+        cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
+        p_time = cursor.fetchone()
+        created_at_val = p_time['created_at'] if p_time else ''
+        updated_at_val = p_time['updated_at'] if p_time else ''
+
         conn.commit()
-        return jsonify({'success': True, 'id': project_id, 'name': name, 'system_name': system_name, 'code': code})
+        return jsonify({
+            'success': True,
+            'id': project_id,
+            'name': name,
+            'system_name': system_name,
+            'code': code,
+            'created_at': created_at_val,
+            'updated_at': updated_at_val
+        })
     except Exception as e:
         try:
             conn.rollback()
@@ -324,10 +338,20 @@ def rename_project():
         final_code = new_code or proj['code']
 
         cursor.execute('''
-        UPDATE projects SET name = ?, system_name = ?, code = ? WHERE id = ?
+        UPDATE projects SET name = ?, system_name = ?, code = ?, updated_at = datetime('now', 'localtime') WHERE id = ?
         ''', (final_name, new_system_name, final_code, project_id))
+        cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
+        p_time = cursor.fetchone()
         conn.commit()
-        return jsonify({'success': True, 'id': project_id, 'name': final_name, 'system_name': new_system_name, 'code': final_code})
+        return jsonify({
+            'success': True,
+            'id': project_id,
+            'name': final_name,
+            'system_name': new_system_name,
+            'code': final_code,
+            'created_at': p_time['created_at'] if p_time else '',
+            'updated_at': p_time['updated_at'] if p_time else ''
+        })
     except Exception as e:
         try:
             conn.rollback()
@@ -372,10 +396,11 @@ def copy_project():
         if not user_code:
             user_code = orig_code
 
+        orig_platform = orig['platform'] if 'platform' in orig.keys() else ''
         cursor.execute('''
-            INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (user_code, user_name, user_system_name,
+            INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (user_code, user_name, user_system_name, orig_platform or '',
               orig['doc_no'] or '', orig['ecn_no'] or '',
               orig['form_no'] or config.form_no_default, orig['company'] or config.company_default))
         new_project_id = cursor.lastrowid

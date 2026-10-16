@@ -83,7 +83,8 @@ def init_db():
         is_locked INTEGER DEFAULT 1,
         locked_by TEXT DEFAULT '',
         locked_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
+        updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
         platform TEXT DEFAULT ''
     )
     ''')
@@ -200,6 +201,105 @@ def init_db():
         cursor.execute("ALTER TABLE projects ADD COLUMN locked_at TIMESTAMP")
     if 'platform' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN platform TEXT DEFAULT ''")
+    if 'created_at' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN created_at TIMESTAMP")
+    if 'updated_at' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN updated_at TIMESTAMP")
+    
+    # 补齐已有历史数据的创建时间与修改时间
+    cursor.execute("UPDATE projects SET created_at = datetime('now', 'localtime') WHERE created_at IS NULL OR created_at = ''")
+    cursor.execute("UPDATE projects SET updated_at = COALESCE(created_at, datetime('now', 'localtime')) WHERE updated_at IS NULL OR updated_at = ''")
+    conn.commit()
+
+    # 自动维护 projects.updated_at 的数据库级触发器
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_projects_update_touch
+    AFTER UPDATE ON projects
+    FOR EACH ROW
+    WHEN (
+        OLD.code IS NOT NEW.code OR
+        OLD.name IS NOT NEW.name OR
+        OLD.system_name IS NOT NEW.system_name OR
+        OLD.platform IS NOT NEW.platform OR
+        OLD.doc_no IS NOT NEW.doc_no OR
+        OLD.ecn_no IS NOT NEW.ecn_no OR
+        OLD.form_no IS NOT NEW.form_no OR
+        OLD.company IS NOT NEW.company
+    ) AND OLD.updated_at IS NEW.updated_at
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.id;
+    END;
+    ''')
+
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_subsystems_insert_touch
+    AFTER INSERT ON subsystems
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+    END;
+    ''')
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_subsystems_update_touch
+    AFTER UPDATE ON subsystems
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+    END;
+    ''')
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_subsystems_delete_touch
+    AFTER DELETE ON subsystems
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = OLD.project_id;
+    END;
+    ''')
+
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_bom_items_insert_touch
+    AFTER INSERT ON bom_items
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime')
+        WHERE id = (SELECT project_id FROM subsystems WHERE id = NEW.subsystem_id);
+    END;
+    ''')
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_bom_items_update_touch
+    AFTER UPDATE ON bom_items
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime')
+        WHERE id = (SELECT project_id FROM subsystems WHERE id = NEW.subsystem_id);
+    END;
+    ''')
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_bom_items_delete_touch
+    AFTER DELETE ON bom_items
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime')
+        WHERE id = (SELECT project_id FROM subsystems WHERE id = OLD.subsystem_id);
+    END;
+    ''')
+
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_signatures_touch
+    AFTER UPDATE ON signatures
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+    END;
+    ''')
+    cursor.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_ecn_records_touch
+    AFTER UPDATE ON ecn_records
+    FOR EACH ROW
+    BEGIN
+        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+    END;
+    ''')
     conn.commit()
 
     # Migration for ecn_records: add change_pos column if not present
@@ -424,6 +524,27 @@ def get_material_tree(cursor, parent_material_no, visited=None, current_depth=1)
         result.extend(sub_children)
 
     return result
+
+
+def touch_project_updated(project_id, cursor=None):
+    """
+    主动刷新项目的上次修改时间为当前系统本地时间。
+    如果外部未传入 cursor，则自动创建临时连接并立即 commit。
+    """
+    if not project_id:
+        return
+    need_commit = False
+    if cursor is None:
+        conn = get_db()
+        cursor = conn.cursor()
+        need_commit = True
+    try:
+        cursor.execute("UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = ?", (project_id,))
+        if need_commit:
+            conn.commit()
+    except Exception:
+        pass
+
 
 if __name__ == '__main__':
     init_db()

@@ -604,6 +604,7 @@
                     selectedRowIds.clear();
                     selectedRowIds.add(srcItemId);
                     loadBomItems(currentSubsystemId);
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
                     showToast('已完成拖动排序，行号与结构代码已自动重排！', 'success');
                 } else {
                     showToast(res.error || '排序失败', 'error');
@@ -765,6 +766,7 @@
                 }).then(res => {
                     clearRowSelection();
                     loadBomItems(currentSubsystemId);
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
                     showToast(ids.length === 1 ? '物料行已删除，行号与层级序号已自动重排！' : `已成功批量删除 ${ids.length} 行物料！`, 'info');
                 }).catch(err => {
                     alert('删除失败: ' + err.message);
@@ -800,6 +802,7 @@
             }).then(res => {
                 if (res.success) {
                     loadBomItems(currentSubsystemId);
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
                     showToast('已调整位置，下属子层级物料已完整跟随！', 'info');
                 } else {
                     showToast(res.error || '移动失败', 'error');
@@ -1838,6 +1841,7 @@
                     closeModal('bomItemModal');
                     loadBomItems(currentSubsystemId);
                     loadMasterMaterials();
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
                     if (res.imported_children_count > 0) {
                         showToast(`总成 [${res.material_no}] 及其下属全部 ${res.imported_children_count} 项子零部件已导入。`, 'success');
                     } else if (res.is_new_material) {
@@ -2142,6 +2146,7 @@
                     closeModal('batchAddBomModal');
                     showToast(res.message || `已成功批量导入 ${res.imported_count || batchParsedItems.length} 项物料！`, 'success');
                     loadBomItems(currentSubsystemId);
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
                     if (res.new_materials_count > 0) {
                         loadMasterMaterials();
                         loadMasterStats();

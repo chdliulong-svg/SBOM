@@ -14,11 +14,62 @@
                 const lockIcon = isLocked ? '🔒 ' : '🟢 ';
                 const lockedBy = (p.locked_by || '').trim();
                 const lockTag = isLocked ? ' (只读)' : (lockedBy ? ` (编辑中: ${lockedBy})` : ' (编辑中)');
-                opt.textContent = `${lockIcon}${formattedTitle}${lockTag}`;
-                opt.title = `${formattedTitle}${lockTag}`;
+                const timeStr = p.updated_at ? `\n上次修改: ${p.updated_at}` : (p.created_at ? `\n创建时间: ${p.created_at}` : '');
+                opt.title = `${formattedTitle}${lockTag}${timeStr}`;
                 sel.appendChild(opt);
             });
             if (selectedId) sel.value = selectedId;
+        }
+
+        function renderProjectHeaderSummary(data) {
+            const summaryEl = document.getElementById('projectInfoSummary');
+            if (!summaryEl) return;
+            if (!data) {
+                summaryEl.innerHTML = '<span style="color: var(--text-muted); font-size: 13px;">当前未载入项目</span>';
+                return;
+            }
+            const updatedTime = data.updated_at || data.created_at || '';
+            const createdTime = data.created_at || '';
+            const docNo = data.doc_no || '未设';
+            const ecnNo = data.ecn_no || '无';
+
+            let timeBadgeHtml = '';
+            if (updatedTime) {
+                const tooltip = createdTime ? `工程创建时间: ${createdTime}\n上次修改时间: ${updatedTime}` : `上次修改时间: ${updatedTime}`;
+                timeBadgeHtml = `
+                    <span title="${tooltip}" style="display: inline-flex; align-items: center; gap: 5px; background: #f8fafc; border: 1px solid #cbd5e1; color: #334155; padding: 3px 9px; border-radius: 5px; font-size: 12px; cursor: help; transition: all 0.2s ease;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <span>上次修改: <b style="color: #0f172a; font-weight: 600;">${updatedTime}</b></span>
+                    </span>
+                `;
+            }
+
+            summaryEl.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    ${timeBadgeHtml}
+                    <span style="color: #cbd5e1; font-size: 11px;">|</span>
+                    <span style="color: #64748b; font-size: 12px;">文件号: <b style="color: #334155;">${docNo}</b></span>
+                    <span style="color: #cbd5e1; font-size: 11px;">|</span>
+                    <span style="color: #64748b; font-size: 12px;">ECN: <b style="color: #334155;">${ecnNo}</b></span>
+                </div>
+            `;
+        }
+
+        function refreshCurrentProjectUpdatedAt(customTime = null) {
+            if (!currentProjectData) return;
+            if (customTime) {
+                currentProjectData.updated_at = customTime;
+            } else {
+                const d = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                currentProjectData.updated_at = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+            }
+            renderProjectHeaderSummary(currentProjectData);
+            const covUp = document.getElementById('cov-updated-at');
+            if (covUp) covUp.value = currentProjectData.updated_at || '';
         }
 
         function refreshProjectSelectOnly(selectedId = null) {
@@ -70,8 +121,7 @@
                         return;
                     }
                     currentProjectData = data;
-                    document.getElementById('projectInfoSummary').textContent = 
-                        `文件号: ${data.doc_no || '未设'} | ECN: ${data.ecn_no || '无'}`;
+                    renderProjectHeaderSummary(data);
                     
                     // Fill cover form
                     document.getElementById('cov-code').value = data.code || '';
@@ -82,6 +132,12 @@
                     document.getElementById('cov-ecn').value = data.ecn_no || '';
                     document.getElementById('cov-form').value = data.form_no || '';
                     document.getElementById('cov-company').value = data.company || '';
+                    if (document.getElementById('cov-created-at')) {
+                        document.getElementById('cov-created-at').value = data.created_at || '未记录';
+                    }
+                    if (document.getElementById('cov-updated-at')) {
+                        document.getElementById('cov-updated-at').value = data.updated_at || data.created_at || '未记录';
+                    }
 
                     // Apply project lock state to UI
                     applyProjectLockUI(data.is_locked == 1);
@@ -129,8 +185,9 @@
             currentBomItems = [];
             const sel = document.getElementById('projectSelect');
             if (sel) sel.value = '';
-            const summary = document.getElementById('projectInfoSummary');
-            if (summary) summary.textContent = '当前未载入项目';
+            renderProjectHeaderSummary(null);
+            if (document.getElementById('cov-created-at')) document.getElementById('cov-created-at').value = '';
+            if (document.getElementById('cov-updated-at')) document.getElementById('cov-updated-at').value = '';
             const contentArea = document.getElementById('projectContentArea');
             const placeholder = document.getElementById('noProjectPlaceholder');
             if (contentArea) contentArea.style.display = 'none';
@@ -520,11 +577,14 @@
                 // 3. 更新内存数据与头部信息
                 if (currentProjectData) {
                     Object.assign(currentProjectData, payload);
+                    if (res) {
+                        if (res.updated_at) currentProjectData.updated_at = res.updated_at;
+                        if (res.created_at) currentProjectData.created_at = res.created_at;
+                    }
                 }
-                const summaryEl = document.getElementById('projectInfoSummary');
-                if (summaryEl) {
-                    summaryEl.textContent = `文件号: ${payload.doc_no || '未设'} | ECN: ${payload.ecn_no || '无'}`;
-                }
+                renderProjectHeaderSummary(currentProjectData);
+                const covUp = document.getElementById('cov-updated-at');
+                if (covUp && currentProjectData) covUp.value = currentProjectData.updated_at || '';
                 refreshProjectSelectOnly(currentProjectId);
 
                 // 4. 成功提示
@@ -747,6 +807,7 @@
                             currentProjectData.ecn_records[idx] = { ...currentProjectData.ecn_records[idx], ...payload };
                         }
                         renderRevisionPage();
+                        refreshCurrentProjectUpdatedAt();
                     } else {
                         alert((res && res.error) || '更新记录失败');
                     }
@@ -762,6 +823,7 @@
                         if (!currentProjectData.ecn_records) currentProjectData.ecn_records = [];
                         currentProjectData.ecn_records.push(res.record);
                         renderRevisionPage();
+                        refreshCurrentProjectUpdatedAt();
                     } else {
                         alert((res && res.error) || '新增记录失败');
                     }
@@ -790,6 +852,7 @@
                     showToast('修改记录已删除', 'info');
                     currentProjectData.ecn_records = currentProjectData.ecn_records.filter(r => r.id != recordId);
                     renderRevisionPage();
+                    refreshCurrentProjectUpdatedAt();
                 } else {
                     alert((res && res.error) || '删除失败');
                 }
@@ -829,6 +892,7 @@
                 if (res && res.success) {
                     showToast('签字审核信息保存成功！', 'success');
                     currentProjectData.signatures = signatures;
+                    refreshCurrentProjectUpdatedAt();
                 } else {
                     alert((res && res.error) || '保存签字失败');
                 }
@@ -1091,9 +1155,13 @@
                     showToast(`项目已成功重命名为 "${newName}"！`, 'success');
                     if (currentProjectData) {
                         currentProjectData.system_name = newName;
+                        if (res && res.updated_at) currentProjectData.updated_at = res.updated_at;
                     }
+                    renderProjectHeaderSummary(currentProjectData);
                     const covSys = document.getElementById('cov-system');
                     if (covSys) covSys.value = newName;
+                    const covUp = document.getElementById('cov-updated-at');
+                    if (covUp && currentProjectData) covUp.value = currentProjectData.updated_at || '';
                     refreshProjectSelectOnly(currentProjectId);
                 } else {
                     alert((res && res.error) || '重命名失败');

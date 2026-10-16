@@ -100,8 +100,8 @@ def import_excel_sbom(excel_path):
 
         # Insert project
         cursor.execute('''
-        INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
         ''', (project_code, project_name, system_name, doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 

@@ -376,7 +376,7 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
         project_id = int(target_project_id)
         # Update project info
         cursor.execute('''
-        UPDATE projects SET code = ?, name = ?, system_name = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?
+        UPDATE projects SET code = ?, name = ?, system_name = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
         WHERE id = ?
         ''', (code, name, system_name, doc_no, ecn_no, form_no, company, project_id))
 
@@ -396,8 +396,8 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
             system_name = f"{system_name} (已导入)"
 
         cursor.execute('''
-        INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
         ''', (code, name, system_name, doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 

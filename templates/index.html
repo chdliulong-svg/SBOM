@@ -210,6 +210,14 @@
                         <label class="form-label">单位/公司:</label>
                         <input id="cov-company" class="form-input" value="上海电气风电集团股份有限公司">
                     </div>
+                    <div class="cover-row">
+                        <label class="form-label">工程创建时间:</label>
+                        <input id="cov-created-at" class="form-input" readonly style="background: #f8fafc; color: #64748b; cursor: default;" placeholder="自动记录">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">上次修改时间:</label>
+                        <input id="cov-updated-at" class="form-input" readonly style="background: #f8fafc; color: #0f172a; font-weight: 600; cursor: default;" placeholder="自动记录">
+                    </div>
                     <div style="text-align: right; margin-top: 20px;">
                         <button class="btn btn-primary" id="btnSaveCover" type="button" onclick="saveProjectCover()">保存封面信息</button>
                     </div>
