@@ -180,6 +180,7 @@
             }
 
             let hiddenAboveLevel = null;
+            const fragment = document.createDocumentFragment();
 
             items.forEach((it, idx) => {
                 const tr = document.createElement('tr');
@@ -371,8 +372,9 @@
                     <td>${formatPipeMultilineHtml(it.notes || '')}</td>
                     <td>${formatPipeMultilineHtml(it.substitute || it.m_substitute || '')}</td>
                 `;
-                tbody.appendChild(tr);
+                fragment.appendChild(tr);
             });
+            tbody.appendChild(fragment);
 
             // Update row action buttons & selection visuals
             syncSelectionVisuals();

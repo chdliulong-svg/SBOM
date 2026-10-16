@@ -1,0 +1,595 @@
+<!-- MODAL 2: Master Materials Hub -->
+    <div id="masterModal" class="modal-mask">
+        <div class="modal-dialog" id="masterModalDialog" style="width: 1360px; max-width: 97vw; height: 93vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 12px 20px; cursor: default; user-select: none;" ondblclick="toggleMasterModalMaximize()" title="双击标题栏可最大化/还原窗口">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e3a8a;">
+                            物料主库管理
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 1px;">
+                            统一物料主数据源 · 装配层级结构管理 · 跨机型引用维护
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button type="button" class="modal-tool-btn" id="masterModalMaxBtn" onclick="toggleMasterModalMaximize()" title="最大化窗口" style="display: inline-flex; align-items: center; justify-content: center;">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="12" height="12" rx="1.5"/></svg>
+                    </button>
+                    <button type="button" class="modal-close" onclick="closeModal('masterModal')" title="关闭窗口">&times;</button>
+                </div>
+            </div>
+            
+            <div class="modal-body" style="padding: 14px 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1;">
+                <!-- Master Toolbar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #ffffff; padding: 2px 0; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="openCreateMasterModal()">
+                            新建物料
+                        </button>
+                        <button class="btn btn-outline" onclick="triggerMasterExcelImport()" title="上传Excel自动提取通用物料并对齐模版标题入库">
+                            导入 Excel
+                        </button>
+                        <button class="btn btn-outline" onclick="exportMasterMaterialsExcel()" title="导出包含全部物料、规格、手册和图片状态的标准Excel清单">
+                            导出清单 (.xlsx)
+                        </button>
+                        <button class="btn btn-outline" style="color: #0284c7; border-color: #7dd3fc; background: #f0f9ff;" onclick="openAuditModal()" title="智能排查物料主库中相同规格型号的重复录入（一物多码），并支持一键清理">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <span>智能查重</span>
+                        </button>
+                        <button type="button" class="btn btn-outline" id="btnMasterStatsToggle" onclick="toggleMasterStats()" title="查看/折叠主库全局物料统计指标">
+                            <span>📊 物料统计</span>
+                        </button>
+                        <span style="color: #cbd5e1; margin: 0 4px;">|</span>
+                        <button class="btn btn-outline" onclick="resetAllColumnWidths('masterTable')" title="重置主库表格所有列为推荐默认宽度">
+                            重置列宽
+                        </button>
+                        <span style="color: #cbd5e1; margin: 0 4px;">|</span>
+                        <select id="masterFilterType" class="form-select" style="font-size: 13px; font-weight: 500; border-color: #cbd5e1;" onchange="loadMasterMaterials()">
+                            <option value="all">全部物料</option>
+                            <option value="referenced">仅看已引用物料</option>
+                            <option value="unreferenced">仅看未引用物料</option>
+                            <option value="has_children">仅看总成结构</option>
+                            <option value="has_image">仅看包含图片</option>
+                            <option value="has_manual">仅看包含手册</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input id="masterSearch" class="form-input" style="width: 320px;" placeholder="搜索物料号/名称/型号/描述/图纸/制造商..." oninput="handleMasterSearchInput(this.value)">
+                        <button class="btn btn-outline" onclick="loadMasterMaterials()" title="刷新主库数据">刷新</button>
+                    </div>
+                </div>
+
+                <!-- Stats Banner (Hidden by default, toggled via 物料统计 button) -->
+                <div id="masterStatsBanner" style="display: none; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px;">
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #64748b;">物料总数</div>
+                        <div id="stat-total" style="font-size: 18px; font-weight: 700; color: #1e293b; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px; padding: 8px 12px; text-align: center; cursor: pointer;" onclick="filterMasterByStatus('referenced')" title="点击筛选已引用物料">
+                        <div style="font-size: 11px; color: #7e22ce;">已引用物料</div>
+                        <div id="stat-referenced" style="font-size: 18px; font-weight: 700; color: #6b21a8; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #15803d;">总成结构数</div>
+                        <div id="stat-children" style="font-size: 18px; font-weight: 700; color: #166534; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #1d4ed8;">实物图片数</div>
+                        <div id="stat-images" style="font-size: 18px; font-weight: 700; color: #1e40af; margin-top: 1px;">-</div>
+                    </div>
+                    <div style="background: #fefce8; border: 1px solid #fef08a; border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: #a16207;">技术手册数</div>
+                        <div id="stat-manuals" style="font-size: 18px; font-weight: 700; color: #854d0e; margin-top: 1px;">-</div>
+                    </div>
+                </div>
+
+                <!-- Master Actions & Selection Toolbar -->
+                <div id="masterActionBar" style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 12px; gap: 8px; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span style="font-size: 13px; font-weight: 600; color: #334155;">已选: <span id="masterSelectedNum" style="color: #2563eb; font-weight: 700; font-size: 14px;">0</span> 项</span>
+                            <button type="button" class="btn btn-outline btn-sm" id="btnMasterClearSelection" onclick="clearMasterSelection()" style="padding: 1px 7px; font-size: 11px; display: none; color: #64748b;" title="取消选中所有项">取消全选</button>
+                        </div>
+
+                        <span style="color: #cbd5e1; margin: 0 2px;">|</span>
+
+                        <button type="button" class="btn btn-outline btn-sm" id="btnMasterEdit" onclick="handleMasterToolbarEdit()" title="编辑当前选中的物料（或直接双击表格行）">
+                            <span>✏️ 编辑物料</span>
+                        </button>
+
+                        <button type="button" class="btn btn-outline btn-sm" id="btnMasterHierarchy" onclick="handleMasterToolbarHierarchy()" style="color: #166534; border-color: #bbf7d0; background: #f0fdf4;" title="维护当前选中物料的下属装配结构与子零部件">
+                            <span>🌳 总成结构</span>
+                        </button>
+
+                        <button type="button" class="btn btn-outline btn-sm" id="btnMasterInsertBom" onclick="handleMasterToolbarInsertBom()" style="color: #0284c7; border-color: #bae6fd; background: #f0f9ff;" title="将当前勾选的物料（单项或多项）导入到当前打开的 Sheet 中">
+                            <span>➕ 引用至当前BOM</span>
+                        </button>
+
+                        <button type="button" class="btn btn-outline btn-sm" id="btnMasterUsage" onclick="handleMasterToolbarUsage()" style="color: #7e22ce; border-color: #e9d5ff; background: #faf5ff;" title="查看当前选中物料在各工程机型中的被引用明细">
+                            <span>🔍 引用追溯</span>
+                        </button>
+
+                        <button type="button" class="btn btn-outline btn-sm btn-delete" id="btnMasterDelete" onclick="handleMasterToolbarDelete()" style="color: #dc2626; border-color: #fca5a5; background: #fff5f5;" title="删除当前勾选的物料（支持单项/批量删除，带风险二次确认）">
+                            <span>❌ 删除物料</span>
+                        </button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span id="masterSortStatusSpan" style="font-size: 12px; color: #2563eb; font-weight: 500;"></span>
+                        <button type="button" class="btn btn-outline btn-sm" id="btnMasterResetSort" onclick="resetMasterSort()" style="display: none; padding: 2px 8px; font-size: 11px; color: #475569;" title="恢复原始物料列表排版顺序">
+                            恢复默认排序
+                        </button>
+                        <span style="font-size: 12px; color: #94a3b8; user-select: none;">💡 提示：双击任一行可直接编辑物料</span>
+                    </div>
+                </div>
+
+                <!-- Master Table -->
+                <div class="table-responsive" id="masterTableContainer" style="flex: 1; max-height: calc(93vh - 200px); border: 1px solid var(--border); border-radius: 6px;">
+                    <table id="masterTable">
+                        <thead>
+                            <tr>
+                                <th data-col="mm_select" style="width: 42px;" class="col-center">
+                                    <input type="checkbox" id="masterSelectAll" onchange="toggleMasterSelectAll(this.checked)" title="全选 / 取消全选" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
+                                </th>
+                                <th data-col="mm_mat_no" style="width: 140px;" class="sortable-th" onclick="handleMasterTableSort('material_no')" title="点击按物料号排序">
+                                    物料号 <span class="sort-icon" id="master-sort-material_no">⇅</span>
+                                </th>
+                                <th data-col="mm_name" style="width: 160px;" class="sortable-th" onclick="handleMasterTableSort('name')" title="点击按名称排序">
+                                    元器件名称 <span class="sort-icon" id="master-sort-name">⇅</span>
+                                </th>
+                                <th data-col="mm_projects" style="width: 170px;" class="sortable-th" onclick="handleMasterTableSort('referenced_projects')" title="点击按引用项目数排序">
+                                    引用项目 <span class="sort-icon" id="master-sort-referenced_projects">⇅</span>
+                                </th>
+                                <th data-col="mm_desc" style="width: 280px;" class="sortable-th" onclick="handleMasterTableSort('description')" title="点击按物料完整描述排序">
+                                    物料完整描述 <span class="sort-icon" id="master-sort-description">⇅</span>
+                                </th>
+                                <th data-col="mm_model" style="width: 150px;" class="sortable-th" onclick="handleMasterTableSort('spec_model')" title="点击按规格型号排序">
+                                    规格型号 <span class="sort-icon" id="master-sort-spec_model">⇅</span>
+                                </th>
+                                <th data-col="mm_mfr" style="width: 120px;" class="sortable-th" onclick="handleMasterTableSort('manufacturer')" title="点击按制造商排序">
+                                    制造商 <span class="sort-icon" id="master-sort-manufacturer">⇅</span>
+                                </th>
+                                <th data-col="mm_unit" style="width: 60px;" class="col-center sortable-th" onclick="handleMasterTableSort('unit')" title="点击按单位排序">
+                                    单位 <span class="sort-icon" id="master-sort-unit">⇅</span>
+                                </th>
+                                <th data-col="mm_drawing" style="width: 140px;" class="sortable-th" onclick="handleMasterTableSort('drawing_no')" title="点击按图纸代号排序">
+                                    图纸/代号 <span class="sort-icon" id="master-sort-drawing_no">⇅</span>
+                                </th>
+                                <th data-col="mm_image" style="width: 90px;" class="col-center sortable-th" onclick="handleMasterTableSort('image_path')" title="点击按是否包含实物图片排序">
+                                    实物图片 <span class="sort-icon" id="master-sort-image_path">⇅</span>
+                                </th>
+                                <th data-col="mm_manual" style="width: 105px;" class="col-center sortable-th" onclick="handleMasterTableSort('manual_path')" title="点击按是否包含技术手册排序">
+                                    技术手册 <span class="sort-icon" id="master-sort-manual_path">⇅</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="masterTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 12px; color: #64748b;">
+                    <b>说明：</b> 双击表格行可直接编辑物料；支持多选后统一通过工具栏按钮进行「编辑」、「结构」、「引用」与「删除」；点击表头可自由排序。
+                </div>
+                <button class="btn btn-outline" onclick="closeModal('masterModal')">关闭窗口</button>
+            </div>
+        </div>
+    </div>
+<!-- MODAL 2.1: Add / Edit Master Material Modal -->
+    <div id="editMasterItemModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 720px; max-width: 94vw;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" id="editMasterModalTitle" style="font-size: 15px; font-weight: 600; color: #1e3a8a;">新建物料</div>
+                <button class="modal-close" onclick="closeModal('editMasterItemModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <input type="hidden" id="mm-is-create" value="true">
+                <input type="hidden" id="mm-old-mat-no" value="">
+                <div id="mat-dup-warning-box" style="display: none; margin-bottom: 12px;"></div>
+                <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <!-- 第一行：物料号与元器件名称 -->
+                    <div class="form-group">
+                        <label class="form-label">* 物料号 (主键唯一区分):</label>
+                        <input id="mm-mat-no" class="form-input" placeholder="例如 DFB00166343" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">* 元器件名称:</label>
+                        <input id="mm-name" class="form-input" placeholder="例如 润滑泵 / 分配器" list="mm-names-datalist" autocomplete="off">
+                        <datalist id="mm-names-datalist"></datalist>
+                    </div>
+
+                    <!-- 第二行：物料完整描述 (跨整行) -->
+                    <div class="form-group full" style="grid-column: 1 / -1;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <label class="form-label" style="margin-bottom: 0;">* 物料完整描述 (Description):</label>
+                            <button type="button" class="btn btn-sm" id="btn-ai-parse-mm" onclick="aiExtractMasterItem()" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; padding: 2px 10px; font-weight: 600; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; transition: all 0.2s;" title="大模型自动语义推断物料名称、规格型号与供应商">
+                                <span>✨ 大模型智能提取</span>
+                            </button>
+                        </div>
+                        <textarea id="mm-description" class="form-input" rows="2" style="width: 100%; resize: none; min-height: 52px; box-sizing: border-box;" placeholder="例如 支架_D8-07-02-Q00632-00_绑线支架_X3_SSB，点击右上角【大模型智能提取】自动填充..."></textarea>
+                    </div>
+
+                    <!-- 第三行：规格型号与制造商 -->
+                    <div class="form-group">
+                        <label class="form-label">规格型号:</label>
+                        <input id="mm-spec-model" class="form-input" placeholder="例如 DFB-10L-400V" list="mm-models-datalist" autocomplete="off">
+                        <datalist id="mm-models-datalist"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">制造商:</label>
+                        <input id="mm-manufacturer" class="form-input" placeholder="例如 SKF / Lincoln" list="mm-mfrs-datalist" autocomplete="off">
+                        <datalist id="mm-mfrs-datalist"></datalist>
+                    </div>
+
+                    <!-- 第四行：计量单位与图纸代号 -->
+                    <div class="form-group">
+                        <label class="form-label">计量单位:</label>
+                        <input id="mm-unit" class="form-input" value="PC" placeholder="PC / M / SET 等">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">图纸/文件代号:</label>
+                        <input id="mm-drawing-no" class="form-input" value="/" placeholder="例如 / 或 DWG-1002">
+                    </div>
+
+                    <!-- 第五行：替代物料号与补充说明 -->
+                    <div class="form-group">
+                        <label class="form-label">替代物料号 (选填):</label>
+                        <input id="mm-substitute" class="form-input" placeholder="可替代的备件物料号">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">补充说明 / 技术备注 (Notes):</label>
+                        <input id="mm-notes" class="form-input" placeholder="选填，例如 安装扭矩、接线规范等">
+                    </div>
+
+                    <!-- Component Photo & Technical Manual (Side-by-Side 2 Columns) -->
+                    <div class="full-row" style="grid-column: 1 / -1 !important; width: 100% !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 14px; box-sizing: border-box;">
+                        <!-- Left Column: Photo Card -->
+                        <div id="mm-img-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0; transition: border-color 0.2s, background 0.2s;">
+                            <!-- Photo Preview Box -->
+                            <div id="mm-img-container" tabindex="0" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); outline: none; transition: border-color 0.2s, box-shadow 0.2s;" onclick="enlargeMmImage()" title="点击放大查看高清大图；支持直接 Ctrl+V 粘贴照片或拖拽图片">
+                                <img id="mm-img-preview" src="" style="width: 100%; height: 100%; object-fit: contain; display: none;">
+                                <span id="mm-img-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.35; padding: 2px;">
+                                    暂无照片<br>
+                                    <span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span><br>
+                                    <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; display: inline-block; margin-top: 2px;">或 Ctrl+V 粘贴</span>
+                                </span>
+                                <div id="mm-img-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">点击放大</div>
+                            </div>
+                            <!-- Photo Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件实物照片</span>
+                                    <span id="mm-img-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联照片</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="mm-img-status">
+                                    支持本地选择、<b>快捷键 Ctrl+V 粘贴截图</b>、拖拽图片或 <b>.step/.stp 3D模型自动截图</b>。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" id="mm-pick-img-btn" onclick="triggerMmImgPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择照片
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="mm-3d-btn" onclick="Step3dViewer.triggerFilePicker('masterModal')" style="font-size: 11px; padding: 3px 8px; color: #0284c7; border-color: #bae6fd; background: #f0f9ff;" title="上传 .step / .stp 三维 CAD 模型并自动截取实物图">
+                                        📐 3D截图
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="mm-paste-img-btn" onclick="pasteMmImgFromClipboard()" style="font-size: 11px; padding: 3px 8px; color: #2563eb; border-color: #93c5fd; background: #eff6ff;" title="读取系统剪贴板中的图片并直接粘贴 (快捷键 Ctrl+V)">
+                                        📋 粘贴照片
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="mm-remove-img-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeMmImg()">
+                                        移除照片
+                                    </button>
+                                    <span id="mm-pending-upload-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新照片</span>
+                                </div>
+                                <input type="file" id="mmImgFileInput" accept="image/*,.stp,.step,.stpz,.iges,.igs" style="display: none;" onchange="handleMmImgSelected(event)">
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Technical Manual Card -->
+                        <div id="mm-manual-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0; transition: border-color 0.2s, background 0.2s;">
+                            <!-- Manual Preview Box -->
+                            <div id="mm-manual-container" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 6px; box-sizing: border-box;" onclick="handleMmManualClick()" title="点击在线预览技术手册">
+                                <div id="mm-manual-icon" style="display: none; line-height: 1;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
+                                <div id="mm-manual-filename" style="font-size: 10px; color: #1e293b; font-weight: 500; text-align: center; margin-top: 4px; word-break: break-all; max-height: 28px; overflow: hidden; display: none; line-height: 1.2;"></div>
+                                <span id="mm-manual-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.3;">暂无技术手册<br><span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span></span>
+                                <div id="mm-manual-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">在线预览</div>
+                            </div>
+                            <!-- Manual Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件技术手册 (PDF)</span>
+                                    <span id="mm-manual-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联手册</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="mm-manual-status">
+                                    支持关联标准 PDF 格式技术手册，可在线查阅。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="triggerMmManualPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择手册 (PDF)
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="mm-preview-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="previewMmManual()">
+                                        查看手册
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="mm-remove-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeMmManual()">
+                                        移除手册
+                                    </button>
+                                    <span id="mm-pending-manual-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新手册</span>
+                                </div>
+                                <input type="file" id="mmManualFileInput" accept=".pdf,application/pdf" style="display: none;" onchange="handleMmManualSelected(event)">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="mm-sync-group" class="form-group full" style="grid-column: 1 / -1; display: none; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px 14px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #1e40af; font-weight: 500;">
+                            <input type="checkbox" id="mm-sync-bom" checked style="width: 16px; height: 16px;">
+                            <span>同步更新所有已引用此物料号的现有项目 BOM 明细行（保持全系统标准化统一）</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid var(--border);">
+                <button class="btn btn-outline" onclick="closeModal('editMasterItemModal')">取消</button>
+                <button class="btn btn-primary" onclick="submitMasterItem()" style="padding: 6px 22px;">确定保存</button>
+            </div>
+        </div>
+    </div>
+<!-- MODAL 2.2: Sub-assembly Hierarchy Management Modal -->
+    <div id="masterHierarchyModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 1000px; max-width: 95vw; max-height: 93vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f0fdf4; border-bottom: 1px solid #bbf7d0; padding: 14px 20px;">
+                <div>
+                    <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #166534;" id="hierarchyModalTitle">
+                        总成装配结构管理
+                    </div>
+                    <div style="font-size: 12px; color: #15803d; margin-top: 2px;" id="hierarchyModalSubtitle">
+                        维护该总成下属的标准装配结构。在机型编制引入此总成时，支持关联导入其下属全部子层级。
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('masterHierarchyModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1;">
+                <!-- Add Child Sub-component Box -->
+                <div style="background: #f8fafc; border: 1.5px dashed #93c5fd; border-radius: 8px; padding: 14px 18px;">
+                    <div style="font-weight: 600; font-size: 13px; color: #1d4ed8; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                        <span>添加子零部件:</span>
+                        <span style="font-size: 11px; color: #0369a1; background: #e0f2fe; padding: 3px 10px; border-radius: 4px; font-weight: 500;">
+                            新增物料将自动归为此总成的直接下属层级 (<span id="hierNextLvlHint">二级 ●●</span>)
+                        </span>
+                    </div>
+                    <input type="hidden" id="hier-parent-mat" value="">
+                    <input type="hidden" id="hier-edit-id" value="">
+                    <input type="hidden" id="hier-level-num" value="2">
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 90px 90px 140px auto; gap: 12px; align-items: flex-end;">
+                        <div style="position: relative;">
+                            <label class="form-label" style="font-size: 11px;">* 子物料 (主库搜索或输入物料号):</label>
+                            <input type="text" id="hier-child-search" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" placeholder="输入物料号/名称进行匹配" oninput="handleHierChildSearch(this.value)" autocomplete="off">
+                            <div id="hierFuzzyDropdown" class="fuzzy-dropdown" style="display: none; top: 100%; left: 0; width: 100%; min-width: 360px;"></div>
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">数量:</label>
+                            <input type="text" id="hier-qty" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" value="1">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">单位:</label>
+                            <input type="text" id="hier-unit" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" value="PC">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">图纸代号:</label>
+                            <input type="text" id="hier-drawing" class="form-input" style="font-size: 12px; width: 100%; box-sizing: border-box;" value="/">
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="submitSaveHierarchyChild()" style="padding: 6px 16px; height: 32px;" id="hierSubmitBtn">
+                                添加至结构
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Children Table -->
+                <div style="font-weight: 600; font-size: 13px; color: #1e293b; display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <span>当前下属子零部件清单 (<span id="hierChildCount">0</span> 项):</span>
+                    <button type="button" class="btn btn-outline btn-sm" id="btnHierClearAll" style="color: #dc2626; border-color: #fca5a5;" onclick="clearAllMasterChildren()" title="清空该总成当前配置的所有下属子零部件">
+                        清空结构
+                    </button>
+                </div>
+                <div class="table-responsive" style="max-height: 380px; border: 1px solid var(--border); border-radius: 6px;">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th style="width: 120px;" class="col-center">操作</th>
+                                <th style="width: 55px;" class="col-center">排序</th>
+                                <th style="width: 130px;">子物料号</th>
+                                <th style="width: 160px;">元器件名称</th>
+                                <th>物料描述 / 规格</th>
+                                <th style="width: 65px;" class="col-center">数量</th>
+                                <th style="width: 55px;" class="col-center">单位</th>
+                                <th style="width: 110px;">图纸代号</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hierTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+                <button class="btn btn-outline" onclick="closeModal('masterHierarchyModal')">完成并返回主库</button>
+            </div>
+        </div>
+    </div>
+<!-- MODAL 2.3: Where-Used Reference Modal -->
+    <div id="masterUsageModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 760px; max-width: 92vw; max-height: 85vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #faf5ff; border-bottom: 1px solid #e9d5ff;">
+                <div class="modal-title" style="font-size: 15px; font-weight: 700; color: #6b21a8;" id="usageModalTitle">
+                    物料引用明细与溯源
+                </div>
+                <button class="modal-close" onclick="closeModal('masterUsageModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px; overflow-y: auto;">
+                <div id="usageSummaryText" style="font-size: 13px; color: #475569; margin-bottom: 12px;"></div>
+                <div class="table-responsive" style="max-height: 380px; border: 1px solid var(--border); border-radius: 6px;">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>项目机型名称</th>
+                                <th>子系统 (Sheet)</th>
+                                <th style="width: 70px;" class="col-center">行号</th>
+                                <th style="width: 75px;" class="col-center">层级</th>
+                                <th style="width: 70px;" class="col-center">数量</th>
+                                <th style="width: 90px;" class="col-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usageTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border);">
+                <button class="btn btn-outline" onclick="closeModal('masterUsageModal')">关闭</button>
+            </div>
+        </div>
+    </div>
+<!-- MODAL 2.4: Master Materials Import Mapping & Confirmation Modal -->
+    <div id="masterImportMappingModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 880px; max-width: 95vw; max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 14px 22px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e3a8a;">
+                            导入物料数据 (列映射确认)
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 1px;">
+                            系统已自动提取数据并进行模版列映射，请核对各列对应关系；如有不确定项请手动调整
+                        </div>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('masterImportMappingModal')">&times;</button>
+            </div>
+            
+            <div class="modal-body" style="padding: 16px 22px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px;">
+                <!-- Status & Uncertainty Alert Banner -->
+                <div id="importAlertBanner" style="border-radius: 6px; padding: 10px 14px; font-size: 13px; line-height: 1.5;"></div>
+
+                <!-- Sheet & Header Row Configuration -->
+                <div style="display: flex; gap: 14px; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 16px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-weight: 600; font-size: 13px; color: #1e293b;">工作簿:</span>
+                        <span id="importFileNameSpan" style="font-size: 13px; color: #0369a1; font-weight: 500;">-</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label for="importSheetSelect" style="font-weight: 600; font-size: 13px; color: #1e293b;">工作表 (Sheet):</label>
+                        <select id="importSheetSelect" class="form-select" style="font-size: 12px; padding: 4px 8px; min-width: 140px;" onchange="onImportSheetChange(this.value)">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label for="importHeaderRowInput" style="font-weight: 600; font-size: 13px; color: #1e293b;">表头行号:</label>
+                        <input type="number" id="importHeaderRowInput" class="form-input" style="font-size: 12px; width: 60px; padding: 4px 6px;" min="1" max="20" value="1" onchange="onImportHeaderRowChange(this.value)">
+                    </div>
+                    <div style="margin-left: auto; font-size: 12px; color: #15803d; font-weight: 600; background: #dcfce7; padding: 3px 8px; border-radius: 4px;">
+                        共检测到约 <span id="importTotalRowsSpan">0</span> 行有效物料
+                    </div>
+                </div>
+
+                <!-- Column Mapping Grid -->
+                <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; background: #ffffff;">
+                    <div style="font-weight: 700; font-size: 13px; color: #1e293b; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>标准模版字段 与 Excel 数据列映射对应关系:</span>
+                        <span style="font-size: 11px; font-weight: normal; color: #64748b;">标 * 为关键必填字段</span>
+                    </div>
+                    <div id="mappingGridContainer" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 20px;">
+                        <!-- Generated dynamically by JS -->
+                    </div>
+                </div>
+
+                <!-- Live Sample Data Preview Table -->
+                <div>
+                    <div style="font-weight: 600; font-size: 13px; color: #1e293b; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                        <span>Excel 前 5 行数据实时提取预览:</span>
+                        <span style="font-size: 11px; color: #64748b;">(蓝色表头为已对齐映射的模版字段列)</span>
+                    </div>
+                    <div class="table-responsive" style="max-height: 200px; border: 1px solid var(--border); border-radius: 6px;">
+                        <table style="width: 100%; font-size: 11px;">
+                            <thead id="importPreviewTableHead"></thead>
+                            <tbody id="importPreviewTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Options -->
+                <div style="display: flex; align-items: center; justify-content: space-between; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #1e40af; font-weight: 500;">
+                        <input type="checkbox" id="importOverwriteCheck" checked style="width: 16px; height: 16px;">
+                        <span>当主库中已存在相同物料号时，自动用 Excel 中的属性数据进行更新覆盖</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 22px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <button class="btn btn-outline" onclick="closeModal('masterImportMappingModal')">取消</button>
+                <button class="btn btn-primary" id="btnSubmitMasterImport" onclick="submitMasterImportExecute()" style="padding: 7px 24px; font-weight: 600;">
+                    确认导入
+                </button>
+            </div>
+        </div>
+    </div>
+<!-- MODAL 19: Material Master Intelligent Duplicate Management -->
+    <div id="auditModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 1100px; max-width: 96vw; max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 14px 20px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e293b;">物料主库智能查重（一物多码治理）</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                            自动归一化匹配相同规格型号的冗余物料编码 · 标明项目引用状态 · 支持一键删除冗余条目
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="loadAuditReport()" title="重新运行查重分析">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/>
+                        </svg>
+                        重新扫描
+                    </button>
+                    <button type="button" class="modal-close" onclick="closeModal('auditModal')" title="关闭">&times;</button>
+                </div>
+            </div>
+
+            <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px;">
+                <!-- Summary bar & Search box -->
+                <div style="display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 16px; gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 16px;">🔍</span>
+                        <div id="auditDuplicateSummaryText" style="font-size: 13px; font-weight: 600; color: #1e293b;">
+                            正在扫描主库一物多码重复物料...
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="text" id="auditSearchInput" class="form-input" style="font-size: 12px; padding: 4px 10px; width: 230px;" placeholder="按物料号 / 型号 / 名称过滤..." oninput="filterAuditDuplicateGroups()">
+                    </div>
+                </div>
+
+                <!-- Duplicate Groups Container -->
+                <div id="auditDuplicateGroupsContainer" style="display: flex; flex-direction: column; gap: 14px;">
+                    <!-- Populated dynamically by audit.js -->
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 12px; color: #64748b;">
+                    💡 提示：对于未被任何工程项目引用的重复条目，可直接点击【一键删除】安全移除；已被引用的物料删除时将提示引用工程信息。
+                </div>
+                <button type="button" class="btn btn-outline" onclick="closeModal('auditModal')">关闭窗口</button>
+            </div>
+        </div>
+    </div>

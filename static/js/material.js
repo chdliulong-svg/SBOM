@@ -155,6 +155,8 @@
                 return;
             }
 
+            const fragment = document.createDocumentFragment();
+
             allMasterMaterials.forEach(m => {
                 const isSelected = selectedMasterMatNos.has(m.material_no);
                 const tr = document.createElement('tr');
@@ -234,8 +236,9 @@
                     <td class="col-center">${imgTag}</td>
                     <td class="col-center">${manTag}</td>
                 `;
-                tbody.appendChild(tr);
+                fragment.appendChild(tr);
             });
+            tbody.appendChild(fragment);
 
             applyColumnWidths('masterTable');
             updateMasterToolbarState();

@@ -1,0 +1,342 @@
+<!-- MODAL 1: Add / Edit BOM Item -->
+    <div id="bomItemModal" class="modal-mask">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title" style="display: flex; align-items: center; justify-content: space-between; width: calc(100% - 32px);">
+                    <span id="bomModalTitle">添加物料行</span>
+                    <a href="javascript:void(0)" onclick="closeModal('bomItemModal'); openBatchAddBomModal();" style="font-size: 12px; font-weight: normal; color: #2563eb; text-decoration: none;" title="切换到多行批量导入模式">切换至批量添加模式 &raquo;</a>
+                </div>
+                <button class="modal-close" onclick="closeModal('bomItemModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-bom-id">
+                
+                <div class="form-grid">
+                    <!-- 2. Material Number (Exact Match / Master Key) -->
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>* 物料号 (唯一区分主键):</span>
+                            <span id="mat-exact-hint" style="color: #16a34a; font-size: 11px; font-weight: 500; display: none;">已匹配物料主库</span>
+                            <span id="mat-new-hint" style="color: #0284c7; font-size: 11px; font-weight: 500; display: none;">主库新物料（保存时将自动录入）</span>
+                        </label>
+                        <input id="bm-mat-no" class="form-input" placeholder="例如 DFB00166343" oninput="handleMatNoInput(this.value)" onfocus="if (this.value) handleMatNoInput(this.value)" onblur="handleMatNoBlur(this.value)" autocomplete="off">
+                        <div id="matNoFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 3. Component Name -->
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">元器件名称 (支持自动联想):</label>
+                        <input id="bm-name" class="form-input" placeholder="例如 润滑泵" oninput="handleFieldFuzzy('name', this.value, 'nameFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('name', this.value, 'nameFuzzyDropdown')" autocomplete="off">
+                        <div id="nameFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 3.1 Child Hierarchy Auto-Import Prompt Box -->
+                    <div id="modal-children-prompt-box" class="full-row" style="grid-column: 1 / -1 !important; display: none; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 14px 18px; margin-top: 2px; margin-bottom: 6px; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.08);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 8px;">
+                            <div style="font-weight: 600; color: #166534; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                                <span>检测到该物料在数据库中包含 <b id="childCountBadge" style="color: #15803d; font-size: 16px;">0</b> 个子层级零部件</span>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 600; color: #15803d; background: #dcfce7; padding: 5px 12px; border-radius: 6px; border: 1px solid #86efac;">
+                                    <input type="radio" name="importChildOption" id="importChildYes" value="yes" checked style="cursor: pointer; accent-color: #16a34a;">
+                                    <span>关联导入下属子结构（整组展开）</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: #475569; background: #ffffff; padding: 5px 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                                    <input type="radio" name="importChildOption" id="importChildNo" value="no" style="cursor: pointer;">
+                                    <span>仅添加当前单行</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: #14532d; line-height: 1.5; margin-bottom: 8px;">
+                            <b>装配结构说明：</b> 勾选后，系统将依据物料主库中的总成装配结构树，按层级顺序自动插入其下属子零部件（含图号、规格型号、装配数量等）。
+                        </div>
+                        <details style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #374151;">
+                            <summary style="cursor: pointer; color: #15803d; font-weight: 600; outline: none;">
+                                下属子零部件清单预览 (<span id="childPreviewSummaryCount">0</span> 项) ▼
+                            </summary>
+                            <div id="childPreviewItemsContainer" style="max-height: 160px; overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; border-top: 1px dashed #bbf7d0; padding-top: 6px;">
+                            </div>
+                        </details>
+                    </div>
+
+                    <!-- 4. Description (with inline fuzzy support) -->
+                    <div class="form-group full" style="position: relative;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                            <label class="form-label" style="margin-bottom: 0;">物料完整描述 (支持输入描述进行模糊匹配):</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button type="button" class="btn btn-sm" id="btn-ai-parse-bm" onclick="aiExtractBomItem()" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; padding: 2px 8px; font-weight: 600; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;" title="大模型自动语义推断物料名称、规格型号与供应商">
+                                    <span>✨ 大模型智能提取</span>
+                                </button>
+                                <span id="desc-fuzzy-hint" style="font-size: 11px; color: var(--text-muted);">输入描述关键词可快速检索</span>
+                            </div>
+                        </div>
+                        <input id="bm-desc" class="form-input" placeholder="例如 备件润滑系统_润滑泵_盘古_050316237703 或 支架_D8-07-02-Q00632-00_绑线支架_X3_SSB" oninput="handleDescFuzzy(this.value)" onfocus="if (this.value) handleDescFuzzy(this.value)" autocomplete="off">
+                        <div id="descFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 5. Model & Manufacturer -->
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">型号/规格 (支持自动联想):</label>
+                        <input id="bm-model" class="form-input" placeholder="规格型号，输入可自动联想" oninput="handleFieldFuzzy('spec_model', this.value, 'modelFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('spec_model', this.value, 'modelFuzzyDropdown')" autocomplete="off">
+                        <div id="modelFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">制造商 (支持自动联想):</label>
+                        <input id="bm-mfr" class="form-input" placeholder="供应商名称，输入可自动联想" oninput="handleFieldFuzzy('manufacturer', this.value, 'mfrFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('manufacturer', this.value, 'mfrFuzzyDropdown')" autocomplete="off">
+                        <div id="mfrFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 6. Quantity & Unit -->
+                    <div class="form-group">
+                        <label class="form-label">单机数量:</label>
+                        <input id="bm-qty" type="number" step="any" class="form-input" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">单位:</label>
+                        <input id="bm-unit" class="form-input" value="PC">
+                    </div>
+
+                    <!-- 7. Level & Drawing -->
+                    <div class="form-group">
+                        <label class="form-label">BOM 层级:</label>
+                        <select id="bm-level" class="form-select">
+                            <option value="•|1">一级组件 (•)</option>
+                            <option value="••|2" selected>二级零件 (••)</option>
+                            <option value="•••|3">三级零件 (•••)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">图纸/文件代号:</label>
+                        <input id="bm-drawing" class="form-input" value="/" oninput="handleFieldFuzzy('drawing_no', this.value, 'drawingFuzzyDropdown')" onfocus="if (this.value && this.value !== '/') handleFieldFuzzy('drawing_no', this.value, 'drawingFuzzyDropdown')" autocomplete="off">
+                        <div id="drawingFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 8. Component Photo & Technical Manual (Side-by-Side 2 Columns) -->
+                    <div class="full-row" style="grid-column: 1 / -1 !important; width: 100% !important; display: grid !important; grid-template-columns: 1fr 1fr; gap: 14px; box-sizing: border-box;">
+                        
+                        <!-- Left Column: Photo Card -->
+                        <div id="modal-img-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0; transition: border-color 0.2s, background 0.2s;">
+                            <!-- Photo Preview Box (Click to enlarge / focusable / paste target) -->
+                            <div id="modal-img-container" tabindex="0" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); outline: none; transition: border-color 0.2s, box-shadow 0.2s;" onclick="enlargeModalImage()" title="点击放大查看高清大图；支持直接 Ctrl+V 粘贴照片或拖拽图片">
+                                <img id="modal-img-preview" src="" style="width: 100%; height: 100%; object-fit: contain; display: none;">
+                                <span id="modal-img-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.35; padding: 2px;">
+                                    暂无照片<br>
+                                    <span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span><br>
+                                    <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; display: inline-block; margin-top: 2px;">或 Ctrl+V 粘贴</span>
+                                </span>
+                                <div id="modal-img-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">点击放大</div>
+                            </div>
+                            <!-- Photo Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件实物照片</span>
+                                    <span id="modal-img-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联照片</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="modal-img-status">
+                                    支持本地选择、<b>快捷键 Ctrl+V 粘贴截图</b>、拖拽图片或 <b>.step/.stp 3D模型自动截图</b>。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" id="modal-pick-img-btn" onclick="triggerModalImgPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择照片
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="modal-3d-btn" onclick="Step3dViewer.triggerFilePicker('bomModal')" style="font-size: 11px; padding: 3px 8px; color: #0284c7; border-color: #bae6fd; background: #f0f9ff;" title="上传 .step / .stp 三维 CAD 模型并自动截取实物图">
+                                        📐 3D截图
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="modal-paste-img-btn" onclick="pasteModalImgFromClipboard()" style="font-size: 11px; padding: 3px 8px; color: #2563eb; border-color: #93c5fd; background: #eff6ff;" title="读取系统剪贴板中的图片并直接粘贴 (快捷键 Ctrl+V)">
+                                        📋 粘贴照片
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="modal-remove-img-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeModalImg()">
+                                        移除照片
+                                    </button>
+                                    <span id="modal-pending-upload-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新照片</span>
+                                </div>
+                                <input type="file" id="modalImgFileInput" accept="image/*,.stp,.step,.stpz,.iges,.igs" style="display: none;" onchange="handleModalImgSelected(event)">
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Technical Manual Card -->
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: row; align-items: center; gap: 14px; text-align: left; box-sizing: border-box; min-width: 0;">
+                            <!-- Manual Preview Box (Click to preview/read) -->
+                            <div id="modal-manual-container" style="width: 105px; height: 95px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 6px; box-sizing: border-box;" onclick="handleModalManualClick()" title="点击在线预览技术手册">
+                                <div id="modal-manual-icon" style="display: none; line-height: 1;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
+                                <div id="modal-manual-filename" style="font-size: 10px; color: #1e293b; font-weight: 500; text-align: center; margin-top: 4px; word-break: break-all; max-height: 28px; overflow: hidden; display: none; line-height: 1.2;"></div>
+                                <span id="modal-manual-placeholder" style="font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.3;">暂无技术手册<br><span style="font-size: 11px; color: #0284c7; text-decoration: underline;">点击选择</span></span>
+                                <div id="modal-manual-zoom-hint" style="position: absolute; bottom: 3px; right: 4px; font-size: 9px; background: rgba(0,0,0,0.65); color: #fff; padding: 1px 4px; border-radius: 3px; display: none; pointer-events: none;">在线预览</div>
+                            </div>
+                            <!-- Manual Information & Action Buttons -->
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                                <div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                    <span>零部件技术手册 (PDF)</span>
+                                    <span id="modal-manual-tag" style="font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: none;">已有关联手册</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;" id="modal-manual-status">
+                                    支持关联 PDF 格式技术手册，可在线查阅并同步至物料数据库。
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="triggerModalManualPicker()" style="font-size: 11px; padding: 3px 8px;">
+                                        选择手册 (PDF)
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-sm" id="modal-preview-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="previewModalManual()">
+                                        查看手册
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" id="modal-remove-manual-btn" style="display: none; font-size: 11px; padding: 3px 8px;" onclick="removeModalManual()">
+                                        移除手册
+                                    </button>
+                                    <span id="modal-pending-manual-badge" style="font-size: 11px; color: #16a34a; font-weight: 500; display: none;">已选新手册</span>
+                                </div>
+                                <input type="file" id="modalManualFileInput" accept=".pdf,application/pdf" style="display: none;" onchange="handleModalManualSelected(event)">
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- 9. Insertion Position -->
+                    <div class="form-group" id="insertPosGroup">
+                        <label class="form-label">插入位置:</label>
+                        <select id="bm-insert-pos" class="form-select">
+                            <option value="end">追加到表格末尾</option>
+                            <option value="start">插入到表格开头 (作为第 1 行)</option>
+                        </select>
+                    </div>
+
+                    <!-- 10. Substitute -->
+                    <div class="form-group" style="position: relative;">
+                        <label class="form-label">替代物料号/型号 (支持自动联想):</label>
+                        <input id="bm-substitute" class="form-input" placeholder="输入可自动联想主库" oninput="handleFieldFuzzy('substitute', this.value, 'substituteFuzzyDropdown')" onfocus="if (this.value) handleFieldFuzzy('substitute', this.value, 'substituteFuzzyDropdown')" autocomplete="off">
+                        <div id="substituteFuzzyDropdown" class="fuzzy-dropdown" style="display: none;"></div>
+                    </div>
+
+                    <!-- 11. Notes -->
+                    <div class="form-group full">
+                        <label class="form-label">补充说明 / 备注:</label>
+                        <input id="bm-notes" class="form-input">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('bomItemModal')">取消</button>
+                <button class="btn btn-primary" id="btnSaveBomItem" onclick="submitBomItem()">确定保存</button>
+            </div>
+        </div>
+    </div>
+<!-- MODAL 1.5: Batch Add BOM Items Modal -->
+    <div id="batchAddBomModal" class="modal-mask">
+        <div class="modal-dialog" style="width: 820px; max-width: 96vw;">
+            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-weight: 600;">批量添加物料 (按行快速导入)</span>
+                </div>
+                <button class="modal-close" onclick="closeModal('batchAddBomModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px 24px; max-height: calc(85vh - 120px); overflow-y: auto;">
+                <!-- Description Tip -->
+                <div style="font-size: 13px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; line-height: 1.5;">
+                    <b>说明：</b> 每行输入或粘贴一个物料号（支持从 Excel 中复制整列物料号直接粘贴）。下方预览表中<b>可直接微调各物料的导入数量</b>；未收录的新物料将自动录入主库。
+                </div>
+
+                <!-- Config Options Grid -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                    <!-- Level Select -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600;">
+                            <span>导入级别 (BOM 层级) <span style="color: #ef4444;">*</span>:</span>
+                        </label>
+                        <select id="batch-bm-level" class="form-select" style="font-weight: 600; color: #1e293b;">
+                            <option value="•|1">一级组件 (•)</option>
+                            <option value="••|2" selected>二级零件 (••)</option>
+                            <option value="•••|3">三级零件 (•••)</option>
+                            <option value="••••|4">四级零件 (••••)</option>
+                        </select>
+                    </div>
+
+                    <!-- Insert Position -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600;">插入位置:</label>
+                        <select id="batch-insert-pos" class="form-select">
+                            <option value="end">追加到表格末尾</option>
+                            <option value="start">插入到表格开头 (作为第 1 行)</option>
+                        </select>
+                    </div>
+
+                    <!-- Default Qty -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px;">默认单机数量:</label>
+                        <input id="batch-bm-qty" type="number" step="any" min="0.001" class="form-input" value="1" oninput="onBatchTextOrConfigChanged()">
+                    </div>
+
+                    <!-- Default Unit -->
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 13px;">默认计量单位:</label>
+                        <input id="batch-bm-unit" class="form-input" value="PC" oninput="onBatchTextOrConfigChanged()">
+                    </div>
+                </div>
+
+                <!-- Input Textarea -->
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label class="form-label" style="font-size: 13px; font-weight: 600; margin-bottom: 0;">
+                            粘贴物料号列表 <span style="color: #ef4444;">*</span>:
+                        </label>
+                        <div style="display: flex; align-items: center; gap: 12px; font-size: 12px; color: #64748b;">
+                            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                <input type="checkbox" id="batch-opt-dedup" onchange="onBatchTextOrConfigChanged()" style="cursor: pointer;">
+                                <span>过滤重复物料号</span>
+                            </label>
+                            <span style="color: #cbd5e1;">|</span>
+                            <a href="javascript:void(0)" onclick="clearBatchInput()" style="color: #dc2626; text-decoration: none;">清空输入</a>
+                        </div>
+                    </div>
+                    <textarea id="batch-mat-text" class="form-input" rows="7" placeholder="请在此处直接粘贴物料号，每行一个。例如：&#10;DFB00014350&#10;DFB00041184&#10;DFB00044292&#10;B9401421&#10;（从 Excel 复制一列即可直接在此粘贴）" style="font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.5; resize: vertical;" oninput="onBatchTextOrConfigChanged()"></textarea>
+                </div>
+
+                <!-- Preview Area -->
+                <div id="batch-preview-wrapper" style="margin-top: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div style="font-size: 13px; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 8px;">
+                            <span>实时解析预览</span>
+                            <span id="batchPreviewSummary" style="font-size: 12px; font-weight: normal; color: #64748b;">(暂无输入)</span>
+                        </div>
+                        <div id="batchStatusBadges" style="display: flex; gap: 8px; font-size: 11px;">
+                            <span id="badgeMatchedCount" style="display: none; background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: 600;">已匹配主库: 0</span>
+                            <span id="badgeNewCount" style="display: none; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 600;">新物料: 0</span>
+                        </div>
+                    </div>
+
+                    <!-- Scrollable Preview Table -->
+                    <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: #fff;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                            <thead style="position: sticky; top: 0; background: #f8fafc; border-bottom: 1px solid var(--border); z-index: 1;">
+                                <tr>
+                                    <th style="padding: 6px 8px; width: 38px; color: #64748b; font-weight: 600; text-align: center;">#</th>
+                                    <th style="padding: 6px 10px; width: 135px; color: #334155; font-weight: 600;">物料号</th>
+                                    <th style="padding: 6px 10px; color: #334155; font-weight: 600;">物料名称 (主库)</th>
+                                    <th style="padding: 6px 10px; color: #334155; font-weight: 600;">规格型号 / 厂家</th>
+                                    <th style="padding: 6px 10px; width: 125px; color: #2563eb; font-weight: 600;">数量 (可直接调整)</th>
+                                    <th style="padding: 6px 10px; width: 85px; color: #334155; font-weight: 600; text-align: center;">主库状态</th>
+                                    <th style="padding: 6px 6px; width: 40px; text-align: center; color: #64748b;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batchPreviewTableBody">
+                                <tr>
+                                    <td colspan="7" style="padding: 24px; text-align: center; color: #94a3b8;">
+                                        请在上方粘贴或输入物料号后查看解析预览
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 12px 24px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 12px; color: #64748b;">
+                    共识别 <b id="batchFooterCount" style="color: #2563eb; font-size: 14px;">0</b> 项待导入物料
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-outline" onclick="closeModal('batchAddBomModal')">取消</button>
+                    <button class="btn btn-primary" id="btnSubmitBatchAdd" onclick="submitBatchBomAdd()" disabled style="padding: 6px 22px;">
+                        确认批量导入
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>

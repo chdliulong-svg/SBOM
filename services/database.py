@@ -188,7 +188,13 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mat_struct_child ON material_structures(child_material_no)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bom_items_mat_no ON bom_items(material_no)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bom_items_sub_id ON bom_items(subsystem_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_bom_items_sub_row ON bom_items(subsystem_id, row_num)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_subsystems_proj_id ON subsystems(project_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_materials_name ON materials(name)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_materials_spec ON materials(spec_model)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_materials_mfr ON materials(manufacturer)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_projects_platform ON projects(platform)')
 
     # Migration for projects: add is_locked, locked_by, locked_at, platform columns if not present
     cursor.execute("PRAGMA table_info(projects)")

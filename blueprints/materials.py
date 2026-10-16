@@ -27,24 +27,40 @@ def get_materials():
     cursor = conn.cursor()
 
     sql = '''
-    SELECT m.*,
-           (SELECT COUNT(*) FROM material_structures s WHERE s.parent_material_no = m.material_no) as child_count,
-           (SELECT COUNT(DISTINCT p.id)
+    WITH child_counts AS (
+        SELECT parent_material_no, COUNT(*) as cnt
+        FROM material_structures
+        GROUP BY parent_material_no
+    ),
+    usage_stats AS (
+        SELECT b.material_no,
+               COUNT(DISTINCT sub.project_id) as proj_cnt,
+               COUNT(*) as total_cnt
+        FROM bom_items b
+        JOIN subsystems sub ON b.subsystem_id = sub.id
+        GROUP BY b.material_no
+    ),
+    proj_refs AS (
+        SELECT material_no,
+               json_group_array(json_object('id', id, 'name', name, 'code', code)) as projects_json
+        FROM (
+            SELECT DISTINCT b.material_no, p.id, COALESCE(NULLIF(p.system_name, ''), NULLIF(p.code, ''), p.name) as name, p.code
             FROM bom_items b
             JOIN subsystems sub ON b.subsystem_id = sub.id
             JOIN projects p ON sub.project_id = p.id
-            WHERE b.material_no = m.material_no) as usage_project_count,
-           (SELECT COUNT(*)
-            FROM bom_items b
-            WHERE b.material_no = m.material_no) as usage_total_count,
-           (SELECT json_group_array(json_object('id', p.id, 'name', COALESCE(NULLIF(p.system_name, ''), NULLIF(p.code, ''), p.name), 'code', p.code))
-            FROM (SELECT DISTINCT p.id, p.name, p.system_name, p.code
-                  FROM bom_items b
-                  JOIN subsystems sub ON b.subsystem_id = sub.id
-                  JOIN projects p ON sub.project_id = p.id
-                  WHERE b.material_no = m.material_no
-                  ORDER BY COALESCE(NULLIF(p.system_name, ''), p.code)) p) as projects_json
+            ORDER BY COALESCE(NULLIF(p.system_name, ''), p.code)
+        )
+        GROUP BY material_no
+    )
+    SELECT m.*,
+           COALESCE(c.cnt, 0) as child_count,
+           COALESCE(u.proj_cnt, 0) as usage_project_count,
+           COALESCE(u.total_cnt, 0) as usage_total_count,
+           pr.projects_json
     FROM materials m
+    LEFT JOIN child_counts c ON c.parent_material_no = m.material_no
+    LEFT JOIN usage_stats u ON u.material_no = m.material_no
+    LEFT JOIN proj_refs pr ON pr.material_no = m.material_no
     WHERE 1=1
     '''
     params = []
@@ -64,17 +80,26 @@ def get_materials():
         params.extend([query, query, query, query, query, query, query, query, query, query])
 
     if filter_type == 'has_children':
-        sql += " AND (SELECT COUNT(*) FROM material_structures s WHERE s.parent_material_no = m.material_no) > 0"
+        sql += " AND COALESCE(c.cnt, 0) > 0"
     elif filter_type == 'has_image':
         sql += " AND m.image_path IS NOT NULL AND m.image_path != ''"
     elif filter_type == 'has_manual':
         sql += " AND m.manual_path IS NOT NULL AND m.manual_path != ''"
     elif filter_type == 'referenced':
-        sql += " AND (SELECT COUNT(*) FROM bom_items b WHERE b.material_no = m.material_no) > 0"
+        sql += " AND COALESCE(u.total_cnt, 0) > 0"
     elif filter_type == 'unreferenced':
-        sql += " AND (SELECT COUNT(*) FROM bom_items b WHERE b.material_no = m.material_no) = 0"
+        sql += " AND COALESCE(u.total_cnt, 0) = 0"
 
     sql += " ORDER BY m.material_no"
+
+    limit = request.args.get('limit', type=int)
+    offset = request.args.get('offset', type=int)
+    if limit is not None and limit > 0:
+        sql += " LIMIT ?"
+        params.append(limit)
+        if offset is not None and offset >= 0:
+            sql += " OFFSET ?"
+            params.append(offset)
     cursor.execute(sql, tuple(params))
     raw_materials = cursor.fetchall()
     materials = []
