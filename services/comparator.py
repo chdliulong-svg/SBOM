@@ -824,7 +824,7 @@ def generate_procurement_excel(res):
     )
 
     # Title & Metadata
-    ws['A1'] = "风电机组技改 / 增量备件采购申报清单"
+    ws['A1'] = "变桨系统技改 / 增量备件采购申报清单"
     ws['A1'].font = font_title
     ws.merge_cells("A1:N1")
     ws.row_dimensions[1].height = 32

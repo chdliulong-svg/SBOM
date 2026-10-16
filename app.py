@@ -222,7 +222,7 @@ if __name__ == '__main__':
     _hash, plaintext_pw, pw_source = auth_manager.initialize_password()
 
     print("=====================================================")
-    print("  风电机组 Service BOM 已启动 [蓝图模块化架构 / 局域网共享模式]")
+    print("  变桨系统Service BOM 已启动 [蓝图模块化架构 / 局域网共享模式]")
     print("-----------------------------------------------------")
     print(f"  * 本机访问:       http://127.0.0.1:{port}")
     if lan_ip and lan_ip != '127.0.0.1':
