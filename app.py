@@ -16,6 +16,7 @@ import socket
 import webbrowser
 import threading
 from datetime import timedelta
+from urllib.parse import quote
 from threading import Timer
 
 from flask import Flask, render_template, request, jsonify, redirect
@@ -25,8 +26,10 @@ from services.config import config, get_secret_key
 from services.logging_setup import setup_logging, get_logger, new_error_id
 from services.database import get_db, init_db, find_template_path, close_db
 from services.importer import import_excel_sbom
+from services import auth_manager
 from services.backup_manager import ensure_daily_backup
 from blueprints import register_blueprints
+from blueprints.auth import is_authenticated
 
 setup_logging()
 logger = get_logger('sbom.app')
@@ -43,8 +46,36 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=config.session_lifetim
 # 注册 DB 连接自动安全回收（无论成功或异常退出，彻底杜绝死锁与连接泄露）
 app.teardown_appcontext(close_db)
 
-# 注册模块化蓝图（登录保护已永久移除，全员免登录直接访问）
+# 注册模块化蓝图（含 auth 蓝图）
 register_blueprints(app)
+
+
+# ----------------- 鉴权拦截 (方案1：轻量访问口令) -----------------
+# 这些路径必须免登录，否则登录页自身及其静态资源无法加载
+AUTH_EXEMPT_EXACT = {'/login', '/favicon.ico', '/api/health'}
+AUTH_EXEMPT_PREFIX = ('/static/', '/api/auth/')
+
+
+@app.before_request
+def enforce_authentication():
+    if not config.auth_required:
+        return None
+    if is_authenticated():
+        return None
+
+    path = request.path
+    if path in AUTH_EXEMPT_EXACT or path.startswith(AUTH_EXEMPT_PREFIX):
+        return None
+
+    if path.startswith('/api/') or path.startswith('/assets/'):
+        return jsonify({
+            'success': False,
+            'error': '未登录或登录已失效，请重新登录',
+            'need_login': True
+        }), 401
+
+    target = request.full_path if request.query_string else path
+    return redirect('/login?next=' + quote(target, safe='/?&=%'))
 
 
 # ----------------- Health Check -----------------
@@ -160,6 +191,9 @@ def ensure_app_initialized():
                     logger.warning("导入初始模版提示: %s", e)
         conn.close()
 
+        # 初始化访问口令
+        auth_manager.initialize_password()
+
         # 每日自动完整备份（后台守护线程，不阻塞主服务）
         threading.Thread(target=ensure_daily_backup, daemon=True).start()
         _app_initialized = True
@@ -184,6 +218,9 @@ if __name__ == '__main__':
     except Exception:
         pass
 
+    # 读取口令展示信息
+    _hash, plaintext_pw, pw_source = auth_manager.initialize_password()
+
     print("=====================================================")
     print("  风电机组 Service BOM 已启动 [蓝图模块化架构 / 局域网共享模式]")
     print("-----------------------------------------------------")
@@ -199,6 +236,19 @@ if __name__ == '__main__':
     print(f"  * 配置文件:       {config.config_file}")
     print(f"  * 监听端口:       {port}")
     print(f"  * 访问控制:       {config.auth_mode_label}")
+    if config.auth_required:
+        if pw_source == 'generated' and plaintext_pw:
+            print(f"  * 首次登录口令:   {plaintext_pw}")
+            print("                    ^ 已自动生成并保存到 data/auth.json，请告知需要访问的同事")
+        elif pw_source == 'env':
+            print("  * 登录口令:       由环境变量 SBOM_PASSWORD 指定")
+        elif pw_source == 'config':
+            print("  * 登录口令:       由 config.ini [security] admin_password 指定")
+        else:
+            print("  * 登录口令:       已保存在 data/auth.json（可在系统右上角修改，或删除该文件重置）")
+        print("  * 免登录启动:     可在 config.ini 中设置 auth_mode = off")
+    else:
+        print("  * 模式说明:       当前为免登录模式，局域网所有成员可直接打开网址访问")
     print(f"  * 默认所属单位:   {config.company_default}")
     print(f"  * 默认表单编号:   {config.form_no_default}")
     print(f"  * 上传体积上限:   {config.upload_max_mb} MB")

@@ -56,6 +56,16 @@
                 throw new Error('服务器返回了无法解析的非JSON数据');
             }
             if (!res.ok) {
+                if (res.status === 401 && (data.need_login || (data.error && data.error.includes('登录')))) {
+                    showToast('登录会话已失效，正在跳转登录页...', 'error');
+                    setTimeout(() => {
+                        window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+                    }, 800);
+                    const err = new Error(data.error || '登录已失效');
+                    err.data = data;
+                    err.status = 401;
+                    throw err;
+                }
                 const err = new Error(data.error || `请求失败 (HTTP ${res.status})`);
                 err.data = data;
                 err.status = res.status;
@@ -248,6 +258,110 @@
                 ${badgeHtml}
             </div>`;
         }
+
+
+        // ==========================================
+        // Authentication & Password Management UI
+        // ==========================================
+        async function checkAuthStatus() {
+            try {
+                const res = await safeFetchJson('/api/auth/status');
+                const btnLogout = document.getElementById('btnHeaderLogout');
+                const btnPw = document.getElementById('btnHeaderPassword');
+                if (res && res.required) {
+                    if (btnLogout) btnLogout.style.display = 'inline-flex';
+                    if (btnPw) btnPw.style.display = 'inline-flex';
+                } else {
+                    if (btnLogout) btnLogout.style.display = 'none';
+                    if (btnPw) btnPw.style.display = 'none';
+                }
+            } catch (e) {
+                // Ignore
+            }
+        }
+
+        async function handleUserLogout() {
+            if (!confirm('确认退出当前系统登录状态？')) return;
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+            } catch (e) {}
+            window.location.href = '/login';
+        }
+
+        function openChangePasswordModal() {
+            const modal = document.getElementById('changePasswordModal');
+            if (modal) {
+                document.getElementById('pwOldInput').value = '';
+                document.getElementById('pwNewInput').value = '';
+                document.getElementById('pwConfirmInput').value = '';
+                const errEl = document.getElementById('pwModalError');
+                if (errEl) errEl.style.display = 'none';
+                modal.classList.add('active');
+                setTimeout(() => document.getElementById('pwOldInput')?.focus(), 100);
+            }
+        }
+
+        function closeChangePasswordModal() {
+            const modal = document.getElementById('changePasswordModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        async function submitChangePassword() {
+            const oldPw = document.getElementById('pwOldInput').value.trim();
+            const newPw = document.getElementById('pwNewInput').value.trim();
+            const confirmPw = document.getElementById('pwConfirmInput').value.trim();
+            const errEl = document.getElementById('pwModalError');
+
+            if (!oldPw) {
+                errEl.textContent = '请输入当前原口令';
+                errEl.style.display = 'block';
+                return;
+            }
+            if (!newPw) {
+                errEl.textContent = '请输入新口令';
+                errEl.style.display = 'block';
+                return;
+            }
+            if (newPw.length < 6) {
+                errEl.textContent = '新口令长度至少为 6 位';
+                errEl.style.display = 'block';
+                return;
+            }
+            if (newPw !== confirmPw) {
+                errEl.textContent = '两次输入的新口令不一致，请重新确认';
+                errEl.style.display = 'block';
+                return;
+            }
+
+            const btn = document.getElementById('btnSubmitPassword');
+            btn.disabled = true;
+            btn.textContent = '正在更新...';
+            errEl.style.display = 'none';
+
+            try {
+                const res = await safeFetchJson('/api/auth/change_password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ old_password: oldPw, new_password: newPw })
+                });
+                if (res && res.success) {
+                    showToast('访问口令修改成功，请牢记新口令！', 'success');
+                    closeChangePasswordModal();
+                } else {
+                    errEl.textContent = res.error || '修改失败';
+                    errEl.style.display = 'block';
+                }
+            } catch (err) {
+                errEl.textContent = err.message || '网络异常';
+                errEl.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '确认修改';
+            }
+        }
+
+        // Auto-check auth status on page load
+        document.addEventListener('DOMContentLoaded', checkAuthStatus);
 
 
 

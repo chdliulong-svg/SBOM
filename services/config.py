@@ -71,6 +71,17 @@ max_keep_assets = 7
 # 局域网共享或 NAS 远端备份目录绝对路径 (可选，留空则仅在本地 backups/ 目录备份)
 # 例如: \\\\192.168.1.100\\SharedBackups\\SBOM 或 D:\\Backups
 remote_backup_dir = 
+
+[security]
+# 登录鉴权开关：
+# - on   : 开启访问口令保护（团队成员输入统一口令后进入工作台）
+# - off  : 关闭登录保护（免登录模式，直接进入工作台）
+# - auto : 局域网访问需口令，本机 (127.0.0.1) 访问免登录
+auth_mode = on
+
+# 自定义访问口令（留空则首次启动由系统在终端自动生成随机口令并保存在 data/auth.json）
+# 例如: ServiceBOM2026
+admin_password = 
 """
 
 
@@ -137,8 +148,12 @@ class Config:
         self.threads = self._get_int('server', 'threads', 24, 1, 128)
         self.connection_limit = self._get_int('server', 'connection_limit', 120, 1, 1000)
 
-        # 鉴权配置：已永久关闭登录保护功能（全员免登录直接访问）
-        self.auth_mode = 'off'
+        # --- [security] ---
+        raw_mode = self._get_str('security', 'auth_mode', 'on').lower()
+        if raw_mode not in ('on', 'off', 'auto'):
+            raw_mode = 'on'
+        self.auth_mode = raw_mode
+        self.admin_password = self._get_str('security', 'admin_password', '')
 
         # --- [storage] ---
         self.upload_max_mb = self._get_int('storage', 'upload_max_mb', 200, 1, 4096)
@@ -190,8 +205,13 @@ class Config:
 
     @property
     def auth_required(self):
-        """当前是否要求登录（永久关闭）。"""
-        return False
+        """当前是否要求登录。"""
+        if self.auth_mode == 'on':
+            return True
+        if self.auth_mode == 'off':
+            return False
+        # auto：仅监听回环地址时视为免密，外部/局域网访问需口令
+        return self.host not in ('127.0.0.1', 'localhost')
 
     @property
     def max_content_length(self):
@@ -199,7 +219,11 @@ class Config:
 
     @property
     def auth_mode_label(self):
-        return '已永久关闭（免登录模式，直接访问）'
+        if self.auth_mode == 'on':
+            return '已启用口令保护'
+        if self.auth_mode == 'off':
+            return '已关闭（免登录模式）'
+        return ('自动（局域网共享需口令）' if self.auth_required else '自动（仅本机免登录）')
 
 
 config = Config()
