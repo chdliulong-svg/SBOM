@@ -6,13 +6,31 @@
 
 ---
 
-## 快速启动
+## 快速启动 (Ubuntu 22.04 LTS)
 
-双击根目录下的 **`启动系统.bat`** 即可。
+### 方案一：一键自动化安装（推荐）
+```bash
+sudo bash deploy/linux/install_ubuntu2204.sh
+```
+脚本将自动配置系统依赖、Python 虚拟环境、必要目录与权限，并将服务注册为 `systemd` 系统服务（开机自启、故障自愈）。
 
-- 本机访问：[http://127.0.0.1:8000](http://127.0.0.1:8000)
-- 局域网其他电脑访问：`http://局域网IP:8000`（启动时终端会自动探测物理 IP 并高亮展示）
-- 关闭服务：双击根目录 **`停止系统.bat`** 即可一键关闭后台进程并释放端口。
+### 方案二：手动命令行启动
+```bash
+# 1. 激活虚拟环境并安装依赖
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. 启动服务 (通过 Gunicorn 生产级 WSGI)
+bash deploy/linux/start_server.sh
+
+# 3. 停止服务
+bash deploy/linux/stop_server.sh
+```
+
+- **本机访问**：[http://127.0.0.1:8000](http://127.0.0.1:8000)
+- **局域网访问**：`http://<虚拟机IP>:8000`
+- **默认访问口令**：`102345678`
 
 ---
 
@@ -42,11 +60,18 @@
 
 ```text
 023-service bom/
-├── 启动系统.bat                 # 一键快速启动脚本 (自动优先激活 .venv 虚拟环境)
-├── 停止系统.bat                 # 一键安全关闭后台服务并释放端口
 ├── app.py                      # Web 管理系统主程序 (Flask 服务调度总入口)
+├── config.ini                  # 系统核心运行配置 (端口、认证、并发数等)
 ├── data/                       # 核心业务数据库专用目录 (service_bom.db)
-├── requirements.txt            # Python 依赖包清单
+├── requirements.txt            # Python 依赖包清单 (Flask, openpyxl, Pillow, gunicorn 等)
+├── deploy/                     # 生产部署与运维工具目录
+│   ├── linux/                  # Ubuntu / Linux 生产部署与服务管理
+│   │   ├── install_ubuntu2204.sh # Ubuntu 22.04 LTS 一键全自动部署脚本
+│   │   ├── service-bom.service # systemd 系统守护进程配置文件
+│   │   ├── start_server.sh     # Gunicorn 生产启动脚本
+│   │   ├── stop_server.sh      # 安全停止服务脚本
+│   │   └── nginx_service_bom.conf # Nginx 局域网反代与静态加速配置
+│   └── docker/                 # Docker 容器化配置 (Dockerfile, docker-compose)
 ├── services/                   # 核心底层业务引擎与服务层 (专用业务包)
 │   ├── database.py             # SQLite 数据库模型与 WAL 事务控制
 │   ├── importer.py             # Excel 模版/数据/图片/PDF 自动抽取导入器
@@ -64,9 +89,6 @@
 │   ├── compare.py              # 对比接口
 │   ├── assets.py               # 图片手册资源接口
 │   └── backups.py              # 备份恢复接口
-├── deploy/                     # 部署与运维工具目录
-│   ├── docker/                 # Docker 容器化配置 (Dockerfile, compose, nginx)
-│   └── windows/                # Windows 高级脚本 (静默启动, 防火墙放行)
 ├── assets/                     # 统一资产库 (全系统同款物料只存一份)
 │   ├── images/                 # 物料实物图片 (DFBxxxx.png)
 │   └── manuals/                # 提取出的技术手册 PDF (DFBxxxx.pdf)

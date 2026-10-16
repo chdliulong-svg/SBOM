@@ -429,6 +429,9 @@ def get_pdf_icon():
     if os.path.exists(local_ico):
         return local_ico, 0
 
+    if sys.platform != 'win32':
+        return None, 0
+
     try:
         import winreg
         for subkey in [r'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\UserChoice', r'.pdf']:
@@ -470,6 +473,9 @@ def embed_manuals_into_excel(excel_path, project_id):
     abs_excel_path = os.path.abspath(excel_path)
     if not os.path.exists(abs_excel_path):
         raise FileNotFoundError(f"Excel 文件不存在: {abs_excel_path}")
+
+    if sys.platform != 'win32':
+        raise RuntimeError("PDF 手册 OLE 嵌入功能依赖 Windows COM 与 Microsoft Excel。在 Linux/Ubuntu 生产环境下，请使用系统生成的【离线运维包 (.zip)】或标准 Excel 导出。")
 
     # 查询该项目中所有挂载了有效手册的子系统物料
     conn = get_db()

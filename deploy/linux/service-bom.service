@@ -1,0 +1,26 @@
+[Unit]
+Description=Pitch System Service BOM Management Service (变桨系统Service BOM)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/service-bom
+Environment="PATH=/opt/service-bom/.venv/bin:/usr/local/bin:/usr/bin"
+Environment="HEADLESS=true"
+Environment="HOST=0.0.0.0"
+Environment="PORT=8000"
+
+# 使用 Gunicorn 生产级 WSGI 服务器运行 (2 工作进程 + 4 线程)
+ExecStart=/opt/service-bom/.venv/bin/gunicorn -w 2 --threads 4 -b 0.0.0.0:8000 --timeout 120 --access-logfile - --error-logfile - app:app
+
+# 进程异常退出时自动拉起重启
+Restart=always
+RestartSec=5s
+
+# 限制打开文件句柄数
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
