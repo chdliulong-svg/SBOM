@@ -142,32 +142,10 @@ def verify_password(password):
 
 def change_password(old_password, new_password):
     """
-    修改口令。返回 (success, message)。
+    修改口令（已禁用在线修改）。返回 (success, message)。
     """
-    if _state.get('source') == 'env':
-        return False, '当前口令由环境变量 SBOM_PASSWORD 指定，请修改环境变量后重启服务'
+    return False, '系统采用固定口令，不允许在线修改'
 
-    if _state.get('source') == 'config':
-        return False, '当前口令由 config.ini [security] admin_password 指定，请在配置文件中修改后重启服务'
-
-    if not verify_password(old_password):
-        return False, '当前原口令不正确'
-
-    new_password = (new_password or '').strip()
-    if len(new_password) < 6:
-        return False, '新口令长度至少 6 位'
-
-    data = _read_auth_file()
-    data['password_hash'] = generate_password_hash(new_password)
-    data['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    data.pop('note', None)
-    _write_auth_file(data)
-
-    with _lock:
-        _state['password_hash'] = data['password_hash']
-        _state['source'] = 'file'
-        _state['plaintext'] = None
-    return True, '口令已更新成功，请牢记新口令'
 
 
 def reset_password_file(new_password=None):

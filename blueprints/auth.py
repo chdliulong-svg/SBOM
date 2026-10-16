@@ -107,22 +107,6 @@ def api_logout():
 
 @auth_bp.route('/api/auth/change_password', methods=['POST'])
 def api_change_password():
-    """修改系统访问口令。"""
-    if config.auth_required and not is_authenticated():
-        return jsonify({'success': False, 'error': '请先登录后再修改口令'}), 401
+    """修改系统访问口令（已禁用在线修改）。"""
+    return jsonify({'success': False, 'error': '系统采用固定口令，不允许在线修改'}), 403
 
-    data = request.get_json(silent=True) or {}
-    old_pw = (data.get('old_password') or '').strip()
-    new_pw = (data.get('new_password') or '').strip()
-
-    if not old_pw:
-        return jsonify({'success': False, 'error': '请输入当前原口令'}), 400
-    if not new_pw:
-        return jsonify({'success': False, 'error': '请输入新口令'}), 400
-
-    ok, msg = auth_manager.change_password(old_pw, new_pw)
-    if not ok:
-        return jsonify({'success': False, 'error': msg}), 400
-
-    logger.info("系统访问口令已成功更新 (客户端 IP: %s)", request.remote_addr)
-    return jsonify({'success': True, 'message': msg})
