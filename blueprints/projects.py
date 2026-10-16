@@ -7,6 +7,8 @@ BOM synchronization to Master, Project bundle save/open, Excel & Offline ZIP Exp
 import os
 import time
 import sqlite3
+import io
+import zipfile
 from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from services.database import get_db, find_template_path
@@ -14,6 +16,7 @@ from services.config import config
 from services.exporter import export_project_sbom
 from services.offline_packager import generate_offline_package
 from services.backup_manager import create_backup_snapshot
+from services.logging_setup import get_logger
 from services.project_bundle import (
     create_project_bundle_file,
     inspect_saved_project_file,
@@ -25,6 +28,7 @@ from blueprints.common import (
     check_project_unlocked
 )
 
+logger = get_logger('sbom.projects')
 projects_bp = Blueprint('projects', __name__)
 
 
@@ -33,7 +37,17 @@ projects_bp = Blueprint('projects', __name__)
 def get_projects():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM projects ORDER BY id DESC')
+    cursor.execute('''
+        SELECT 
+            p.*,
+            COUNT(DISTINCT s.id) AS subsystem_count,
+            COUNT(b.id) AS item_count
+        FROM projects p
+        LEFT JOIN subsystems s ON s.project_id = p.id
+        LEFT JOIN bom_items b ON b.subsystem_id = s.id
+        GROUP BY p.id
+        ORDER BY COALESCE(p.updated_at, p.created_at) DESC, p.id DESC
+    ''')
     projects = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(projects)
@@ -521,6 +535,110 @@ def delete_project():
             conn.close()
         except Exception:
             pass
+
+
+@projects_bp.route('/api/projects/batch_delete', methods=['POST'])
+def batch_delete_projects():
+    data = request.get_json(silent=True) or {}
+    project_ids = data.get('ids') or []
+    if not isinstance(project_ids, list) or not project_ids:
+        return jsonify({'success': False, 'error': '未指定任何待删除的工程ID'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    deleted_ids = []
+    skipped_locked = []
+    try:
+        placeholders = ','.join(['?'] * len(project_ids))
+        cursor.execute(f'SELECT id, name, code, is_locked FROM projects WHERE id IN ({placeholders})', project_ids)
+        rows = cursor.fetchall()
+
+        valid_ids_to_delete = []
+        for r in rows:
+            if r['is_locked'] == 1:
+                skipped_locked.append(r['code'] or r['name'] or str(r['id']))
+            else:
+                valid_ids_to_delete.append(r['id'])
+
+        if not valid_ids_to_delete:
+            return jsonify({
+                'success': False,
+                'error': f"所选的 {len(skipped_locked)} 个工程均处于【锁定保护】状态，无法删除！如需删除请先解锁。"
+            }), 403
+
+        try:
+            create_backup_snapshot(reason='batch_delete_projects', note=f'批量删除 {len(valid_ids_to_delete)} 个工程前自动备份')
+        except Exception as e_snap:
+            logger.warning("Auto-backup before batch project delete warning: %s", e_snap)
+
+        del_ph = ','.join(['?'] * len(valid_ids_to_delete))
+        cursor.execute(f'DELETE FROM bom_items WHERE subsystem_id IN (SELECT id FROM subsystems WHERE project_id IN ({del_ph}))', valid_ids_to_delete)
+        cursor.execute(f'DELETE FROM subsystems WHERE project_id IN ({del_ph})', valid_ids_to_delete)
+        cursor.execute(f'DELETE FROM signatures WHERE project_id IN ({del_ph})', valid_ids_to_delete)
+        cursor.execute(f'DELETE FROM ecn_records WHERE project_id IN ({del_ph})', valid_ids_to_delete)
+        cursor.execute(f'DELETE FROM projects WHERE id IN ({del_ph})', valid_ids_to_delete)
+
+        conn.commit()
+        msg = f"已成功永久删除 {len(valid_ids_to_delete)} 个工程项目！"
+        if skipped_locked:
+            msg += f"（另有 {len(skipped_locked)} 个处于锁定保护状态的工程已自动跳过：{', '.join(skipped_locked)}）"
+
+        return jsonify({
+            'success': True,
+            'deleted_count': len(valid_ids_to_delete),
+            'deleted_ids': valid_ids_to_delete,
+            'skipped_count': len(skipped_locked),
+            'skipped_names': skipped_locked,
+            'message': msg
+        })
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': f'批量删除工程失败: {str(e)}'}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@projects_bp.route('/api/projects/batch_export_bundle', methods=['POST'])
+def batch_export_bundle():
+    data = request.get_json(silent=True) or {}
+    project_ids = data.get('ids') or []
+    if not isinstance(project_ids, list) or not project_ids:
+        return jsonify({'success': False, 'error': '未指定任何待导出的工程ID'}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    placeholders = ','.join(['?'] * len(project_ids))
+    cursor.execute(f'SELECT id, code, name, system_name FROM projects WHERE id IN ({placeholders})', project_ids)
+    projects = cursor.fetchall()
+    conn.close()
+
+    if not projects:
+        return jsonify({'success': False, 'error': '未找到对应的工程数据'}), 404
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for p in projects:
+            try:
+                buf, fn, _ = create_project_bundle_file(p['id'], 'sbom')
+                if buf:
+                    zf.writestr(fn, buf.getvalue())
+            except Exception as e:
+                logger.error("Error packaging project %s for batch export: %s", p['id'], e)
+
+    zip_buffer.seek(0)
+    zip_filename = f"Service_BOM_Projects_Batch_{time.strftime('%Y%m%d_%H%M%S')}.zip"
+    return send_file(
+        zip_buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=zip_filename
+    )
 
 
 # ----------------- Project ECN & Signatures APIs -----------------

@@ -132,6 +132,13 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/projects')
+def projects_view():
+    if config.auth_required and not is_authenticated():
+        return redirect('/login?next=/projects')
+    return render_template('index.html', auto_open_project_manager=True)
+
+
 # ----------------- LAN & Network IP Helpers -----------------
 def get_all_lan_ips():
     ips = []
