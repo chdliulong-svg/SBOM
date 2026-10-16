@@ -9,6 +9,7 @@ import time
 import sqlite3
 import io
 import zipfile
+from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from services.database import get_db, find_template_path
@@ -23,6 +24,7 @@ from services.project_bundle import (
     import_project_from_file
 )
 from blueprints.common import (
+    BASE_DIR,
     UPLOAD_DIR,
     EXPORT_DIR,
     check_project_unlocked
@@ -1366,7 +1368,6 @@ def export_excel(project_id):
     cursor = conn.cursor()
     cursor.execute('SELECT code, name, system_name FROM projects WHERE id = ?', (project_id,))
     proj = cursor.fetchone()
-    conn.close()
     if not proj:
         return jsonify({'error': 'Project not found'}), 404
 
@@ -1392,20 +1393,86 @@ def export_excel(project_id):
 
     if is_embed:
         base_name = f"{safe_name}_文档嵌入版"
-    else:
-        base_name = safe_name
-
-    if not base_name.lower().endswith('.xlsx'):
         filename = f"{base_name}.xlsx"
-    else:
-        filename = base_name
+        out_path = os.path.join(EXPORT_DIR, filename)
+        try:
+            export_project_sbom(project_id, out_path, embed_manuals=True)
+            return send_file(out_path, as_attachment=True, download_name=filename)
+        except Exception as e:
+            return jsonify({'error': f'导出失败: {str(e)}'}), 500
 
-    out_path = os.path.join(EXPORT_DIR, filename)
-    try:
-        export_project_sbom(project_id, out_path, embed_manuals=is_embed)
-        return send_file(out_path, as_attachment=True, download_name=filename)
-    except Exception as e:
-        return jsonify({'error': f'导出失败: {str(e)}'}), 500
+    # 超链接模式：查询当前项目中所有实际关联的技术手册 (PDF)
+    cursor.execute('''
+        SELECT DISTINCT m.material_no, m.name as mat_name, m.manual_path
+        FROM bom_items b
+        JOIN subsystems s ON b.subsystem_id = s.id
+        JOIN materials m ON b.material_no = m.material_no
+        WHERE s.project_id = ? AND m.manual_path IS NOT NULL AND m.manual_path != ''
+    ''', (project_id,))
+    manual_rows = cursor.fetchall()
+
+    manual_files = {}  # {target_fname: full_source_path}
+    for r in manual_rows:
+        mp = r['manual_path']
+        full_p = os.path.join(BASE_DIR, mp)
+        if os.path.exists(full_p):
+            fname = os.path.basename(mp)
+            manual_files[fname] = full_p
+
+    excel_filename = f"{safe_name}.xlsx"
+    out_excel_path = os.path.join(EXPORT_DIR, excel_filename)
+
+    # 如果该项目包含已上传的手册文件，则连同手册一起打包为 ZIP 压缩包，保证解压后超链接可无缝打开
+    if manual_files and request.args.get('raw_excel') not in ['1', 'true']:
+        try:
+            # 导出 Excel（第 M 列超链接使用标准相对路径 manuals/<文件名>.pdf）
+            export_project_sbom(project_id, out_excel_path, embed_manuals=False, manual_relative_dir='manuals')
+
+            zip_filename = f"{safe_name}_含技术手册.zip"
+            zip_path = os.path.join(EXPORT_DIR, zip_filename)
+
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            readme_content = f"""========================================================================
+变桨系统 Service BOM 导出资料包（含技术手册）查阅说明
+========================================================================
+【机组工程信息】
+• 工程名称: {raw_name}
+• 机组代号: {code or '-'}
+• 导出时间: {now_str}
+• 包含关联技术手册 (PDF): {len(manual_files)} 份
+
+【特别提示】
+在查阅技术手册前，请务必先将本压缩包【全部解压】到同一个文件夹中！
+
+【使用指南】
+1. 双击打开解压出来的 Excel 文件 "{excel_filename}"；
+2. 在任意子系统 BOM 表格的 M 列（技术文件/手册）中，点击【查看技术手册】超链接；
+3. Excel 将自动调用您的默认 PDF 阅读器打开 "manuals" 文件夹中对应的元器件技术手册。
+
+【注意事项】
+• 请保持 "{excel_filename}" 与 "manuals" 文件夹位于同一目录下，切勿移动或重命名手册文件夹；
+• 如需将资料转发给其他部门或现场运维，请直接转发本 ZIP 压缩包或将整套解压文件夹完整拷贝。
+========================================================================
+"""
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # 写入 Excel 文件
+                zf.write(out_excel_path, excel_filename)
+                # 写入使用提示
+                zf.writestr('使用说明_技术手册关联查阅.txt', readme_content.encode('utf-8'))
+                # 写入手册文件到 manuals/ 目录
+                for fname, src_p in manual_files.items():
+                    zf.write(src_p, f"manuals/{fname}")
+
+            return send_file(zip_path, as_attachment=True, download_name=zip_filename, mimetype='application/zip')
+        except Exception as e:
+            return jsonify({'error': f'导出失败: {str(e)}'}), 500
+    else:
+        # 无手册关联时，直接导出纯单文件 Excel
+        try:
+            export_project_sbom(project_id, out_excel_path, embed_manuals=False, manual_relative_dir='manuals')
+            return send_file(out_excel_path, as_attachment=True, download_name=excel_filename)
+        except Exception as e:
+            return jsonify({'error': f'导出失败: {str(e)}'}), 500
 
 
 @projects_bp.route('/api/project/<int:project_id>/export_offline_package', methods=['GET'])

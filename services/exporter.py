@@ -49,7 +49,7 @@ def format_pipe_multiline(val):
         return '\n'.join(non_empty) if non_empty else s
     return val
 
-def export_project_sbom(project_id, output_path, embed_manuals=False):
+def export_project_sbom(project_id, output_path, embed_manuals=False, manual_relative_dir='manuals'):
     """
     Exports the project and all its subsystems to a standardized Excel workbook
     strictly preserving the original template's Cover (封面), Signatures & ECN (签字及修改页),
@@ -332,7 +332,11 @@ def export_project_sbom(project_id, output_path, embed_manuals=False):
                     m_cell.font = link_font
                     m_cell.alignment = Alignment(horizontal='center', vertical='center')
                     # Relative hyperlink for clean opening in Excel
-                    m_cell.hyperlink = manual_path.replace('/', '\\')
+                    manual_filename = os.path.basename(manual_path)
+                    if manual_relative_dir:
+                        m_cell.hyperlink = f"{manual_relative_dir}/{manual_filename}".replace('\\', '/')
+                    else:
+                        m_cell.hyperlink = manual_filename
 
             # Image Embedding (Proportionally resized and dynamically centered into cell)
             img_path = item['image_path']

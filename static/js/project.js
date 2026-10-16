@@ -1006,7 +1006,7 @@
             }
             closeModal('exportOptionModal');
             if (opt === 1 || opt === 'link') {
-                showToast('正在导出超链接版 Excel 表格 (.xlsx)...', 'info');
+                showToast('正在导出并打包 Excel 及关联技术手册 (.zip)...', 'info');
                 window.location.href = `/api/export/${currentProjectId}?mode=link`;
             } else {
                 showToast('正在通过 Excel 引擎将 PDF 技术手册原件嵌入表格，请稍候...', 'info');

@@ -332,18 +332,18 @@
                                 <input type="radio" name="exportOptionType" id="exportRadioOption1" value="link" checked style="margin-top: 4px; cursor: pointer;" onchange="selectExportOption(1)">
                                 <div>
                                     <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                        <span style="font-weight: 700; font-size: 15px; color: #1e3a8a;">选项 1：超链接模式 (.xlsx)</span>
-                                        <span style="font-size: 11px; font-weight: 600; background: #dbeafe; color: #1e40af; padding: 1px 7px; border-radius: 4px;">轻量快捷</span>
-                                        <span style="font-size: 11px; font-weight: 600; background: #ecfdf5; color: #047857; padding: 1px 7px; border-radius: 4px;">秒级生成</span>
+                                        <span style="font-weight: 700; font-size: 15px; color: #1e3a8a;">选项 1：超链接打包模式 (.zip / .xlsx)</span>
+                                        <span style="font-size: 11px; font-weight: 600; background: #dbeafe; color: #1e40af; padding: 1px 7px; border-radius: 4px;">自动打包技术手册</span>
+                                        <span style="font-size: 11px; font-weight: 600; background: #ecfdf5; color: #047857; padding: 1px 7px; border-radius: 4px;">跨平台通用 (推荐)</span>
                                         <span style="font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 4px;">[按键 1]</span>
                                     </div>
                                     <div style="font-size: 12px; color: #475569; margin-top: 6px; line-height: 1.5;">
-                                        M 列（技术文件/手册）维护相对超链接。点击后调用默认阅读器打开本地路径对应的 PDF 手册。
+                                        系统将<b>自动把 Excel 表格与所有关联的 PDF 技术手册统一打包为 ZIP 压缩包</b>（存放在同级 manuals/ 文件夹下）。解压后在表格 M 列点击【查看技术手册】超链接，即可直接调用系统 PDF 阅读器打开对应手册。跨平台且极速生成！
                                     </div>
                                 </div>
                             </div>
                             <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); confirmExportOption(1);" style="white-space: nowrap; align-self: center; padding: 6px 14px; font-weight: 600;">
-                                导出链接版
+                                打包导出 (含手册)
                             </button>
                         </div>
                     </div>
