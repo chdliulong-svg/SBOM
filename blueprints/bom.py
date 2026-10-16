@@ -87,7 +87,11 @@ def add_bom_item():
     total_rows_to_insert = 1 + len(children_to_import)
 
     insert_after_row = data.get('insert_after_row')
-    if insert_after_row is not None and str(insert_after_row).isdigit():
+    if insert_after_row in ('start', 'top', 0, '0'):
+        target_row = 1
+        cursor.execute('UPDATE bom_items SET row_num = row_num + ? WHERE subsystem_id = ? AND row_num >= ?',
+                       (total_rows_to_insert, subsystem_id, 1))
+    elif insert_after_row is not None and str(insert_after_row).isdigit():
         target_row = int(insert_after_row) + 1
         cursor.execute('UPDATE bom_items SET row_num = row_num + ? WHERE subsystem_id = ? AND row_num >= ?',
                        (total_rows_to_insert, subsystem_id, target_row))
@@ -186,7 +190,13 @@ def batch_add_bom_items():
 
         total_rows = len(valid_items)
 
-        if insert_after_row is not None and str(insert_after_row).isdigit():
+        if insert_after_row in ('start', 'top', 0, '0'):
+            target_start_row = 1
+            cursor.execute('''
+            UPDATE bom_items SET row_num = row_num + ? 
+            WHERE subsystem_id = ? AND row_num >= 1
+            ''', (total_rows, subsystem_id))
+        elif insert_after_row is not None and str(insert_after_row).isdigit():
             target_start_row = int(insert_after_row) + 1
             cursor.execute('''
             UPDATE bom_items SET row_num = row_num + ? 
@@ -283,7 +293,13 @@ def paste_bom_items():
 
         total_rows = len(items)
 
-        if insert_after_row is not None and str(insert_after_row).isdigit():
+        if insert_after_row in ('start', 'top', 0, '0'):
+            target_start_row = 1
+            cursor.execute('''
+            UPDATE bom_items SET row_num = row_num + ? 
+            WHERE subsystem_id = ? AND row_num >= 1
+            ''', (total_rows, subsystem_id))
+        elif insert_after_row is not None and str(insert_after_row).isdigit():
             target_start_row = int(insert_after_row) + 1
             cursor.execute('''
             UPDATE bom_items SET row_num = row_num + ? 

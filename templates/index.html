@@ -729,6 +729,7 @@
                         <label class="form-label">插入位置:</label>
                         <select id="bm-insert-pos" class="form-select">
                             <option value="end">追加到表格末尾</option>
+                            <option value="start">插入到表格开头 (作为第 1 行)</option>
                         </select>
                     </div>
 
@@ -787,6 +788,7 @@
                         <label class="form-label" style="font-size: 13px; font-weight: 600;">插入位置:</label>
                         <select id="batch-insert-pos" class="form-select">
                             <option value="end">追加到表格末尾</option>
+                            <option value="start">插入到表格开头 (作为第 1 行)</option>
                         </select>
                     </div>
 
@@ -955,8 +957,13 @@
                         </div>
 
                         <!-- Platform Select -->
-                        <select id="pmFilterPlatform" class="form-select" style="height: 32px; font-size: 12px; min-width: 130px;" onchange="filterAndRenderProjectManagerTable()">
+                        <select id="pmFilterPlatform" class="form-select" style="height: 32px; font-size: 12px; min-width: 130px;" onchange="onPmPlatformFilterChange()">
                             <option value="all">全部机型平台</option>
+                        </select>
+
+                        <!-- Code Select -->
+                        <select id="pmFilterCode" class="form-select" style="height: 32px; font-size: 12px; min-width: 130px;" onchange="filterAndRenderProjectManagerTable()">
+                            <option value="all">全部机型代号</option>
                         </select>
 
                         <!-- Status Select -->
@@ -2658,8 +2665,8 @@
     <script src="/static/js/table_utils.js?v=20261014_1"></script>
     <script src="/static/js/project.js?v=20261016_3"></script>
     <script>window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};</script>
-    <script src="/static/js/project_manager.js?v=20261016_4"></script>
-    <script src="/static/js/bom.js?v=20261016_5"></script>
+    <script src="/static/js/project_manager.js?v=20261016_5"></script>
+    <script src="/static/js/bom.js?v=20261016_6"></script>
     <script src="/static/js/material.js?v=20261014_1"></script>
     <script src="/static/js/compare.js?v=20261014_1"></script>
     <script src="/static/js/pdf_viewer.js?v=20261014_1"></script>

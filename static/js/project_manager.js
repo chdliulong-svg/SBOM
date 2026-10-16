@@ -20,6 +20,8 @@ function openProjectManagerModal() {
     if (fStatus) fStatus.value = 'all';
     const fPlatform = document.getElementById('pmFilterPlatform');
     if (fPlatform) fPlatform.value = 'all';
+    const fCode = document.getElementById('pmFilterCode');
+    if (fCode) fCode.value = 'all';
     const sSort = document.getElementById('pmSortBy');
     if (sSort) sSort.value = 'updated_desc';
 
@@ -70,6 +72,7 @@ async function loadProjectManagerData(quiet = false) {
         allProjectsData = Array.isArray(res) ? res : [];
         renderProjectManagerStats(allProjectsData);
         renderProjectManagerPlatformOptions(allProjectsData);
+        renderProjectManagerCodeOptions(allProjectsData, document.getElementById('pmFilterPlatform')?.value || 'all');
         filterAndRenderProjectManagerTable();
     } catch (err) {
         if (!quiet) alert('加载项目列表失败: ' + err.message);
@@ -128,10 +131,54 @@ function renderProjectManagerPlatformOptions(projects) {
     sel.innerHTML = opts;
 }
 
+// 机型代号下拉选项构建 (支持按当前选中的机型平台联动过滤)
+function renderProjectManagerCodeOptions(projects, selectedPlatform = 'all') {
+    const sel = document.getElementById('pmFilterCode');
+    if (!sel) return;
+
+    const curVal = sel.value || 'all';
+    const codes = new Set();
+    (projects || []).forEach(p => {
+        if (selectedPlatform !== 'all' && (p.platform || '').trim() !== selectedPlatform) {
+            return;
+        }
+        if (p.code && p.code.trim()) {
+            const raw = p.code.trim();
+            const parts = raw.split(/[、,，;/]+/).map(s => s.trim()).filter(Boolean);
+            if (parts.length > 0) {
+                parts.forEach(c => codes.add(c));
+            } else {
+                codes.add(raw);
+            }
+        }
+    });
+
+    const sorted = Array.from(codes).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN', { numeric: true }));
+    let opts = '<option value="all">全部机型代号</option>';
+    sorted.forEach(code => {
+        opts += `<option value="${escapeHtml(code)}" ${curVal === code ? 'selected' : ''}>${escapeHtml(code)}</option>`;
+    });
+    sel.innerHTML = opts;
+
+    if (curVal !== 'all' && codes.has(curVal)) {
+        sel.value = curVal;
+    } else {
+        sel.value = 'all';
+    }
+}
+
+// 平台改变时联动更新机型代号列表并重绘表格
+function onPmPlatformFilterChange() {
+    const platFilter = document.getElementById('pmFilterPlatform')?.value || 'all';
+    renderProjectManagerCodeOptions(allProjectsData, platFilter);
+    filterAndRenderProjectManagerTable();
+}
+
 // 筛选与排序逻辑
 function filterAndRenderProjectManagerTable() {
     const query = (document.getElementById('pmSearchInput')?.value || '').trim().toLowerCase();
     const platFilter = document.getElementById('pmFilterPlatform')?.value || 'all';
+    const codeFilter = document.getElementById('pmFilterCode')?.value || 'all';
     const statusFilter = document.getElementById('pmFilterStatus')?.value || 'all';
     const sortBy = document.getElementById('pmSortBy')?.value || 'updated_desc';
 
@@ -149,6 +196,17 @@ function filterAndRenderProjectManagerTable() {
     // 2. 平台过滤
     if (platFilter !== 'all') {
         list = list.filter(p => (p.platform || '').trim() === platFilter);
+    }
+
+    // 2.1 机型代号过滤
+    if (codeFilter !== 'all') {
+        const target = codeFilter.toLowerCase();
+        list = list.filter(p => {
+            if (!p.code) return false;
+            const pCode = p.code.trim();
+            const parts = pCode.split(/[、,，;/]+/).map(s => s.trim().toLowerCase());
+            return parts.includes(target) || pCode.toLowerCase() === target;
+        });
     }
 
     // 3. 锁定状态过滤

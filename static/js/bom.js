@@ -1862,7 +1862,7 @@
 
             // Populate insertion positions
             const posSelect = document.getElementById('bm-insert-pos');
-            posSelect.innerHTML = '<option value="end">追加到表格末尾</option>';
+            posSelect.innerHTML = '<option value="end">追加到表格末尾</option><option value="start">插入到表格开头 (作为第 1 行)</option>';
             currentBomItems.forEach(it => {
                 const opt = document.createElement('option');
                 opt.value = it.row_num;
@@ -2095,7 +2095,7 @@
             // Populate insertion positions
             const posSelect = document.getElementById('batch-insert-pos');
             if (posSelect) {
-                posSelect.innerHTML = '<option value="end">追加到表格末尾</option>';
+                posSelect.innerHTML = '<option value="end">追加到表格末尾</option><option value="start">插入到表格开头 (作为第 1 行)</option>';
                 (currentBomItems || []).forEach(it => {
                     const opt = document.createElement('option');
                     opt.value = it.row_num;
