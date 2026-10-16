@@ -280,21 +280,9 @@ def save_project():
                   client_tag))
             project_id = cursor.lastrowid
 
-            default_subs = ['SBOM']
-            tpl_path = find_template_path()
-            if tpl_path and os.path.exists(tpl_path):
-                try:
-                    import openpyxl
-                    wb_tpl = openpyxl.load_workbook(tpl_path, read_only=True)
-                    candidates = [s for s in wb_tpl.sheetnames if '封面' not in s and '签字' not in s and '修改' not in s and '更改' not in s]
-                    if candidates:
-                        default_subs = candidates
-                    wb_tpl.close()
-                except Exception:
-                    pass
-            for idx, sub_name in enumerate(default_subs):
-                cursor.execute('INSERT INTO subsystems (project_id, name, sort_order) VALUES (?, ?, ?)',
-                               (project_id, sub_name, idx))
+            # 新建项目时，默认只显示一个sheet，名称为SBOM
+            cursor.execute('INSERT INTO subsystems (project_id, name, sort_order) VALUES (?, ?, ?)',
+                           (project_id, 'SBOM', 0))
 
         cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
         p_time = cursor.fetchone()
