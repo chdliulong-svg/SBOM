@@ -19,6 +19,28 @@
         .logo-icon { width: 34px; height: 34px; background: #0052cc; color: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; }
         .app-title { font-size: 16px; font-weight: 600; color: #1e293b; }
         .app-subtitle { font-size: 12px; color: var(--text-muted); }
+        .app-version-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 1px 7px;
+            font-size: 11px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+        .app-version-badge:hover {
+            background: #e0e7ff;
+            color: #1e40af;
+            border-color: #93c5fd;
+        }
         .header-actions { display: flex; align-items: center; gap: 12px; }
 
         .container { width: 100%; max-width: 100%; margin: 10px 0 20px 0; padding: 0 16px; }

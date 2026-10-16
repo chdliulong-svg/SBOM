@@ -40,6 +40,22 @@
             }, 3500);
         }
 
+        function showVersionDetails() {
+            fetch('/api/version')
+                .then(r => r.json())
+                .then(v => {
+                    const msg = `【变桨系统Service BOM 版本详情】\n\n` +
+                                `• 版本代号: ${v.version || 'v2.2.0'}\n` +
+                                `• Git Commit: ${v.commit_full || v.commit}\n` +
+                                `• 提交时间: ${v.date || '未知'}\n` +
+                                `• 更新内容: ${v.message || '日常维护与功能迭代'}`;
+                    alert(msg);
+                })
+                .catch(() => {
+                    showToast('获取系统版本信息失败', 'warning');
+                });
+        }
+
 
         // Safe Fetch Helper: handles non-JSON / HTML 404 / 500 error gracefully
         async function safeFetchJson(url, options = {}) {

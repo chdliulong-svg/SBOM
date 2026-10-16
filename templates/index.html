@@ -16,7 +16,17 @@
         <div class="logo-area">
             <div class="logo-icon">S</div>
             <div>
-                <div class="app-title">变桨系统Service BOM</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="app-title">变桨系统Service BOM</div>
+                    <span class="app-version-badge" onclick="showVersionDetails()" title="Git 提交代码: {{ app_version.commit }} ({{ app_version.date }})&#10;说明: {{ app_version.message }}&#10;点击查看版本详情">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="4"></circle>
+                            <line x1="1.05" y1="12" x2="7" y2="12"></line>
+                            <line x1="17.01" y1="12" x2="22.96" y2="12"></line>
+                        </svg>
+                        <span>{{ app_version.commit }}</span>
+                    </span>
+                </div>
                 <div class="app-subtitle">统一物料主库 · 装配结构管理 · 标准化导出</div>
             </div>
         </div>

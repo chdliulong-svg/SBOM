@@ -52,6 +52,20 @@
             color: #0f172a;
             line-height: 1.2;
         }
+        .app-version-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 1px 7px;
+            font-size: 11px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-weight: 600;
+            user-select: none;
+        }
         .login-sub {
             font-size: 13px;
             color: #64748b;
@@ -143,7 +157,10 @@
         <div class="logo-box">
             <div class="logo-icon">S</div>
             <div>
-                <div class="login-title">变桨系统Service BOM</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="login-title">变桨系统Service BOM</div>
+                    <span class="app-version-badge" title="Git 代码版本: {{ app_version.commit_full }} ({{ app_version.date }})">{{ app_version.commit }}</span>
+                </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px;">统一物料主库 · 装配结构管理 · 标准化导出</div>
             </div>
         </div>

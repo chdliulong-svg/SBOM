@@ -28,6 +28,7 @@ from services.database import get_db, init_db, find_template_path, close_db
 from services.importer import import_excel_sbom
 from services import auth_manager
 from services.backup_manager import ensure_daily_backup
+from services.version import get_app_version
 from blueprints import register_blueprints
 from blueprints.auth import is_authenticated
 
@@ -52,7 +53,7 @@ register_blueprints(app)
 
 # ----------------- 鉴权拦截 (方案1：轻量访问口令) -----------------
 # 这些路径必须免登录，否则登录页自身及其静态资源无法加载
-AUTH_EXEMPT_EXACT = {'/login', '/favicon.ico', '/api/health'}
+AUTH_EXEMPT_EXACT = {'/login', '/favicon.ico', '/api/health', '/api/version'}
 AUTH_EXEMPT_PREFIX = ('/static/', '/api/auth/')
 
 
@@ -78,6 +79,20 @@ def enforce_authentication():
     return redirect('/login?next=' + quote(target, safe='/?&=%'))
 
 
+# ----------------- Version & Context Processors -----------------
+@app.context_processor
+def inject_app_version():
+    return {'app_version': get_app_version()}
+
+
+@app.route('/api/version')
+def api_version():
+    return jsonify({
+        'success': True,
+        **get_app_version()
+    })
+
+
 # ----------------- Health Check -----------------
 @app.route('/api/health')
 def health_check():
@@ -92,7 +107,8 @@ def health_check():
     return jsonify({
         'success': db_ok,
         'status': 'ok' if db_ok else 'db_unavailable',
-        'auth_required': config.auth_required
+        'auth_required': config.auth_required,
+        'version': get_app_version().get('display', '')
     })
 
 
