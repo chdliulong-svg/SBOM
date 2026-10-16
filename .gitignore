@@ -31,6 +31,8 @@ Thumbs.db
 desktop.ini
 ~$*
 *.tmp
+*.tar.gz
+*.zip
 scratch/
 
 # ---------- 日志 ----------

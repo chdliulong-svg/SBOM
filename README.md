@@ -10,7 +10,8 @@
 
 ### 方案一：一键自动化安装（推荐）
 ```bash
-sudo bash deploy/linux/install_ubuntu2204.sh
+sudo bash setup.sh
+# 或执行: sudo bash deploy/linux/install_ubuntu2204.sh
 ```
 脚本将自动配置系统依赖、Python 虚拟环境、必要目录与权限，并将服务注册为 `systemd` 系统服务（开机自启、故障自愈）。
 
