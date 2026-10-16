@@ -785,14 +785,14 @@
             border-left: 3px solid #16a34a;
         }
 
-        .pm-code-link {
+        .pm-code-link, .pm-file-link {
             font-weight: 700;
             font-size: 13px;
             color: #1d4ed8;
             text-decoration: none;
             transition: color 0.15s;
         }
-        .pm-code-link:hover {
+        .pm-code-link:hover, .pm-file-link:hover {
             color: #2563eb;
             text-decoration: underline;
         }

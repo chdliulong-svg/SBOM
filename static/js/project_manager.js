@@ -208,8 +208,9 @@ function renderProjectManagerTable(projects) {
         const isCurrent = (typeof currentProjectId !== 'undefined') && (currentProjectId == p.id);
         const isSelected = pmSelectedProjectIds.has(p.id);
         const code = p.code || '未命名机型';
-        const name = p.name || '变桨系统Service BOM';
+        const name = p.name || '风力发电机组';
         const sysName = p.system_name || '';
+        const fileName = (sysName && sysName.trim()) ? sysName.trim() : (name || '变桨系统Service BOM');
         const platform = p.platform || '通用平台';
         const docNo = p.doc_no || '-';
         const ecnNo = p.ecn_no || '-';
@@ -252,14 +253,14 @@ function renderProjectManagerTable(projects) {
                     <span class="pm-platform-badge" style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;">${escapeHtml(platform)}</span>
                 </td>
                 <td style="min-width: 170px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <a href="javascript:void(0)" class="pm-code-link" onclick="openProjectFromManager(${p.id})" style="font-weight: 600; color: #2563eb; text-decoration: none;" title="点击进入此工程">${escapeHtml(code)}</a>
-                        ${currentTag}
-                    </div>
+                    <span style="font-weight: 600; color: #334155;">${escapeHtml(code)}</span>
                 </td>
                 <td style="min-width: 220px;">
-                    <div style="font-weight: 500; color: #1e293b;">${escapeHtml(name)}</div>
-                    ${sysName ? `<div style="font-size: 12px; color: #64748b; margin-top: 2px;">${escapeHtml(sysName)}</div>` : ''}
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <a href="javascript:void(0)" class="pm-file-link" onclick="openProjectFromManager(${p.id})" style="font-weight: 600; color: #2563eb; text-decoration: none; cursor: pointer;" title="点击进入此工程">${escapeHtml(fileName)}</a>
+                        ${currentTag}
+                    </div>
+                    ${(name && name !== fileName && name !== '风力发电机组') ? `<div style="font-size: 12px; color: #64748b; margin-top: 2px;">${escapeHtml(name)}</div>` : ''}
                 </td>
                 <td style="min-width: 130px; font-size: 12px; color: #475569;">
                     <div>文: <span style="font-family: monospace;">${escapeHtml(docNo)}</span></div>
