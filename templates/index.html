@@ -99,9 +99,6 @@
                     <button class="btn btn-outline btn-sm" id="btnProjectSave" onclick="saveCurrentProjectToDatabase()" title="将当前项目的所有修改保存到数据库">
                         保存
                     </button>
-                    <button class="btn btn-outline btn-sm" id="btnProjectExport" onclick="openSaveProjectModal()" title="导出当前项目工程文件 (.sbom 或 .json) 下载到本地">
-                        导出
-                    </button>
                     <button class="btn btn-outline btn-sm" id="btnProjectCopy" onclick="openCopyProjectModal()" title="复制当前项目及其所有Sheet和BOM数据为新工程">
                         复制
                     </button>
@@ -2656,7 +2653,7 @@
     <!-- Modular Application Scripts -->
     <script src="/static/js/core.js?v=20261014_1"></script>
     <script src="/static/js/table_utils.js?v=20261014_1"></script>
-    <script src="/static/js/project.js?v=20261016_3"></script>
+    <script src="/static/js/project.js?v=20261016_4"></script>
     <script>window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};</script>
     <script src="/static/js/project_manager.js?v=20261016_5"></script>
     <script src="/static/js/bom.js?v=20261016_6"></script>

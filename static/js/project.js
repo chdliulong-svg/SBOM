@@ -479,7 +479,7 @@
         }
 
         function setProjectActionButtonsDisabled(disabled) {
-            ['btnProjectSave', 'btnProjectExport', 'btnProjectCopy', 'btnProjectRename', 'btnProjectClose', 'btnProjectDelete', 'btnHeaderSave', 'btnHeaderExport', 'btnHeaderOfflinePkg', 'btnHeaderClose'].forEach(id => {
+            ['btnProjectSave', 'btnProjectCopy', 'btnProjectRename', 'btnProjectClose', 'btnProjectDelete', 'btnHeaderSave', 'btnHeaderExport', 'btnHeaderOfflinePkg', 'btnHeaderClose'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) {
                     el.disabled = disabled;
