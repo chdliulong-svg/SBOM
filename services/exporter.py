@@ -12,6 +12,9 @@ from openpyxl.utils.units import pixels_to_EMU
 from PIL import Image as PILImage
 from .database import get_db, find_template_path
 from .config import config
+from services.logging_setup import get_logger
+
+logger = get_logger('sbom.exporter')
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -29,7 +32,7 @@ def ensure_company_logo(tpl_path):
                     with open(logo_path, 'wb') as f:
                         f.write(z.read('xl/media/image1.png'))
         except Exception as e:
-            print("Warning extracting logo:", e)
+            logger.warning(f"Warning extracting logo: {e}")
     return logo_path
 
 def format_pipe_multiline(val):
@@ -62,13 +65,11 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
     cursor.execute('SELECT * FROM projects WHERE id = ?', (project_id,))
     project = cursor.fetchone()
     if not project:
-        conn.close()
         raise ValueError(f"未找到ID为 {project_id} 的项目。")
 
     # 2. Locate and load the original template
     tpl_path = find_template_path()
     if not tpl_path or not os.path.exists(tpl_path):
-        conn.close()
         raise FileNotFoundError("未在'Excel 模版'目录或根目录下找到SBOM模版文件，请确认模版文件存在！")
 
     wb = openpyxl.load_workbook(tpl_path)
@@ -390,7 +391,7 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
                         excel_img.anchor = OneCellAnchor(_from=marker, ext=size)
                         ws.add_image(excel_img)
                     except Exception as e:
-                        print(f"Warning: failed to add image for {item['material_no']}: {e}")
+                        logger.warning(f"Warning: failed to add image for {item['material_no']}: {e}")
 
 
     # ================= 4. Cleanup and Reorder Sheets (Strictly V2) =================
@@ -409,13 +410,12 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
 
     wb._sheets = [wb[name] for name in desired_order]
 
-    conn.close()
     if hasattr(wb, 'calculation'):
         wb.calculation.calcMode = 'auto'
         wb.calculation.fullCalcOnLoad = True
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     wb.save(output_path)
-    print(f"Exported successfully to: {output_path}")
+    logger.info(f"Exported successfully to: {output_path}")
 
     if embed_manuals:
         embed_manuals_into_excel(output_path, project_id)
@@ -494,7 +494,6 @@ def embed_manuals_into_excel(excel_path, project_id):
         ORDER BY s.sort_order, s.id, b.row_num
     ''', (project_id,))
     manual_rows = cursor.fetchall()
-    conn.close()
 
     if not manual_rows:
         return abs_excel_path
@@ -506,7 +505,7 @@ def embed_manuals_into_excel(excel_path, project_id):
         raise RuntimeError("系统未安装 comtypes 库，无法执行 Excel OLE 对象嵌入。")
 
     icon_file, icon_index = get_pdf_icon()
-    print(f"Using PDF icon: {icon_file}, index: {icon_index}")
+    logger.debug(f"Using PDF icon: {icon_file}, index: {icon_index}")
 
     excel = None
     wb = None
@@ -562,7 +561,7 @@ def embed_manuals_into_excel(excel_path, project_id):
                 ole.Placement = 2  # xlMove: 单元格变动或增删行时位置随单元格移动且不失真变形
                 embedded_count += 1
             except Exception as e:
-                print(f"Warning: 嵌入手册 {lbl} 失败: {e}")
+                logger.warning(f"Warning: 嵌入手册 {lbl} 失败: {e}")
 
         # 使用 SaveAs 51 (xlOpenXMLWorkbook) 保存，确保 OLE 复合二进制流完整写入
         temp_saved_path = abs_excel_path + '.embedded.xlsx'
@@ -582,7 +581,7 @@ def embed_manuals_into_excel(excel_path, project_id):
                 os.remove(abs_excel_path)
             os.rename(temp_saved_path, abs_excel_path)
 
-        print(f"成功将 {embedded_count} 份技术手册嵌入至 Excel: {abs_excel_path}")
+        logger.info(f"成功将 {embedded_count} 份技术手册嵌入至 Excel: {abs_excel_path}")
         return abs_excel_path
     except Exception as e:
         if wb:

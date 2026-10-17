@@ -10,6 +10,9 @@ import re
 import json
 import time
 import threading
+from services.logging_setup import get_logger
+
+logger = get_logger('sbom.ai')
 
 # 模型本地缓存快照目录
 LOCAL_MODEL_DIR = os.path.expanduser(r"~/.cache/modelscope/models/Qwen--Qwen2.5-0.5B-Instruct/snapshots/master")
@@ -53,18 +56,20 @@ def get_or_load_model():
 
             t0 = time.time()
             _tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_DIR)
+            target_dtype = torch.bfloat16 if hasattr(torch, 'bfloat16') else torch.float32
             _model = AutoModelForCausalLM.from_pretrained(
                 LOCAL_MODEL_DIR,
-                torch_dtype=torch.float32
+                torch_dtype=target_dtype,
+                low_cpu_mem_usage=True
             )
             _model.eval()
             _model_loaded = True
             _model_load_error = None
-            print(f"[AI Service] 本地离线模型成功载入内存，耗时: {time.time() - t0:.2f}s")
+            logger.info(f"本地离线大模型成功载入内存，耗时: {time.time() - t0:.2f}s (dtype={target_dtype})")
             return _tokenizer, _model
         except Exception as e:
             _model_load_error = str(e)
-            print(f"[AI Service] 本地模型加载失败: {e}", file=sys.stderr)
+            logger.error(f"本地大模型加载失败: {e}")
             return None, None
 
 

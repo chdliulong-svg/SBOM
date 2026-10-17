@@ -146,6 +146,7 @@ class Config:
         self.open_browser = self._get_bool('server', 'open_browser', True)
         self.threads = self._get_int('server', 'threads', 24, 1, 128)
         self.connection_limit = self._get_int('server', 'connection_limit', 120, 1, 1000)
+        self.debug = self._get_bool('server', 'debug', False)
 
         # --- [security] ---
         raw_mode = self._get_str('security', 'auth_mode', 'on').lower()

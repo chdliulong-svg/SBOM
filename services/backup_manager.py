@@ -264,11 +264,47 @@ def create_full_backup(reason='full_manual', note=''):
     return {'success': True, 'db': db_record, 'assets': asset_record}
 
 
+UPLOAD_DIR = os.path.join(PROJECT_ROOT, 'uploads')
+EXPORT_DIR = os.path.join(PROJECT_ROOT, 'exports')
+
+
+def cleanup_old_temp_files(max_age_seconds=86400):
+    """
+    清理 uploads/ 和 exports/ 目录下超过 max_age_seconds（默认 24 小时）的历史临时文件，
+    防止并发导出包与历史上传文件无限占用磁盘空间。
+    """
+    import time
+    now = time.time()
+    cleaned_count = 0
+    for d in (UPLOAD_DIR, EXPORT_DIR):
+        if not os.path.exists(d):
+            continue
+        try:
+            for entry in os.scandir(d):
+                if entry.is_file() and not entry.name.startswith('.'):
+                    try:
+                        st = entry.stat()
+                        if (now - st.st_mtime) > max_age_seconds:
+                            os.remove(entry.path)
+                            cleaned_count += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    return cleaned_count
+
+
 def ensure_daily_backup():
     """
     启动时调用：若今天还没有自动备份，则创建一份完整备份（数据库 + 资产）。
     已存在今日的 'daily' 记录时直接跳过，避免频繁启动产生大量重复快照。
+    顺带清理 uploads/ 和 exports/ 中超过 24 小时的历史临时文件。
     """
+    try:
+        cleanup_old_temp_files()
+    except Exception:
+        pass
+
     try:
         today = datetime.datetime.now().strftime('%Y-%m-%d')
         manifest = load_manifest()

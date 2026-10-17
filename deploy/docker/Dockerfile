@@ -22,5 +22,5 @@ ENV HOST=0.0.0.0
 ENV PORT=8000
 ENV HEADLESS=true
 
-# 使用 Gunicorn 启动（2 个 worker 进程，4 个线程，配合 SQLite WAL 模式保证高并发与稳定性）
-CMD ["gunicorn", "-w", "2", "--threads", "4", "-b", "0.0.0.0:8000", "--timeout", "120", "app:app"]
+# 使用 Gunicorn 启动（单进程 16 线程，彻底消除 SQLite 锁争用并共享认证限流与 AI 模型内存）
+CMD ["gunicorn", "-w", "1", "--threads", "16", "-b", "0.0.0.0:8000", "--timeout", "120", "app:app"]

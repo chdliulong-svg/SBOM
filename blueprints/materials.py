@@ -13,8 +13,10 @@ from services.database import get_db, get_material_tree
 from services.backup_manager import create_backup_snapshot
 from services.data_audit import get_duplicate_materials_report, check_single_material_duplicate
 from services.master_importer import analyze_master_excel, execute_master_import
+from services.logging_setup import get_logger
 from blueprints.common import UPLOAD_DIR
 
+logger = get_logger('sbom.materials')
 materials_bp = Blueprint('materials', __name__)
 
 
@@ -202,8 +204,10 @@ def save_material():
         if target_old != mat_no:
             cursor.execute('SELECT COUNT(*) FROM materials WHERE material_no = ?', (mat_no,))
             if cursor.fetchone()[0] > 0:
-                conn.close()
                 return jsonify({'error': f'新物料号 [{mat_no}] 已存在，无法将当前物料修改为此编号！'}), 400
+
+            # 开启延迟外键检查，允许在同一事务内级联同步主表与引用子表（material_structures, bom_items）
+            cursor.execute('PRAGMA defer_foreign_keys = ON;')
 
             cursor.execute('''
             UPDATE materials
@@ -253,7 +257,6 @@ def save_material():
         synced_rows_count = cursor.rowcount
 
     conn.commit()
-    conn.close()
     return jsonify({'success': True, 'material_no': mat_no, 'synced_rows_count': synced_rows_count})
 
 
@@ -264,17 +267,33 @@ def delete_material():
     if not mat_no:
         return jsonify({'error': '未提供物料号'}), 400
 
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # 1. 检查外键引用：若该物料已被工程项目 BOM 引用，阻止直接删除，避免 IntegrityError 崩溃
+    cursor.execute('''
+        SELECT COUNT(DISTINCT p.id), GROUP_CONCAT(DISTINCT COALESCE(NULLIF(p.code, ''), p.name))
+        FROM bom_items b
+        JOIN subsystems s ON b.subsystem_id = s.id
+        JOIN projects p ON s.project_id = p.id
+        WHERE b.material_no = ?
+    ''', (mat_no,))
+    ref_row = cursor.fetchone()
+    ref_count = ref_row[0] or 0
+    if ref_count > 0:
+        proj_names = ref_row[1] or '相关工程'
+        return jsonify({
+            'error': f'物料 [{mat_no}] 已被 {ref_count} 个工程项目引用（涉及工程：{proj_names}），无法从主库中直接删除！请先在相关工程中解除对该物料的引用。'
+        }), 400
+
     try:
         create_backup_snapshot(reason='delete_material', note=f'删除通用物料 [{mat_no}] 前自动备份')
     except Exception as e_snap:
-        print("Auto-backup before delete material warning:", e_snap)
+        logger.warning(f"Auto-backup before delete material warning: {e_snap}")
 
-    conn = get_db()
-    cursor = conn.cursor()
     cursor.execute('DELETE FROM material_structures WHERE parent_material_no = ? OR child_material_no = ?', (mat_no, mat_no))
     cursor.execute('DELETE FROM materials WHERE material_no = ?', (mat_no,))
     conn.commit()
-    conn.close()
     return jsonify({'success': True, 'message': f'物料 [{mat_no}] 已成功从全局通用物料主库中移除！'})
 
 
@@ -289,19 +308,38 @@ def batch_delete_materials():
     if not clean_nos:
         return jsonify({'error': '待删除物料号列表为空'}), 400
 
-    try:
-        create_backup_snapshot(reason='batch_delete_materials', note=f'批量删除 {len(clean_nos)} 个通用物料前自动备份')
-    except Exception as e_snap:
-        print("Auto-backup before batch delete materials warning:", e_snap)
-
     conn = get_db()
     cursor = conn.cursor()
     placeholders = ','.join(['?'] * len(clean_nos))
+
+    # 1. 检查外键引用：拦截已被工程 BOM 引用的物料
+    cursor.execute(f'''
+        SELECT b.material_no, COUNT(DISTINCT p.id), GROUP_CONCAT(DISTINCT COALESCE(NULLIF(p.code, ''), p.name))
+        FROM bom_items b
+        JOIN subsystems s ON b.subsystem_id = s.id
+        JOIN projects p ON s.project_id = p.id
+        WHERE b.material_no IN ({placeholders})
+        GROUP BY b.material_no
+    ''', clean_nos)
+    in_use_rows = cursor.fetchall()
+    if in_use_rows:
+        in_use_details = [f"[{r[0]}]（工程: {r[2] or '未知'}）" for r in in_use_rows]
+        detail_str = '、'.join(in_use_details[:5])
+        if len(in_use_details) > 5:
+            detail_str += f' 等共 {len(in_use_details)} 项'
+        return jsonify({
+            'error': f'选中的物料已被工程项目引用，禁止删除以保护数据一致性：\n{detail_str}。\n请先在对应工程中解除引用后再操作。'
+        }), 400
+
+    try:
+        create_backup_snapshot(reason='batch_delete_materials', note=f'批量删除 {len(clean_nos)} 个通用物料前自动备份')
+    except Exception as e_snap:
+        logger.warning(f"Auto-backup before batch delete materials warning: {e_snap}")
+
     cursor.execute(f'DELETE FROM material_structures WHERE parent_material_no IN ({placeholders}) OR child_material_no IN ({placeholders})', clean_nos + clean_nos)
     cursor.execute(f'DELETE FROM materials WHERE material_no IN ({placeholders})', clean_nos)
     deleted_count = cursor.rowcount
     conn.commit()
-    conn.close()
     return jsonify({
         'success': True,
         'deleted_count': deleted_count,
@@ -711,12 +749,20 @@ def execute_master_import_api():
     try:
         create_backup_snapshot(reason='import_master_excel', note=f'批量导入主库物料Excel [{temp_filename}] 前自动备份')
     except Exception as e_snap:
-        print("Auto-backup before master import warning:", e_snap)
+        logger.warning(f"Auto-backup before master import warning: {e_snap}")
 
     try:
         res = execute_master_import(save_path, sheet_name=sheet_name, header_row=header_row, mapping=mapping, overwrite=overwrite)
         if isinstance(res, dict) and 'error' in res:
             return jsonify(res), 400
+
+        # 成功导入后自动清理 uploads/ 下的临时文件，防止磁盘堆积
+        try:
+            if os.path.exists(save_path):
+                os.remove(save_path)
+        except Exception:
+            pass
+
         return jsonify(res)
     except Exception as e:
         return jsonify({'error': f'导入物料失败: {str(e)}'}), 500

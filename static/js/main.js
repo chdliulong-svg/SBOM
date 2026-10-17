@@ -7,7 +7,12 @@
             const urlParams = new URLSearchParams(window.location.search);
             const initProjId = urlParams.get('proj') || urlParams.get('p') || null;
             loadProjects(initProjId ? parseInt(initProjId) : null);
-            loadMasterMaterials();
+            // 性能优化：首屏优先加载当前工程关键BOM，物料主库在空闲时静默预加载
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(() => loadMasterMaterials(), { timeout: 2000 });
+            } else {
+                setTimeout(() => loadMasterMaterials(), 1000);
+            }
             initTableColumnResizing('bomTable');
 
 

@@ -3,14 +3,10 @@ import zipfile
 import xml.etree.ElementTree as ET
 from .database import get_db, init_db, find_template_path
 from .config import config
+from .file_utils import sanitize_asset_name, safe_path_under, IMAGES_DIR, MANUALS_DIR
+from services.logging_setup import get_logger
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
-IMAGES_DIR = os.path.join(ASSETS_DIR, 'images')
-MANUALS_DIR = os.path.join(ASSETS_DIR, 'manuals')
-
-os.makedirs(IMAGES_DIR, exist_ok=True)
-os.makedirs(MANUALS_DIR, exist_ok=True)
+logger = get_logger('sbom.importer')
 
 def import_excel_sbom(excel_path):
     """
@@ -307,11 +303,13 @@ def import_excel_sbom(excel_path):
                     raw_img_path = row_to_img[row_idx]
                     if raw_img_path in z.namelist():
                         ext = os.path.splitext(raw_img_path)[1].lower()
-                        img_filename = f"{mat_no}{ext}"
-                        img_dest = os.path.join(IMAGES_DIR, img_filename)
-                        with open(img_dest, 'wb') as f_out:
-                            f_out.write(z.read(raw_img_path))
-                        saved_img_rel = f"assets/images/{img_filename}"
+                        safe_mat = sanitize_asset_name(mat_no, fallback='unnamed_img')
+                        img_filename = f"{safe_mat}{ext}"
+                        img_dest = safe_path_under(IMAGES_DIR, img_filename)
+                        if img_dest:
+                            with open(img_dest, 'wb') as f_out:
+                                f_out.write(z.read(raw_img_path))
+                            saved_img_rel = f"assets/images/{img_filename}"
 
                 # Extract and save Manual PDF if present
                 saved_manual_rel = ''
@@ -323,11 +321,13 @@ def import_excel_sbom(excel_path):
                         eof_idx = ole_data.rfind(b'%%EOF')
                         if pdf_start != -1 and eof_idx != -1:
                             pdf_bytes = ole_data[pdf_start:eof_idx + 6]
-                            pdf_filename = f"{mat_no}.pdf"
-                            pdf_dest = os.path.join(MANUALS_DIR, pdf_filename)
-                            with open(pdf_dest, 'wb') as f_out:
-                                f_out.write(pdf_bytes)
-                            saved_manual_rel = f"assets/manuals/{pdf_filename}"
+                            safe_mat = sanitize_asset_name(mat_no, fallback='unnamed_manual')
+                            pdf_filename = f"{safe_mat}.pdf"
+                            pdf_dest = safe_path_under(MANUALS_DIR, pdf_filename)
+                            if pdf_dest:
+                                with open(pdf_dest, 'wb') as f_out:
+                                    f_out.write(pdf_bytes)
+                                saved_manual_rel = f"assets/manuals/{pdf_filename}"
 
                 # Insert or update Materials master library
                 cursor.execute('''
@@ -368,13 +368,11 @@ def import_excel_sbom(excel_path):
             renumber_subsystem(cursor, subsystem_id, mode='step10')
 
         conn.commit()
-        conn.close()
-        print(f"Successfully imported '{excel_path}' into database!")
-        print(f"Project Code: {project_code}, Subsystems imported: {[s[0] for s in bom_sheets]}")
+        logger.info(f"Successfully imported '{excel_path}' into database! Project Code: {project_code}, Subsystems: {[s[0] for s in bom_sheets]}")
 
 if __name__ == '__main__':
     default_excel = find_template_path()
     if default_excel and os.path.exists(default_excel):
         import_excel_sbom(default_excel)
     else:
-        print("Template file not found!")
+        logger.warning("Template file not found!")

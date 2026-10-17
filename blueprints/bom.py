@@ -37,7 +37,6 @@ def get_bom_items(subsystem_id):
         if (not d.get('drawing_no') or d.get('drawing_no') == '/') and d.get('m_drawing_no'):
             d['drawing_no'] = d['m_drawing_no']
         items.append(d)
-    conn.close()
     return jsonify(items)
 
 
@@ -133,7 +132,6 @@ def add_bom_item():
 
     renumber_subsystem(cursor, subsystem_id)
     conn.commit()
-    conn.close()
 
     msg = f"物料行已添加{'，新物料已自动录入数据库主库' if is_new else ''}"
     if len(children_to_import) > 0:
@@ -257,11 +255,6 @@ def batch_add_bom_items():
         except Exception:
             pass
         return jsonify({'success': False, 'error': f'批量导入失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
 
 @bom_bp.route('/api/bom/paste', methods=['POST'])
@@ -376,11 +369,6 @@ def paste_bom_items():
         except Exception:
             pass
         return jsonify({'success': False, 'error': f'粘贴失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
 
 @bom_bp.route('/api/bom/update', methods=['POST'])
@@ -436,7 +424,6 @@ def update_bom_item():
         renumber_subsystem(cursor, sub_row[0])
 
     conn.commit()
-    conn.close()
     return jsonify({
         'success': True,
         'is_new_material': is_new,
@@ -480,7 +467,6 @@ def delete_bom_item():
     for sub_id in subsystems:
         renumber_subsystem(cursor, sub_id)
     conn.commit()
-    conn.close()
     return jsonify({'success': True, 'count': len(clean_ids)})
 
 
@@ -502,7 +488,6 @@ def move_bom_item():
     cursor.execute('SELECT subsystem_id, level_num, row_num FROM bom_items WHERE id = ?', (item_id,))
     item = cursor.fetchone()
     if not item:
-        conn.close()
         return jsonify({'error': 'Item not found'}), 404
 
     subsystem_id = item['subsystem_id']
@@ -513,7 +498,6 @@ def move_bom_item():
 
     idx = next((i for i, it in enumerate(items) if it['id'] == item_id), None)
     if idx is None:
-        conn.close()
         return jsonify({'error': 'Item not found in subsystem'}), 404
 
     L = items[idx]['level_num'] or 2
@@ -544,12 +528,11 @@ def move_bom_item():
                 next_block = items[next_start:next_end]
                 new_items = items[:start_idx] + next_block + curr_block + items[next_end:]
 
-    for num, it in enumerate(new_items, 1):
-        cursor.execute('UPDATE bom_items SET row_num = ? WHERE id = ?', (num, it['id']))
+    update_data = [(num, it['id']) for num, it in enumerate(new_items, 1)]
+    cursor.executemany('UPDATE bom_items SET row_num = ? WHERE id = ?', update_data)
     renumber_subsystem(cursor, subsystem_id)
 
     conn.commit()
-    conn.close()
     return jsonify({'success': True})
 
 
@@ -567,11 +550,8 @@ def reorder_bom_items():
 
     conn = get_db()
     cursor = conn.cursor()
-    for idx, item_id in enumerate(item_ids):
-        num = idx + 1
-        cursor.execute('UPDATE bom_items SET row_num = ? WHERE id = ? AND subsystem_id = ?',
-                       (num, item_id, subsystem_id))
+    update_data = [(idx + 1, item_id, subsystem_id) for idx, item_id in enumerate(item_ids)]
+    cursor.executemany('UPDATE bom_items SET row_num = ? WHERE id = ? AND subsystem_id = ?', update_data)
     renumber_subsystem(cursor, subsystem_id)
     conn.commit()
-    conn.close()
     return jsonify({'success': True})

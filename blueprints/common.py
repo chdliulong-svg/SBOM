@@ -5,110 +5,69 @@ Common utilities, directory paths, and database helpers shared across blueprints
 
 import os
 import re
-from flask import has_request_context
+from datetime import datetime
+from flask import has_request_context, request
 from services.database import get_db
 
-# Base Directories
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
-IMAGES_DIR = os.path.join(ASSETS_DIR, 'images')
-MANUALS_DIR = os.path.join(ASSETS_DIR, 'manuals')
-UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
-EXPORT_DIR = os.path.join(BASE_DIR, 'exports')
-BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-
-for d in [IMAGES_DIR, MANUALS_DIR, UPLOAD_DIR, EXPORT_DIR, BACKUP_DIR, DATA_DIR]:
-    os.makedirs(d, exist_ok=True)
-
-
-# ----------------- 上传文件名安全工具 -----------------
-# 只保留安全字符集，彻底阻断 ../ ..\ 盘符( C: )、UNC( \\server\share ) 等路径穿越写法
-_UNSAFE_NAME_CHARS = re.compile(r'[^A-Za-z0-9._-]')
-_RESERVED_WINDOWS_NAMES = {
-    'CON', 'PRN', 'AUX', 'NUL',
-    *(f'COM{i}' for i in range(1, 10)),
-    *(f'LPT{i}' for i in range(1, 10)),
-}
+from services.file_utils import (
+    BASE_DIR,
+    ASSETS_DIR,
+    IMAGES_DIR,
+    MANUALS_DIR,
+    UPLOAD_DIR,
+    EXPORT_DIR,
+    BACKUP_DIR,
+    DATA_DIR,
+    sanitize_asset_name,
+    safe_path_under,
+    validate_upload_stream
+)
 
 
-def sanitize_asset_name(value, max_len=80, fallback='unnamed'):
+# ----------------- 协同锁与用户身份工具 -----------------
+def get_client_identity():
+    """以客户端 IP 地址作为协同身份标识"""
+    if has_request_context():
+        return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
+    return '127.0.0.1'
+
+
+def check_and_expire_lease(cursor, project_row):
     """
-    把任意用户输入（物料号、文件名）清洗为可安全用于磁盘写入的文件名主干。
-    - 移除非 [A-Za-z0-9._-] 的一切字符（含反斜杠 / 冒号 / 星号等）
-    - 折叠连续的点以阻断 '..' 相对路径
-    - 去除首尾的点与连字符，避免隐藏文件与参数注入
-    - 排除 Windows 保留设备名（CON、NUL、COM1 等）
+    检查租约是否已过期（默认 180 秒无心跳）。
+    如果已过期，自动设为锁定并释放占用，避免工程师死机/断线后永久死锁。
+    返回最新的 (is_locked, locked_by)。
     """
-    raw = '' if value is None else str(value)
-    cleaned = _UNSAFE_NAME_CHARS.sub('_', raw)
-    cleaned = re.sub(r'\.{2,}', '.', cleaned)
-    cleaned = cleaned.strip().strip('._-')[:max_len].strip('._-')
-
-    if not cleaned or cleaned.upper() in _RESERVED_WINDOWS_NAMES:
-        cleaned = fallback
-    return cleaned
-
-
-def safe_path_under(base_dir, filename):
-    """
-    在 base_dir 下拼接文件名，并校验解析后的真实路径仍位于 base_dir 内。
-    这是防路径穿越的最后一道防线：即使上游清洗被绕过，也不会写到目录之外。
-    返回绝对路径；若越界则返回 None。
-    """
-    base_real = os.path.realpath(base_dir)
-    target_real = os.path.realpath(os.path.join(base_real, filename))
-    if target_real == base_real or target_real.startswith(base_real + os.sep):
-        return os.path.join(base_dir, filename)
-    return None
-
-
-def validate_upload_stream(file_obj, ext):
-    """
-    按文件真实内容（magic bytes）校验类型，不只看扩展名。
-    返回 (is_valid, error_message)。
-    """
-    ext = (ext or '').lower()
+    if not project_row:
+        return 1, ''
+    if project_row['is_locked'] == 1:
+        return 1, ''
+    locked_at_str = project_row['locked_at']
+    if not locked_at_str:
+        return 0, project_row['locked_by'] or ''
     try:
-        pos = file_obj.tell()
-        file_obj.seek(0)
-        head = file_obj.read(8)
-        file_obj.seek(pos)
+        t_str = str(locked_at_str).split('.')[0]
+        locked_time = datetime.strptime(t_str, '%Y-%m-%d %H:%M:%S')
+        now = datetime.now()
+        if (now - locked_time).total_seconds() > 180:
+            cursor.execute("UPDATE projects SET is_locked = 1, locked_by = '', locked_at = NULL WHERE id = ?", (project_row['id'],))
+            if hasattr(cursor, 'connection') and cursor.connection:
+                try:
+                    cursor.connection.commit()
+                except Exception:
+                    pass
+            return 1, ''
     except Exception:
-        return False, '无法读取上传文件内容'
-
-    if ext == '.pdf':
-        if not head.startswith(b'%PDF-'):
-            return False, '文件内容不是有效的 PDF 手册'
-        return True, ''
-
-    if ext in ('.png', '.jpg', '.jpeg', '.webp'):
-        try:
-            from PIL import Image
-            file_obj.seek(0)
-            img = Image.open(file_obj)
-            img.verify()
-        except Exception:
-            return False, '文件内容不是有效的图片（或已损坏）'
-        finally:
-            try:
-                file_obj.seek(pos)
-            except Exception:
-                pass
-        return True, ''
-
-    if ext == '.emf':
-        # Windows 图元文件，Pillow 无法解析，仅按扩展名放行
-        return True, ''
-
-    return False, f'不支持的文件类型: {ext}'
+        pass
+    return project_row['is_locked'], project_row['locked_by'] or ''
 
 
 def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None, conn=None):
     """
     Checks if the project associated with the given project_id, subsystem_id,
     or bom_item_id is unlocked (is_locked == 0).
-    Returns (True, None) if allowed, or (False, error_message) if locked.
+    自动处理租约过期，并校验操作者身份（防止越权修改他人占用的工程）。
+    Returns (True, None) if allowed, or (False, error_message) if locked or occupied.
     """
     should_close = False
     if conn is None:
@@ -122,7 +81,7 @@ def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None,
     try:
         if bom_item_id:
             cursor.execute('''
-                SELECT p.id, p.code, p.system_name, p.name, p.is_locked, p.locked_by
+                SELECT p.id, p.code, p.system_name, p.name, p.is_locked, p.locked_by, p.locked_at
                 FROM bom_items b
                 JOIN subsystems s ON b.subsystem_id = s.id
                 JOIN projects p ON s.project_id = p.id
@@ -130,22 +89,33 @@ def check_project_unlocked(project_id=None, subsystem_id=None, bom_item_id=None,
             ''', (bom_item_id,))
         elif subsystem_id:
             cursor.execute('''
-                SELECT p.id, p.code, p.system_name, p.name, p.is_locked, p.locked_by
+                SELECT p.id, p.code, p.system_name, p.name, p.is_locked, p.locked_by, p.locked_at
                 FROM subsystems s
                 JOIN projects p ON s.project_id = p.id
                 WHERE s.id = ?
             ''', (subsystem_id,))
         elif project_id:
-            cursor.execute('SELECT id, code, system_name, name, is_locked, locked_by FROM projects WHERE id = ?', (project_id,))
+            cursor.execute('SELECT id, code, system_name, name, is_locked, locked_by, locked_at FROM projects WHERE id = ?', (project_id,))
         else:
             return True, None
 
         row = cursor.fetchone()
         if not row:
             return False, "未找到关联的项目工程"
-        if row['is_locked'] == 1:
-            name = row['system_name'] or row['code'] or row['name'] or '该工程'
+
+        # 1. 自动检测并回收超时租约
+        curr_locked, curr_user = check_and_expire_lease(cursor, row)
+        name = row['system_name'] or row['code'] or row['name'] or '该工程'
+
+        if curr_locked == 1:
             return False, f"工程【{name}】当前处于【锁定保护】状态，禁止修改！如需编辑请先在顶部操作栏点击【解锁】。"
+
+        # 2. 校验占用人身份与当前客户端身份是否一致
+        if has_request_context():
+            client_id = get_client_identity()
+            if curr_user and curr_user != client_id:
+                return False, f"工程【{name}】当前正由同事 [{curr_user}] 在编辑中，禁止跨用户直接修改！若需编辑请先在顶部点击【解锁/接管编辑】。"
+
         return True, None
     finally:
         if should_close:
@@ -212,6 +182,7 @@ def renumber_subsystem(cursor, subsystem_id, mode='step10'):
     Renumbers:
     - row_num sequentially (1, 2, 3...)
     - seq_num hierarchically by tree depth (V2 模版：每层从10递增: 10, 20, 30...)
+    使用 executemany 批量更新替代循环逐条 UPDATE，大幅降低事务与游标开销。
     """
     cursor.execute('''
     SELECT id, level_num, level_str, parent_material_no
@@ -224,9 +195,8 @@ def renumber_subsystem(cursor, subsystem_id, mode='step10'):
         return
 
     computed = compute_bom_hierarchy_numbers(rows, mode=mode)
-    for (row_num, seq_num), r in zip(computed, rows):
-        cursor.execute('UPDATE bom_items SET row_num = ?, seq_num = ? WHERE id = ?',
-                       (row_num, str(seq_num), r['id']))
+    update_data = [(row_num, str(seq_num), r['id']) for (row_num, seq_num), r in zip(computed, rows)]
+    cursor.executemany('UPDATE bom_items SET row_num = ?, seq_num = ? WHERE id = ?', update_data)
 
 
 def upsert_material(cursor, material_no, name='', description='', spec_model='', manufacturer='', unit='PC', drawing_no='', notes='', substitute='', remove_image=False, remove_manual=False):

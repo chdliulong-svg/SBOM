@@ -1,11 +1,7 @@
 import os
 import openpyxl
 from .database import get_db
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
-IMAGES_DIR = os.path.join(ASSETS_DIR, 'images')
-os.makedirs(IMAGES_DIR, exist_ok=True)
+from .file_utils import sanitize_asset_name, safe_path_under, IMAGES_DIR
 
 FIELD_DEFINITIONS = [
     {
@@ -349,11 +345,13 @@ def execute_master_import(file_path, sheet_name=None, header_row=None, mapping=N
             try:
                 img_obj = row_to_image[r]
                 img_data = img_obj._data()
-                img_filename = f"{mat_no}.png"
-                img_dest = os.path.join(IMAGES_DIR, img_filename)
-                with open(img_dest, 'wb') as f_out:
-                    f_out.write(img_data)
-                saved_img_rel = f"assets/images/{img_filename}"
+                safe_mat = sanitize_asset_name(mat_no, fallback='unnamed_img')
+                img_filename = f"{safe_mat}.png"
+                img_dest = safe_path_under(IMAGES_DIR, img_filename)
+                if img_dest:
+                    with open(img_dest, 'wb') as f_out:
+                        f_out.write(img_data)
+                    saved_img_rel = f"assets/images/{img_filename}"
             except Exception as e:
                 print(f"Error saving image for {mat_no}: {e}")
 

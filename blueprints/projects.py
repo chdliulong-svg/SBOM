@@ -9,6 +9,7 @@ import time
 import sqlite3
 import io
 import zipfile
+import uuid
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
@@ -27,7 +28,9 @@ from blueprints.common import (
     BASE_DIR,
     UPLOAD_DIR,
     EXPORT_DIR,
-    check_project_unlocked
+    check_project_unlocked,
+    get_client_identity,
+    check_and_expire_lease
 )
 
 logger = get_logger('sbom.projects')
@@ -83,35 +86,30 @@ def get_project_detail(project_id):
     return jsonify(project_dict)
 
 
-# ----------------- Operator Identity Helper -----------------
-def get_client_identity():
-    """局域网内直接使用客户端 IP 地址作为协同身份标识。"""
-    return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
-
-
-
-def check_and_expire_lease(cursor, project_row):
+# ----------------- Subsystem BOM Items Copy Helper -----------------
+def copy_subsystem_bom_items(cursor, src_sub_id, dst_sub_id):
     """
-    检查工程锁是否已过期（超过 180 秒无心跳）。
-    若过期则自动置为锁定保护（释放占用），避免工程师关机/休眠后导致死锁。
-    返回最新的 (is_locked, locked_by)。
+    公共工具：将 src_sub_id 下所有 BOM 行完整复制到 dst_sub_id，
+    严格保留层级结构、排序以及 parent_material_no 关联关系（修复 P0 复制丢字段隐患）。
     """
-    import datetime
-    if not project_row or project_row['is_locked'] == 1:
-        return 1, ''
-    locked_at_str = project_row['locked_at']
-    if not locked_at_str:
-        return 0, project_row['locked_by'] or ''
-    try:
-        t_str = str(locked_at_str).split('.')[0]
-        locked_time = datetime.datetime.strptime(t_str, '%Y-%m-%d %H:%M:%S')
-        now = datetime.datetime.now()
-        if (now - locked_time).total_seconds() > 180:
-            cursor.execute("UPDATE projects SET is_locked = 1, locked_by = '', locked_at = NULL WHERE id = ?", (project_row['id'],))
-            return 1, ''
-    except Exception:
-        pass
-    return project_row['is_locked'], project_row['locked_by'] or ''
+    cursor.execute('''
+        SELECT row_num, level_str, level_num, seq_num, material_no, parent_material_no, drawing_no, qty, unit, notes, substitute
+        FROM bom_items
+        WHERE subsystem_id = ?
+        ORDER BY row_num, id
+    ''', (src_sub_id,))
+    items = cursor.fetchall()
+    insert_data = [
+        (dst_sub_id, it['row_num'], it['level_str'], it['level_num'], it['seq_num'],
+         it['material_no'], it['parent_material_no'], it['drawing_no'], it['qty'], it['unit'], it['notes'], it['substitute'])
+        for it in items
+    ]
+    if insert_data:
+        cursor.executemany('''
+            INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, seq_num, material_no, parent_material_no, drawing_no, qty, unit, notes, substitute)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', insert_data)
+    return len(items)
 
 
 # ----------------- Project Lock, Heartbeat & Unlock -----------------
@@ -417,20 +415,7 @@ def copy_project():
                 VALUES (?, ?, ?, ?, ?)
             ''', (new_project_id, sub['name'], sub['system_title'] or '', sub['doc_no'] or '', sub['sort_order']))
             new_sub_id = cursor.lastrowid
-
-            cursor.execute('''
-                SELECT row_num, level_str, level_num, seq_num, material_no, drawing_no, qty, unit, notes, substitute
-                FROM bom_items
-                WHERE subsystem_id = ?
-                ORDER BY row_num, id
-            ''', (sub['id'],))
-            items = cursor.fetchall()
-            for it in items:
-                cursor.execute('''
-                    INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, seq_num, material_no, drawing_no, qty, unit, notes, substitute)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (new_sub_id, it['row_num'], it['level_str'], it['level_num'], it['seq_num'],
-                      it['material_no'], it['drawing_no'], it['qty'], it['unit'], it['notes'], it['substitute']))
+            copy_subsystem_bom_items(cursor, sub['id'], new_sub_id)
 
         cursor.execute('SELECT role, sign_name, sign_date FROM signatures WHERE project_id = ?', (project_id,))
         signatures = cursor.fetchall()
@@ -1185,7 +1170,14 @@ def execute_open_project_api():
             client_tag = get_client_identity()
             cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, opened_id))
             conn.commit()
-            conn.close()
+
+        # 成功导入后清理临时上传的 .sbom 文件，避免历史无用文件在磁盘堆积
+        try:
+            if os.path.exists(save_path):
+                os.remove(save_path)
+        except Exception:
+            pass
+
         return jsonify(res)
     except Exception as e:
         return jsonify({'error': f'载入项目失败: {str(e)}'}), 500
@@ -1323,21 +1315,7 @@ def copy_subsystem():
             VALUES (?, ?, ?, ?, ?)
         ''', (project_id, new_name, sub['system_title'] or '', sub['doc_no'] or '', new_sort_order))
         new_subsystem_id = cursor.lastrowid
-
-        cursor.execute('''
-            SELECT row_num, level_str, level_num, seq_num, material_no, drawing_no, qty, unit, notes, substitute
-            FROM bom_items
-            WHERE subsystem_id = ?
-            ORDER BY row_num, id
-        ''', (subsystem_id,))
-        items = cursor.fetchall()
-
-        for it in items:
-            cursor.execute('''
-                INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, seq_num, material_no, drawing_no, qty, unit, notes, substitute)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (new_subsystem_id, it['row_num'], it['level_str'], it['level_num'], it['seq_num'],
-                  it['material_no'], it['drawing_no'], it['qty'], it['unit'], it['notes'], it['substitute']))
+        copied_count = copy_subsystem_bom_items(cursor, subsystem_id, new_subsystem_id)
 
         conn.commit()
         return jsonify({
@@ -1391,13 +1369,16 @@ def export_excel(project_id):
     mode = request.args.get('mode', 'link').strip().lower()
     is_embed = (mode in ['embed', 'embedded', '2'])
 
+    unique_tag = f"{int(time.time())}_{uuid.uuid4().hex[:6]}"
+
     if is_embed:
         base_name = f"{safe_name}_文档嵌入版"
-        filename = f"{base_name}.xlsx"
-        out_path = os.path.join(EXPORT_DIR, filename)
+        download_filename = f"{base_name}.xlsx"
+        disk_filename = f"{base_name}_{unique_tag}.xlsx"
+        out_path = os.path.join(EXPORT_DIR, disk_filename)
         try:
             export_project_sbom(project_id, out_path, embed_manuals=True)
-            return send_file(out_path, as_attachment=True, download_name=filename)
+            return send_file(out_path, as_attachment=True, download_name=download_filename)
         except Exception as e:
             return jsonify({'error': f'导出失败: {str(e)}'}), 500
 
@@ -1419,8 +1400,9 @@ def export_excel(project_id):
             fname = os.path.basename(mp)
             manual_files[fname] = full_p
 
-    excel_filename = f"{safe_name}.xlsx"
-    out_excel_path = os.path.join(EXPORT_DIR, excel_filename)
+    excel_download_name = f"{safe_name}.xlsx"
+    temp_excel_disk_name = f"{safe_name}_{unique_tag}.xlsx"
+    out_excel_path = os.path.join(EXPORT_DIR, temp_excel_disk_name)
 
     # 如果该项目包含已上传的手册文件，则连同手册一起打包为 ZIP 压缩包，保证解压后超链接可无缝打开
     if manual_files and request.args.get('raw_excel') not in ['1', 'true']:
@@ -1428,8 +1410,9 @@ def export_excel(project_id):
             # 导出 Excel（第 M 列超链接使用标准相对路径 manuals/<文件名>.pdf）
             export_project_sbom(project_id, out_excel_path, embed_manuals=False, manual_relative_dir='manuals')
 
-            zip_filename = f"{safe_name}_含技术手册.zip"
-            zip_path = os.path.join(EXPORT_DIR, zip_filename)
+            zip_download_name = f"{safe_name}_含技术手册.zip"
+            zip_disk_name = f"{safe_name}_含技术手册_{unique_tag}.zip"
+            zip_path = os.path.join(EXPORT_DIR, zip_disk_name)
 
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             readme_content = f"""========================================================================
@@ -1445,32 +1428,32 @@ def export_excel(project_id):
 在查阅技术手册前，请务必先将本压缩包【全部解压】到同一个文件夹中！
 
 【使用指南】
-1. 双击打开解压出来的 Excel 文件 "{excel_filename}"；
+1. 双击打开解压出来的 Excel 文件 "{excel_download_name}"；
 2. 在任意子系统 BOM 表格的 M 列（技术文件/手册）中，点击【查看技术手册】超链接；
 3. Excel 将自动调用您的默认 PDF 阅读器打开 "manuals" 文件夹中对应的元器件技术手册。
 
 【注意事项】
-• 请保持 "{excel_filename}" 与 "manuals" 文件夹位于同一目录下，切勿移动或重命名手册文件夹；
+• 请保持 "{excel_download_name}" 与 "manuals" 文件夹位于同一目录下，切勿移动或重命名手册文件夹；
 • 如需将资料转发给其他部门或现场运维，请直接转发本 ZIP 压缩包或将整套解压文件夹完整拷贝。
 ========================================================================
 """
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                 # 写入 Excel 文件
-                zf.write(out_excel_path, excel_filename)
+                zf.write(out_excel_path, excel_download_name)
                 # 写入使用提示
                 zf.writestr('使用说明_技术手册关联查阅.txt', readme_content.encode('utf-8'))
                 # 写入手册文件到 manuals/ 目录
                 for fname, src_p in manual_files.items():
                     zf.write(src_p, f"manuals/{fname}")
 
-            return send_file(zip_path, as_attachment=True, download_name=zip_filename, mimetype='application/zip')
+            return send_file(zip_path, as_attachment=True, download_name=zip_download_name, mimetype='application/zip')
         except Exception as e:
             return jsonify({'error': f'导出失败: {str(e)}'}), 500
     else:
         # 无手册关联时，直接导出纯单文件 Excel
         try:
             export_project_sbom(project_id, out_excel_path, embed_manuals=False, manual_relative_dir='manuals')
-            return send_file(out_excel_path, as_attachment=True, download_name=excel_filename)
+            return send_file(out_excel_path, as_attachment=True, download_name=excel_download_name)
         except Exception as e:
             return jsonify({'error': f'导出失败: {str(e)}'}), 500
 

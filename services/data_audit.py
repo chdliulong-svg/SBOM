@@ -32,35 +32,38 @@ def get_duplicate_materials_report():
     ''')
     materials = [dict(r) for r in cursor.fetchall()]
 
-    # Map each material to its project references
+    # 批量聚合项目 BOM 引用（一次性查询所有物料引用，彻底消除 N+1 循环查询）
+    cursor.execute('''
+    SELECT b.material_no, COUNT(DISTINCT p.id) as ref_count, GROUP_CONCAT(DISTINCT COALESCE(NULLIF(p.code, ''), p.name)) as ref_projects
+    FROM bom_items b
+    JOIN subsystems sub ON b.subsystem_id = sub.id
+    JOIN projects p ON sub.project_id = p.id
+    WHERE b.material_no IS NOT NULL AND b.material_no != ''
+    GROUP BY b.material_no
+    ''')
+    bom_refs_map = {r['material_no']: (r['ref_count'] or 0, r['ref_projects'] or '') for r in cursor.fetchall()}
+
+    # 批量聚合物料层级结构引用
+    cursor.execute('''
+    SELECT mat_no, SUM(cnt) as struct_refs FROM (
+        SELECT parent_material_no as mat_no, COUNT(*) as cnt FROM material_structures WHERE parent_material_no IS NOT NULL GROUP BY parent_material_no
+        UNION ALL
+        SELECT child_material_no as mat_no, COUNT(*) as cnt FROM material_structures WHERE child_material_no IS NOT NULL GROUP BY child_material_no
+    ) GROUP BY mat_no
+    ''')
+    struct_refs_map = {r['mat_no']: (r['struct_refs'] or 0) for r in cursor.fetchall()}
+
     material_refs = {}
     for m in materials:
         mat_no = m['material_no']
-        cursor.execute('''
-        SELECT COUNT(DISTINCT p.id), GROUP_CONCAT(DISTINCT COALESCE(NULLIF(p.code, ''), p.name))
-        FROM bom_items b
-        JOIN subsystems sub ON b.subsystem_id = sub.id
-        JOIN projects p ON sub.project_id = p.id
-        WHERE b.material_no = ?
-        ''', (mat_no,))
-        row = cursor.fetchone()
-        ref_count = row[0] or 0
-        ref_projects = row[1] or ''
-
-        # Also check if it's referenced in material_structures (parent or child)
-        cursor.execute('''
-        SELECT COUNT(*) FROM material_structures
-        WHERE parent_material_no = ? OR child_material_no = ?
-        ''', (mat_no, mat_no))
-        struct_refs = cursor.fetchone()[0] or 0
+        ref_count, ref_projects = bom_refs_map.get(mat_no, (0, ''))
+        struct_refs = struct_refs_map.get(mat_no, 0)
 
         m['ref_count'] = ref_count
         m['ref_projects'] = ref_projects
         m['struct_refs'] = struct_refs
         m['is_in_use'] = (ref_count > 0 or struct_refs > 0)
         material_refs[mat_no] = m
-
-    conn.close()
 
     # Group materials by normalized specification or (name + spec)
     from collections import defaultdict
@@ -137,7 +140,6 @@ def check_single_material_duplicate(name, spec_model, exclude_mat_no=''):
     WHERE material_no != ?
     ''', (exclude_mat_no or '',))
     all_materials = [dict(r) for r in cursor.fetchall()]
-    conn.close()
 
     matches = []
     for m in all_materials:

@@ -18,6 +18,9 @@ import re
 from datetime import datetime
 from .database import get_db
 from .exporter import export_project_sbom
+from services.logging_setup import get_logger
+
+logger = get_logger('sbom.offline_packager')
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -423,7 +426,6 @@ def generate_offline_package(project_id):
     ORDER BY s.sort_order, s.id, b.row_num, b.id
     ''', (project_id,))
     raw_items = [dict(r) for r in cursor.fetchall()]
-    conn.close()
 
     # Create temporary directory for building standard Excel
     temp_dir = tempfile.mkdtemp()
@@ -433,7 +435,7 @@ def generate_offline_package(project_id):
     try:
         export_project_sbom(project_id, excel_path)
     except Exception as e:
-        print("Warning exporting SBOM for offline package:", e)
+        logger.warning(f"Warning exporting SBOM for offline package: {e}")
 
     # Process attachments
     materials_photo_map = {}

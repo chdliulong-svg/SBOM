@@ -110,7 +110,6 @@ def upload_image():
     ON CONFLICT(material_no) DO UPDATE SET image_path = excluded.image_path
     ''', (mat_no, rel_path))
     conn.commit()
-    conn.close()
     return jsonify({'success': True, 'path': rel_path})
 
 
@@ -149,7 +148,6 @@ def upload_manual():
     ON CONFLICT(material_no) DO UPDATE SET manual_path = excluded.manual_path
     ''', (mat_no, rel_path))
     conn.commit()
-    conn.close()
     return jsonify({'success': True, 'path': rel_path})
 
 

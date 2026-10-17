@@ -6,13 +6,7 @@ import shutil
 from datetime import datetime
 from .database import get_db
 from .config import config
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
-IMAGES_DIR = os.path.join(ASSETS_DIR, 'images')
-MANUALS_DIR = os.path.join(ASSETS_DIR, 'manuals')
-os.makedirs(IMAGES_DIR, exist_ok=True)
-os.makedirs(MANUALS_DIR, exist_ok=True)
+from .file_utils import sanitize_asset_name, safe_path_under, IMAGES_DIR, MANUALS_DIR
 
 def export_project_data(project_id):
     """
@@ -25,7 +19,6 @@ def export_project_data(project_id):
     cursor.execute('SELECT * FROM projects WHERE id = ?', (project_id,))
     proj_row = cursor.fetchone()
     if not proj_row:
-        conn.close()
         return None
 
     project_info = dict(proj_row)
@@ -34,8 +27,8 @@ def export_project_data(project_id):
     cursor.execute('SELECT role, sign_name, sign_date FROM signatures WHERE project_id = ?', (project_id,))
     signatures = [dict(r) for r in cursor.fetchall()]
 
-    # ECN records
-    cursor.execute('SELECT ecn_no, change_desc, changer, change_date FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
+    # ECN records (含 change_pos 更改位置)
+    cursor.execute('SELECT ecn_no, change_pos, change_desc, changer, change_date FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
     ecn_records = [dict(r) for r in cursor.fetchall()]
 
     # Subsystems
@@ -97,8 +90,6 @@ def export_project_data(project_id):
         ''', list(used_material_nos) + list(used_material_nos))
         structures_list = [dict(r) for r in cursor.fetchall()]
 
-    conn.close()
-
     bundle = {
         'format_version': '1.0',
         'generator': 'Wind Turbine Service BOM System',
@@ -107,6 +98,7 @@ def export_project_data(project_id):
             'code': project_info.get('code') or '',
             'name': project_info.get('name') or '',
             'system_name': project_info.get('system_name') or '',
+            'platform': project_info.get('platform') or '',
             'doc_no': project_info.get('doc_no') or '',
             'ecn_no': project_info.get('ecn_no') or '',
             'form_no': project_info.get('form_no') or config.form_no_default,
@@ -285,16 +277,20 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
             for item in zf.namelist():
                 if item.startswith('assets/images/') and not item.endswith('/'):
                     fname = os.path.basename(item)
-                    if fname:
-                        target = os.path.join(IMAGES_DIR, fname)
-                        with zf.open(item) as src, open(target, 'wb') as dst:
-                            shutil.copyfileobj(src, dst)
+                    safe_fname = sanitize_asset_name(fname, fallback='')
+                    if safe_fname:
+                        target = safe_path_under(IMAGES_DIR, safe_fname)
+                        if target:
+                            with zf.open(item) as src, open(target, 'wb') as dst:
+                                shutil.copyfileobj(src, dst)
                 elif item.startswith('assets/manuals/') and not item.endswith('/'):
                     fname = os.path.basename(item)
-                    if fname:
-                        target = os.path.join(MANUALS_DIR, fname)
-                        with zf.open(item) as src, open(target, 'wb') as dst:
-                            shutil.copyfileobj(src, dst)
+                    safe_fname = sanitize_asset_name(fname, fallback='')
+                    if safe_fname:
+                        target = safe_path_under(MANUALS_DIR, safe_fname)
+                        if target:
+                            with zf.open(item) as src, open(target, 'wb') as dst:
+                                shutil.copyfileobj(src, dst)
     finally:
         if zf:
             zf.close()
@@ -303,6 +299,7 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
     name = (proj.get('name') or proj.get('code') or '已打开项目').strip()
     code = (proj.get('code') or name).strip()
     system_name = (proj.get('system_name') or name).strip()
+    platform = (proj.get('platform') or '').strip()
     doc_no = proj.get('doc_no', '')
     ecn_no = proj.get('ecn_no', '')
     form_no = proj.get('form_no') or config.form_no_default
@@ -376,9 +373,9 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
         project_id = int(target_project_id)
         # Update project info
         cursor.execute('''
-        UPDATE projects SET code = ?, name = ?, system_name = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
+        UPDATE projects SET code = ?, name = ?, system_name = ?, platform = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
         WHERE id = ?
-        ''', (code, name, system_name, doc_no, ecn_no, form_no, company, project_id))
+        ''', (code, name, system_name, platform, doc_no, ecn_no, form_no, company, project_id))
 
         # Clear existing project details to be replaced
         cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
@@ -396,9 +393,9 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
             system_name = f"{system_name} (已导入)"
 
         cursor.execute('''
-        INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (code, name, system_name, doc_no, ecn_no, form_no, company))
+        INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (code, name, system_name, platform, doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 
     # 3. Insert signatures
@@ -411,9 +408,9 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
     # 4. Insert ECN records
     for ecn in bundle_data.get('ecn_records', []):
         cursor.execute('''
-        INSERT INTO ecn_records (project_id, ecn_no, change_desc, changer, change_date)
-        VALUES (?, ?, ?, ?, ?)
-        ''', (project_id, ecn.get('ecn_no', ''), ecn.get('change_desc', ''), ecn.get('changer', ''), ecn.get('change_date', '')))
+        INSERT INTO ecn_records (project_id, ecn_no, change_pos, change_desc, changer, change_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''', (project_id, ecn.get('ecn_no', ''), ecn.get('change_pos', ''), ecn.get('change_desc', ''), ecn.get('changer', ''), ecn.get('change_date', '')))
 
     # 5. Insert subsystems and BOM items
     subsystems_data = bundle_data.get('subsystems', [])
@@ -460,7 +457,6 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
             total_imported_items += 1
 
     conn.commit()
-    conn.close()
 
     return {
         'success': True,

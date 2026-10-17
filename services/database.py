@@ -503,6 +503,8 @@ def get_material_tree(cursor, parent_material_no, visited=None, current_depth=1)
     Recursively returns pre-order list of all descendant items under parent_material_no.
     Includes material master metadata (name, description, spec_model, etc.) and relative_depth.
     """
+    if current_depth > 10:
+        return []
     if visited is None:
         visited = set()
     if parent_material_no in visited:

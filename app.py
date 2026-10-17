@@ -38,8 +38,8 @@ logger = get_logger('sbom.app')
 app = Flask(__name__)
 # 【安全】密钥从环境变量或 data/secret.key 读取，首次运行自动生成并持久化
 app.config['SECRET_KEY'] = get_secret_key()
-app.config['TEMPLATES_AUTO_RELOAD'] = True
-app.jinja_env.auto_reload = True
+app.config['TEMPLATES_AUTO_RELOAD'] = config.debug
+app.jinja_env.auto_reload = config.debug
 # 【安全】限制单次请求体积，避免超大上传打爆内存
 app.config['MAX_CONTENT_LENGTH'] = config.max_content_length
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=config.session_lifetime_days)

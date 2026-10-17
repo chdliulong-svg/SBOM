@@ -39,4 +39,4 @@ echo "  * 本机访问: http://127.0.0.1:$PORT"
 echo "  * 局域网访问: http://<你的Ubuntu主机IP>:$PORT"
 echo "-----------------------------------------------------"
 
-exec gunicorn -w 2 --threads 4 -b "${HOST}:${PORT}" --timeout 120 app:app
+exec gunicorn -w 1 --threads 16 -b "${HOST}:${PORT}" --timeout 120 app:app
