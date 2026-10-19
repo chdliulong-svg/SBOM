@@ -1,76 +1,17 @@
 # services/ai_service.py
 """
-Service BOM - 离线大模型智能语义推断与物料信息提取服务
-基于本地部署的 Qwen2.5 工业指令模型，支持无网环境下对任意顺序、非标格式的物料描述进行实体推断。
+Service BOM - 智能语义推断与物料信息提取服务
+支持云端大模型 API（如智谱 GLM-4-Flash 等 OpenAI 兼容接口）以及本地轻量启发式规则引擎（零依赖、毫秒级响应）。
 """
 
 import os
-import sys
 import re
 import json
 import time
-import threading
+import urllib.request
 from services.logging_setup import get_logger
 
 logger = get_logger('sbom.ai')
-
-# 模型本地缓存快照目录
-LOCAL_MODEL_DIR = os.path.expanduser(r"~/.cache/modelscope/models/Qwen--Qwen2.5-0.5B-Instruct/snapshots/master")
-
-# 全局单例模型与分词器（延迟初始化 + 线程安全）
-_model_lock = threading.Lock()
-_tokenizer = None
-_model = None
-_model_loaded = False
-_model_load_error = None
-
-
-def is_local_model_available():
-    """检查本地模型权重文件是否完整存在。"""
-    if not os.path.isdir(LOCAL_MODEL_DIR):
-        return False
-    required_files = ['config.json', 'model.safetensors', 'tokenizer.json']
-    return all(os.path.isfile(os.path.join(LOCAL_MODEL_DIR, f)) for f in required_files)
-
-
-def get_or_load_model():
-    """
-    单例获取加载的本地模型。
-    首次调用时载入内存，后续请求直接复用内存中的模型，无需重复载入。
-    """
-    global _tokenizer, _model, _model_loaded, _model_load_error
-    if _model_loaded:
-        return _tokenizer, _model
-
-    with _model_lock:
-        if _model_loaded:
-            return _tokenizer, _model
-
-        if not is_local_model_available():
-            _model_load_error = f"本地模型文件不存在: {LOCAL_MODEL_DIR}"
-            return None, None
-
-        try:
-            import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-
-            t0 = time.time()
-            _tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_DIR)
-            target_dtype = torch.bfloat16 if hasattr(torch, 'bfloat16') else torch.float32
-            _model = AutoModelForCausalLM.from_pretrained(
-                LOCAL_MODEL_DIR,
-                torch_dtype=target_dtype,
-                low_cpu_mem_usage=True
-            )
-            _model.eval()
-            _model_loaded = True
-            _model_load_error = None
-            logger.info(f"本地离线大模型成功载入内存，耗时: {time.time() - t0:.2f}s (dtype={target_dtype})")
-            return _tokenizer, _model
-        except Exception as e:
-            _model_load_error = str(e)
-            logger.error(f"本地大模型加载失败: {e}")
-            return None, None
 
 
 SYSTEM_PROMPT = """你是一个专业的变桨系统工程物料(Service BOM)语义推断专家。
@@ -163,43 +104,6 @@ def clean_json_output(raw_text: str) -> dict:
         return {}
 
 
-def parse_with_local_llm(description: str) -> dict:
-    """使用本地离线 Qwen 模型进行语义推断。"""
-    tokenizer, model = get_or_load_model()
-    if not model or not tokenizer:
-        raise RuntimeError(f"本地模型未就绪: {_model_load_error}")
-
-    import torch
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"请提取该物料描述：{description}"}
-    ]
-    prompt_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    inputs = tokenizer([prompt_text], return_tensors="pt")
-
-    t0 = time.time()
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=128,
-            do_sample=False
-        )
-    cost = time.time() - t0
-
-    generated_ids = [
-        output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, outputs)
-    ]
-    response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    result = clean_json_output(response)
-    if not result:
-        raise ValueError(f"模型输出无法解析为有效 JSON: {response}")
-
-    result["cost_seconds"] = round(cost, 2)
-    result["engine"] = "local_qwen_offline"
-    return result
-
-
 def parse_with_rule_fallback(description: str) -> dict:
     """启发式后备解析引擎（当大模型发生异常时无缝兜底）。"""
     desc = (description or "").strip()
@@ -249,8 +153,6 @@ def get_ai_config():
 
 def parse_with_cloud_llm(description: str, cfg: dict) -> dict:
     """调用云端大模型 API（如智谱 GLM-4-Flash、硅基流动等 OpenAI 兼容格式）。"""
-    import urllib.request
-
     base_url = (cfg.get("base_url") or "").strip().rstrip('/')
     api_key = (cfg.get("api_key") or "").strip()
     model = (cfg.get("model") or "glm-4-flash").strip()
@@ -289,9 +191,8 @@ def parse_with_cloud_llm(description: str, cfg: dict) -> dict:
 def extract_material_semantics(description: str) -> dict:
     """
     统一入口：
-    1. 优先调用免费高速云端大模型（如智谱 GLM-4-Flash，~1.5秒极速响应，零本地资源占用）；
-    2. 若断网或未配置云端 Key，自动平滑降级至本地离线大模型（Qwen2.5 本地 CPU 运行）；
-    3. 若极端异常，自动降级至启发规则兜底。
+    1. 优先调用高速云端大模型（如智谱 GLM-4-Flash，~1.5秒极速响应，零本地资源占用）；
+    2. 若未配置 API Key、断网或云端调用异常，自动无缝降级至本地轻量启发式规则引擎兜底（零依赖，毫秒级响应）。
     """
     desc = (description or "").strip()
     if not desc:
@@ -313,22 +214,9 @@ def extract_material_semantics(description: str) -> dict:
                     "data": res
                 }
         except Exception as e:
-            print(f"[AI Service] 云端大模型调用失败，自动降级至本地离线模型: {e}")
+            logger.warning(f"云端大模型调用失败，自动降级至启发式规则: {e}")
 
-    # 2. 降级尝试本地离线大模型推理
-    if is_local_model_available():
-        try:
-            res = parse_with_local_llm(desc)
-            if res.get("name") or res.get("spec_model") or res.get("manufacturer"):
-                return {
-                    "success": True,
-                    "engine": "local_llm",
-                    "data": res
-                }
-        except Exception as e:
-            print(f"[AI Service] 本地大模型推断异常，降级至启发规则: {e}")
-
-    # 3. 终极兜底
+    # 2. 本地启发式规则兜底
     fb = parse_with_rule_fallback(desc)
     return {
         "success": True,

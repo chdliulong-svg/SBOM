@@ -2075,7 +2075,7 @@
                 }
 
                 const costStr = data.cost_seconds ? ` (耗时 ${data.cost_seconds}s)` : '';
-                const engineTag = res.engine === 'local_llm' ? '离线大模型' : '智能引擎';
+                const engineTag = res.engine === 'cloud_llm' ? 'AI大模型' : (res.engine === 'heuristic_fallback' ? '规则引擎' : '智能引擎');
                 if (typeof showToast === 'function') {
                     showToast(`✨ ${engineTag}推断成功${costStr}：名称【${data.name || '-'}】、型号【${data.spec_model || '-'}】、制造商【${data.manufacturer || '-'}】`, 'success');
                 }
@@ -2139,7 +2139,7 @@
                 }
 
                 const costStr = data.cost_seconds ? ` (耗时 ${data.cost_seconds}s)` : '';
-                const engineTag = res.engine === 'local_llm' ? '离线大模型' : '智能引擎';
+                const engineTag = res.engine === 'cloud_llm' ? 'AI大模型' : (res.engine === 'heuristic_fallback' ? '规则引擎' : '智能引擎');
                 if (typeof showToast === 'function') {
                     showToast(`✨ ${engineTag}推断成功${costStr}：名称【${data.name || '-'}】、型号【${data.spec_model || '-'}】、制造商【${data.manufacturer || '-'}】`, 'success');
                 }
