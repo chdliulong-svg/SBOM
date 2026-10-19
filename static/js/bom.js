@@ -172,15 +172,13 @@
             }
 
             // Prune selection: if items are filtered, remove any selections that are no longer in items
-            if (keepSelection && selectedRowIds && selectedRowIds.size > 0 && Array.isArray(items)) {
+            if (selectedRowIds && selectedRowIds.size > 0 && Array.isArray(items)) {
                 const visibleIds = new Set(items.map(it => it.id));
                 for (const id of Array.from(selectedRowIds)) {
                     if (!visibleIds.has(id)) {
                         selectedRowIds.delete(id);
                     }
                 }
-            } else if (!keepSelection) {
-                clearRowSelection();
             }
 
             // Compute hasChildren map for tree folding
