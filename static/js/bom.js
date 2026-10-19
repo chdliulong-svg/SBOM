@@ -171,6 +171,18 @@
                 return;
             }
 
+            // Prune selection: if items are filtered, remove any selections that are no longer in items
+            if (keepSelection && selectedRowIds && selectedRowIds.size > 0 && Array.isArray(items)) {
+                const visibleIds = new Set(items.map(it => it.id));
+                for (const id of Array.from(selectedRowIds)) {
+                    if (!visibleIds.has(id)) {
+                        selectedRowIds.delete(id);
+                    }
+                }
+            } else if (!keepSelection) {
+                clearRowSelection();
+            }
+
             // Compute hasChildren map for tree folding
             const hasChildrenMap = {};
             for (let i = 0; i < items.length; i++) {
@@ -264,12 +276,12 @@
                     handleRowClick(idx, it.id, e);
                 };
                 tr.ondblclick = () => {
-                    openEditBomModal(idx);
+                    openEditBomModal(it.id);
                 };
 
                 // Drag & Drop event handlers
                 tr.ondragstart = (e) => {
-                    const q = (document.getElementById('bomQuickFilter')?.value || '').trim();
+                    const q = (document.getElementById('bomSearchInput')?.value || '').trim();
                     if (q) {
                         showToast('请先清空搜索过滤框，再进行拖拽排序', 'warning');
                         e.preventDefault();
@@ -752,12 +764,7 @@
                 return;
             }
             const singleId = selectedRowIds.values().next().value;
-            const idx = currentBomItems.findIndex(it => it.id === singleId);
-            if (idx !== -1) {
-                openEditBomModal(idx);
-            } else {
-                showToast('未找到选中的物料行', 'error');
-            }
+            openEditBomModal(singleId);
         }
 
         function moveSelectedRow(dir) {
@@ -1946,8 +1953,23 @@
             openModal('bomItemModal');
         }
 
-        function openEditBomModal(idx) {
-            const it = currentBomItems[idx];
+        function openEditBomModal(target) {
+            let it = null;
+            if (target && typeof target === 'object') {
+                it = target;
+            } else if (target !== undefined && target !== null) {
+                // 1. 优先按 BOM 行唯一 ID 精确匹配（筛选、排序、折叠后依然 100% 精准对应）
+                it = (currentBomItems || []).find(item => item.id == target);
+                // 2. 兼容性兜底：若未按 ID 命中且传入为下标数值，按下标寻址
+                if (!it && typeof target === 'number' && target >= 0 && target < (currentBomItems || []).length) {
+                    it = currentBomItems[target];
+                }
+            }
+
+            if (!it) {
+                showToast('未找到对应的物料明细行数据', 'error');
+                return;
+            }
             const isLocked = currentProjectData && (currentProjectData.is_locked == 1);
             const btnSave = document.getElementById('btnSaveBomItem');
             const btnPickImg = document.getElementById('modal-pick-img-btn');
