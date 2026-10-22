@@ -82,13 +82,17 @@ def enforce_authentication():
 # ----------------- Version & Context Processors -----------------
 @app.context_processor
 def inject_app_version():
-    return {'app_version': get_app_version()}
+    return {
+        'app_version': get_app_version(),
+        'is_windows_server': sys.platform == 'win32'
+    }
 
 
 @app.route('/api/version')
 def api_version():
     return jsonify({
         'success': True,
+        'is_windows_server': sys.platform == 'win32',
         **get_app_version()
     })
 

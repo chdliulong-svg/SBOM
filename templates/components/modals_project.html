@@ -358,7 +358,7 @@
                                         <span style="font-weight: 700; font-size: 15px; color: #0f172a;">选项 2：文档嵌入模式 (.xlsx)</span>
                                         <span style="font-size: 11px; font-weight: 600; background: #fef3c7; color: #92400e; padding: 1px 7px; border-radius: 4px;">自包含一体化</span>
                                         <span style="font-size: 11px; font-weight: 600; background: #ede9fe; color: #6d28d9; padding: 1px 7px; border-radius: 4px;">内嵌PDF原件</span>
-                                        <span style="font-size: 11px; font-weight: 600; background: #fee2e2; color: #991b1b; padding: 1px 7px; border-radius: 4px;">仅限 Windows</span>
+                                        <span id="exportOption2WinTag" style="font-size: 11px; font-weight: 600; background: #fee2e2; color: #991b1b; padding: 1px 7px; border-radius: 4px;">仅限 Windows</span>
                                         <span style="font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 4px;">[按键 2]</span>
                                     </div>
                                     <div style="font-size: 12px; color: #475569; margin-top: 6px; line-height: 1.5;">
@@ -366,7 +366,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); confirmExportOption(2);" style="white-space: nowrap; align-self: center; padding: 6px 14px; font-weight: 600; border-color: #7c3aed; color: #7c3aed;">
+                            <button id="btnExportOption2" class="btn btn-outline btn-sm" onclick="event.stopPropagation(); confirmExportOption(2);" style="white-space: nowrap; align-self: center; padding: 6px 14px; font-weight: 600; border-color: #7c3aed; color: #7c3aed;">
                                 导出嵌入版
                             </button>
                         </div>

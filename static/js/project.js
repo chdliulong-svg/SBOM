@@ -950,34 +950,45 @@
                 let projTitle = currentProjectData ? formatProjectDisplayName(currentProjectData) : '当前工程项目';
                 nameEl.textContent = projTitle || `项目 #${currentProjectId}`;
             }
+            // Linux 服务端环境自适应检测
+            if (window.IS_WINDOWS_SERVER === false) {
+                const card2 = document.getElementById('exportCardOption2');
+                const winTag = document.getElementById('exportOption2WinTag');
+                const btn2 = document.getElementById('btnExportOption2');
+                if (winTag) {
+                    winTag.textContent = 'Linux 服务端不支持';
+                    winTag.style.background = '#fee2e2';
+                    winTag.style.color = '#b91c1c';
+                    winTag.title = '服务端运行在 Linux 环境下，无 Windows COM 接口，无法执行 OLE 嵌入';
+                }
+                if (btn2) {
+                    btn2.disabled = true;
+                    btn2.title = '服务端运行在 Linux 环境下，请使用选项 1（超链接打包模式）';
+                    btn2.style.opacity = '0.5';
+                    btn2.style.cursor = 'not-allowed';
+                }
+                if (card2) {
+                    card2.title = '服务端运行在 Linux 环境下，不支持 OLE 嵌入，请选择推荐的【选项 1：超链接打包模式】';
+                }
+            }
+
             selectExportOption(1);
             openModal('exportOptionModal');
         }
 
         function selectExportOption(opt) {
-            currentSelectedExportOption = opt;
             const card1 = document.getElementById('exportCardOption1');
             const card2 = document.getElementById('exportCardOption2');
             const radio1 = document.getElementById('exportRadioOption1');
             const radio2 = document.getElementById('exportRadioOption2');
             const textLabel = document.getElementById('selectedExportOptionText');
 
-            if (opt === 1 || opt === 'link') {
-                currentSelectedExportOption = 1;
-                if (radio1) radio1.checked = true;
-                if (card1) {
-                    card1.style.border = '2px solid #2563eb';
-                    card1.style.background = '#eff6ff';
+            if (opt === 2 || opt === 'embed') {
+                if (window.IS_WINDOWS_SERVER === false) {
+                    showToast('当前服务端运行在 Linux 环境下，缺少 Windows Excel COM 引擎，无法生成 OLE 嵌入式 Excel。已为您推荐【选项 1：超链接打包模式】！', 'warning');
+                    selectExportOption(1);
+                    return;
                 }
-                if (card2) {
-                    card2.style.border = '1px solid #cbd5e1';
-                    card2.style.background = '#ffffff';
-                }
-                if (textLabel) {
-                    textLabel.textContent = '选项 1 (超链接模式)';
-                    textLabel.style.color = '#1e3a8a';
-                }
-            } else {
                 currentSelectedExportOption = 2;
                 if (radio2) radio2.checked = true;
                 if (card1) {
@@ -991,6 +1002,21 @@
                 if (textLabel) {
                     textLabel.textContent = '选项 2 (文档嵌入模式)';
                     textLabel.style.color = '#6d28d9';
+                }
+            } else {
+                currentSelectedExportOption = 1;
+                if (radio1) radio1.checked = true;
+                if (card1) {
+                    card1.style.border = '2px solid #2563eb';
+                    card1.style.background = '#eff6ff';
+                }
+                if (card2) {
+                    card2.style.border = '1px solid #cbd5e1';
+                    card2.style.background = '#ffffff';
+                }
+                if (textLabel) {
+                    textLabel.textContent = '选项 1 (超链接模式)';
+                    textLabel.style.color = '#1e3a8a';
                 }
             }
         }
@@ -1009,6 +1035,11 @@
                 showToast('正在导出并打包 Excel 及关联技术手册 (.zip)...', 'info');
                 window.location.href = `/api/export/${currentProjectId}?mode=link`;
             } else {
+                if (window.IS_WINDOWS_SERVER === false) {
+                    showToast('当前服务端为 Linux 环境，不支持 Windows COM 嵌入，已自动切换为【超链接打包模式】！', 'warning');
+                    window.location.href = `/api/export/${currentProjectId}?mode=link`;
+                    return;
+                }
                 showToast('正在通过 Excel 引擎将 PDF 技术手册原件嵌入表格，请稍候...', 'info');
                 window.location.href = `/api/export/${currentProjectId}?mode=embed`;
             }

@@ -5,6 +5,7 @@ BOM synchronization to Master, Project bundle save/open, Excel & Offline ZIP Exp
 """
 
 import os
+import sys
 import time
 import sqlite3
 import io
@@ -1370,6 +1371,14 @@ def export_excel(project_id):
     is_embed = (mode in ['embed', 'embedded', '2'])
 
     unique_tag = f"{int(time.time())}_{uuid.uuid4().hex[:6]}"
+
+    if is_embed:
+        if sys.platform != 'win32':
+            if request.args.get('fallback', '1') in ['1', 'true']:
+                logger.info(f"Linux 环境下不支持 Windows OLE 嵌入，自动平滑降级为超链接打包模式 (Project {project_id})")
+                is_embed = False
+            else:
+                return jsonify({'error': '导出失败: PDF 手册 OLE 嵌入功能依赖 Windows COM 与 Microsoft Excel。在 Linux/Ubuntu 生产环境下，请使用系统生成的【离线运维包 (.zip)】或标准 Excel 导出。'}), 400
 
     if is_embed:
         base_name = f"{safe_name}_文档嵌入版"
