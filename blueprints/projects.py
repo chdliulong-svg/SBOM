@@ -47,7 +47,16 @@ def get_projects():
         SELECT 
             p.*,
             COUNT(DISTINCT s.id) AS subsystem_count,
-            COUNT(b.id) AS item_count
+            COUNT(b.id) AS item_count,
+            (
+                SELECT m.spec_model
+                FROM bom_items b2
+                JOIN subsystems s2 ON b2.subsystem_id = s2.id
+                LEFT JOIN materials m ON b2.material_no = m.material_no
+                WHERE s2.project_id = p.id AND b2.level_num = 1 AND m.spec_model IS NOT NULL AND m.spec_model != ''
+                ORDER BY b2.row_num ASC
+                LIMIT 1
+            ) AS root_model
         FROM projects p
         LEFT JOIN subsystems s ON s.project_id = p.id
         LEFT JOIN bom_items b ON b.subsystem_id = s.id
@@ -63,7 +72,21 @@ def get_projects():
 def get_project_detail(project_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM projects WHERE id = ?', (project_id,))
+    cursor.execute('''
+        SELECT 
+            p.*,
+            (
+                SELECT m.spec_model
+                FROM bom_items b2
+                JOIN subsystems s2 ON b2.subsystem_id = s2.id
+                LEFT JOIN materials m ON b2.material_no = m.material_no
+                WHERE s2.project_id = p.id AND b2.level_num = 1 AND m.spec_model IS NOT NULL AND m.spec_model != ''
+                ORDER BY b2.row_num ASC
+                LIMIT 1
+            ) AS root_model
+        FROM projects p 
+        WHERE p.id = ?
+    ''', (project_id,))
     project = cursor.fetchone()
     if not project:
         conn.close()
@@ -299,6 +322,9 @@ def save_project():
             'name': name,
             'system_name': system_name,
             'code': code,
+            'platform': (data.get('platform') or '').strip(),
+            'supplier': supplier,
+            'model': model,
             'created_at': created_at_val,
             'updated_at': updated_at_val
         })

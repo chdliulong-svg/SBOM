@@ -163,28 +163,83 @@
                 .replace(/'/g, '&#39;');
         }
 
-        // 统一格式化工程项目的展示名称: 项目名称[平台名称][机型代号]
-        function formatProjectDisplayName(p) {
-            if (!p) return '';
-            const projName = (p.system_name && p.system_name.trim()) 
-                ? p.system_name.trim() 
-                : ((p.name && p.name.trim() && p.name !== '风力发电机组') ? p.name.trim() : (p.code || '未命名项目'));
-            
-            let platStr = (p.platform && p.platform.trim()) ? p.platform.trim() : '';
-            if (platStr) {
-                platStr = (platStr.startsWith('[') && platStr.endsWith(']')) ? platStr : `[${platStr}]`;
+        // 纯净部套名称提取辅助工具
+        function cleanSubsystemPartName(systemName, supplier = '', code = '', platform = '', model = '') {
+            let s = (systemName || '').trim().replace(/^[_\s-]+|[_\s-]+$/g, '');
+            if (!s) return '变桨轴承润滑系统';
+
+            // 兼容处理历史数据中包含 'SBOM_供应商' 的情况
+            const m = s.match(/SBOM[_\s]*(.*?)$/i);
+            if (m) {
+                const tail = (m[1] || '').trim().replace(/^[_\s-]+|[_\s-]+$/g, '');
+                s = s.substring(0, m.index).trim().replace(/[_\s-]+$/, '');
+                if (tail) {
+                    const parts = tail.split('_').map(p => p.trim()).filter(Boolean);
+                    if (parts.length > 0) {
+                        const extraParts = (supplier === parts[parts.length - 1]) ? parts.slice(0, -1) : parts;
+                        if (extraParts.length > 0) {
+                            s = `${s}_${extraParts.join('_')}`;
+                        }
+                    }
+                }
             }
-            
-            let codeStr = (p.code && p.code.trim()) ? p.code.trim() : '';
-            if (codeStr) {
-                codeStr = (codeStr.startsWith('[') && codeStr.endsWith(']')) ? codeStr : `[${codeStr}]`;
+
+            const items = [code, platform, supplier, model];
+            for (const item of items) {
+                const str = (item || '').trim();
+                if (str) {
+                    if (s.startsWith(str)) {
+                        s = s.substring(str.length).replace(/^[_\s-]+/, '');
+                    }
+                    if (s.endsWith(str)) {
+                        s = s.substring(0, s.length - str.length).replace(/[_\s-]+$/, '');
+                    }
+                }
             }
-            
-            return `${projName}${platStr}${codeStr}`;
+
+            if (supplier) {
+                const suppEsc = supplier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                s = s.replace(new RegExp(`_${suppEsc}$`, 'i'), '').replace(new RegExp(`^${suppEsc}_`, 'i'), '').replace(/^[_\s-]+|[_\s-]+$/g, '');
+            }
+
+            if (s.toUpperCase().endsWith('SBOM')) {
+                s = s.substring(0, s.length - 4).replace(/[_\s-]+$/, '');
+            }
+
+            return s.replace(/^[_\s-]+|[_\s-]+$/g, '') || '变桨轴承润滑系统';
         }
 
-        // ==========================================
-        // Pipe Separator Multiline Formatting Helpers
+        // 统一格式化工程项目的展示名称: (平台/机型+供应商名称+部套名称+SBOM+型号)
+        function formatProjectDisplayName(p) {
+            if (!p) return '';
+
+            const code = (p.code || '').trim();
+            const platform = (p.platform || '').trim();
+            const prefixPlatCode = code || platform || '';
+
+            let supplier = (p.supplier || '').trim();
+            const model = (p.model || p.root_model || '').trim();
+
+            let rawSys = (p.system_name && p.system_name.trim()) 
+                ? p.system_name.trim() 
+                : ((p.name && p.name.trim() && p.name !== '风力发电机组') ? p.name.trim() : '');
+
+            // 若 supplier 字段为空，尝试从历史名称如 变桨系统SBOM_电力电子 中解析出供应商
+            if (!supplier && rawSys) {
+                const m = rawSys.match(/SBOM[_\s]*(.*?)$/i);
+                if (m && m[1]) {
+                    const parts = m[1].trim().split('_').map(x => x.trim()).filter(Boolean);
+                    if (parts.length > 0) {
+                        supplier = parts[parts.length - 1];
+                    }
+                }
+            }
+
+            const partName = cleanSubsystemPartName(rawSys, supplier, code, platform, model);
+            const modelSuffix = model ? `_${model}` : '';
+
+            return `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}`;
+        }
         // ==========================================
         function formatPipeMultilineHtml(val, isCentered = false) {
             if (val === null || val === undefined) return '';

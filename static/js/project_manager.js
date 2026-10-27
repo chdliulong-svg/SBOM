@@ -268,7 +268,7 @@ function renderProjectManagerTable(projects) {
         const code = p.code || '未命名机型';
         const name = p.name || '风力发电机组';
         const sysName = p.system_name || '';
-        const fileName = (sysName && sysName.trim()) ? sysName.trim() : (name || '变桨系统Service BOM');
+        const fileName = (typeof formatProjectDisplayName === 'function' ? formatProjectDisplayName(p) : '') || ((sysName && sysName.trim()) ? sysName.trim() : (name || '变桨系统Service BOM'));
         const platform = p.platform || '通用平台';
         const docNo = p.doc_no || '-';
         const ecnNo = p.ecn_no || '-';

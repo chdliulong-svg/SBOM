@@ -58,50 +58,46 @@ def clean_subsystem_part_name(system_name, supplier="", code="", platform="", mo
     从可能带有冗余前缀后缀的文本中提取纯净的部套/零部件名称。
     例如 '变桨轴承润滑系统'、'变桨轴承润滑系统SBOM'、'变桨系统SBOM_电力电子' -> '变桨轴承润滑系统' / '变桨系统'
     """
-    s = (system_name or '').strip()
+    s = (system_name or '').strip().strip('_ -')
     if not s:
         return '变桨轴承润滑系统'
-    s = s.strip('_ -')
+
+    # 兼容处理历史数据中包含 'SBOM_供应商' 的情况
+    m = re.search(r'SBOM[_\s]*(.*?)$', s, flags=re.IGNORECASE)
+    if m:
+        tail = m.group(1).strip('_ -')
+        s = s[:m.start()].strip('_ -')
+        if tail:
+            parts = [p.strip() for p in tail.split('_') if p.strip()]
+            if parts:
+                if not supplier:
+                    supplier = parts[-1]
+                extra_parts = parts[:-1] if (supplier == parts[-1]) else parts
+                if extra_parts:
+                    s = f"{s}_{'_'.join(extra_parts)}"
+
     for item in [code, platform, supplier, model]:
         item = (item or '').strip()
-        if item and s.startswith(item):
-            s = s[len(item):].strip('_ -')
-        if item and s.endswith(item):
-            s = s[:-len(item)].strip('_ -')
+        if item:
+            if s.startswith(item):
+                s = s[len(item):].strip('_ -')
+            if s.endswith(item):
+                s = s[:-len(item)].strip('_ -')
+
     if supplier:
         s = re.sub(rf'^(?:{re.escape(supplier)}[_]?|[_]?{re.escape(supplier)}$)', '', s, flags=re.IGNORECASE).strip('_ -')
         s = re.sub(rf'_{re.escape(supplier)}$', '', s, flags=re.IGNORECASE).strip('_ -')
         s = re.sub(rf'^{re.escape(supplier)}_', '', s, flags=re.IGNORECASE).strip('_ -')
+
     if s.upper().endswith('SBOM'):
         s = s[:-4].strip('_ -')
+
     return s or '变桨轴承润滑系统'
 
 
-def build_cover_file_title(project, level1_model=None):
+def extract_project_components(project, sub=None, level1_model=None):
     """
-    生成封面文件名称（Cell A4），格式为：
-    供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）
-    例如：变桨轴承润滑系统SBOM_40116237600 或 盘古变桨轴承润滑系统SBOM_40116237600
-    签字页 A3 与 更改页 A3 均引用此名称。
-    """
-    if project and not isinstance(project, dict):
-        project = dict(project)
-    project = project or {}
-
-    supplier = (project.get('supplier') or '').strip()
-    code = (project.get('code') or '').strip()
-    platform = (project.get('platform') or '').strip()
-    model = (project.get('model') or level1_model or '').strip()
-    part_name = clean_subsystem_part_name(project.get('system_name'), supplier=supplier, code=code, platform=platform, model=model)
-    model_suffix = f"_{model}" if model else ""
-    return f"{supplier}{part_name}SBOM{model_suffix}"
-
-
-def build_bom_file_title(project, sub=None, level1_model=None):
-    """
-    生成 BOM 清单页的文件名（Cell I2），格式为：
-    平台/机型 + 供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）
-    例如：EW6.25-220盘古变桨轴承润滑系统SBOM_40116237600
+    统一解析项目的 (平台/机型, 供应商, 部套名称, 型号) 4 要素
     """
     if project and not isinstance(project, dict):
         project = dict(project)
@@ -119,10 +115,43 @@ def build_bom_file_title(project, sub=None, level1_model=None):
         sname = sub['name'].strip()
         if sname.upper().endswith('SBOM') and len(sname) > 4:
             sub_supplier = sname[:-4].strip()
-            
+
     supplier = sub_supplier or (project.get('supplier') or '').strip()
-    model = (project.get('model') or level1_model or '').strip()
-    part_name = clean_subsystem_part_name(project.get('system_name'), supplier=supplier, code=code, platform=platform, model=model)
+    raw_sys = (project.get('system_name') or '').strip() or ((project.get('name') or '').strip() if project.get('name') != '风力发电机组' else '') or '变桨轴承润滑系统'
+
+    if not supplier:
+        m = re.search(r'SBOM[_\s]*(.*?)$', raw_sys, flags=re.IGNORECASE)
+        if m:
+            tail = m.group(1).strip('_ -')
+            if tail:
+                parts = [p.strip() for p in tail.split('_') if p.strip()]
+                if parts:
+                    supplier = parts[-1]
+
+    model = (project.get('model') or project.get('root_model') or level1_model or '').strip()
+    part_name = clean_subsystem_part_name(raw_sys, supplier=supplier, code=code, platform=platform, model=model)
+    return prefix_plat_code, supplier, part_name, model
+
+
+def build_cover_file_title(project, level1_model=None):
+    """
+    生成封面文件名称（Cell A4），格式为：
+    供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）
+    例如：变桨轴承润滑系统SBOM_40116237600 或 盘古变桨轴承润滑系统SBOM_40116237600
+    签字页 A3 与 更改页 A3 均引用此名称。
+    """
+    _, supplier, part_name, model = extract_project_components(project, level1_model=level1_model)
+    model_suffix = f"_{model}" if model else ""
+    return f"{supplier}{part_name}SBOM{model_suffix}"
+
+
+def build_bom_file_title(project, sub=None, level1_model=None):
+    """
+    生成 BOM 清单页的文件名（Cell I2），格式为：
+    平台/机型 + 供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）
+    例如：EW6.25-220盘古变桨轴承润滑系统SBOM_40116237600
+    """
+    prefix_plat_code, supplier, part_name, model = extract_project_components(project, sub=sub, level1_model=level1_model)
     model_suffix = f"_{model}" if model else ""
     return f"{prefix_plat_code}{supplier}{part_name}SBOM{model_suffix}"
 

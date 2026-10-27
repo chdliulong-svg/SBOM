@@ -627,17 +627,11 @@
             let system = sysEl ? sysEl.value.trim() : '';
             let model = modEl ? modEl.value.trim() : '';
 
-            if (!model && typeof currentProjectData !== 'undefined' && currentProjectData && currentProjectData.model) {
-                model = currentProjectData.model;
+            if (!model && typeof currentProjectData !== 'undefined' && currentProjectData) {
+                model = currentProjectData.model || currentProjectData.root_model || '';
             }
 
-            let partName = system || '变桨轴承润滑系统';
-            if (supplier && partName.startsWith(supplier)) partName = partName.substring(supplier.length).trim();
-            if (code && partName.startsWith(code)) partName = partName.substring(code.length).trim();
-            if (platform && partName.startsWith(platform)) partName = partName.substring(platform.length).trim();
-            if (partName.toUpperCase().endsWith('SBOM')) partName = partName.substring(0, partName.length - 4).trim();
-            partName = partName.replace(/^[_\s-]+|[_\s-]+$/g, '') || '变桨轴承润滑系统';
-
+            const partName = cleanSubsystemPartName(system, supplier, code, platform, model);
             const modelSuffix = model ? `_${model}` : '';
             const coverTitle = `${supplier}${partName}SBOM${modelSuffix}`;
 
@@ -1154,13 +1148,7 @@
             const system = sysEl ? sysEl.value.trim() : '变桨轴承润滑系统';
             const model = modEl ? modEl.value.trim() : '';
 
-            let partName = system || '变桨轴承润滑系统';
-            if (supplier && partName.startsWith(supplier)) partName = partName.substring(supplier.length).trim();
-            if (code && partName.startsWith(code)) partName = partName.substring(code.length).trim();
-            if (platform && partName.startsWith(platform)) partName = partName.substring(platform.length).trim();
-            if (partName.toUpperCase().endsWith('SBOM')) partName = partName.substring(0, partName.length - 4).trim();
-            partName = partName.replace(/^[_\s-]+|[_\s-]+$/g, '') || '变桨轴承润滑系统';
-
+            const partName = cleanSubsystemPartName(system, supplier, code, platform, model);
             const modelSuffix = model ? `_${model}` : '';
             const coverTitle = `${supplier}${partName}SBOM${modelSuffix}`;
             const prefixPlatCode = code || platform || 'EW-DEFAULT';
