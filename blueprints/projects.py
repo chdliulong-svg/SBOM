@@ -16,7 +16,7 @@ from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from services.database import get_db, find_template_path
 from services.config import config
-from services.exporter import export_project_sbom
+from services.exporter import export_project_sbom, build_bom_file_title, build_cover_file_title
 from services.offline_packager import generate_offline_package
 from services.backup_manager import create_backup_snapshot
 from services.logging_setup import get_logger
@@ -240,6 +240,8 @@ def save_project():
     code = (data.get('code') or '').strip()
     name = (data.get('name') or '').strip()
     system_name = (data.get('system_name') or '').strip()
+    supplier = (data.get('supplier') or '').strip()
+    model = (data.get('model') or '').strip()
 
     if not code and not system_name and not name:
         return jsonify({'success': False, 'error': '项目名称不能为空'}), 400
@@ -263,19 +265,19 @@ def save_project():
             platform = (data.get('platform') or '').strip()
             cursor.execute('''
             UPDATE projects SET
-                code=?, name=?, system_name=?, platform=?, doc_no=?, ecn_no=?, form_no=?, company=?,
+                code=?, name=?, system_name=?, platform=?, supplier=?, model=?, doc_no=?, ecn_no=?, form_no=?, company=?,
                 updated_at=datetime('now', 'localtime')
             WHERE id=?
-            ''', (code, name, system_name, platform,
+            ''', (code, name, system_name, platform, supplier, model,
                   data.get('doc_no', ''), data.get('ecn_no', ''),
                   data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                   project_id))
         else:
             client_tag = get_client_identity()
             cursor.execute('''
-            INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
-            ''', (code, name, system_name, (data.get('platform') or '').strip(),
+            INSERT INTO projects (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
+            ''', (code, name, system_name, (data.get('platform') or '').strip(), supplier, model,
                   data.get('doc_no', ''), data.get('ecn_no', ''),
                   data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                   client_tag))
@@ -400,10 +402,12 @@ def copy_project():
             user_code = orig_code
 
         orig_platform = orig['platform'] if 'platform' in orig.keys() else ''
+        orig_supplier = orig['supplier'] if 'supplier' in orig.keys() else ''
+        orig_model = orig['model'] if 'model' in orig.keys() else ''
         cursor.execute('''
-            INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (user_code, user_name, user_system_name, orig_platform or '',
+            INSERT INTO projects (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (user_code, user_name, user_system_name, orig_platform or '', orig_supplier or '', orig_model or '',
               orig['doc_no'] or '', orig['ecn_no'] or '',
               orig['form_no'] or config.form_no_default, orig['company'] or config.company_default))
         new_project_id = cursor.lastrowid
@@ -1345,16 +1349,21 @@ def copy_subsystem():
 def export_excel(project_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT code, name, system_name FROM projects WHERE id = ?', (project_id,))
+    cursor.execute('SELECT * FROM projects WHERE id = ?', (project_id,))
     proj = cursor.fetchone()
     if not proj:
         return jsonify({'error': 'Project not found'}), 404
 
+    proj_dict = dict(proj)
     system_name = (proj['system_name'] or '').strip()
     name = (proj['name'] or '').strip()
     code = (proj['code'] or '').strip()
 
-    if system_name and system_name != '风力发电机组':
+    # 使用标准文件命名规范：平台/机型+供应商名称+部套名称+SBOM+型号
+    bom_title = build_bom_file_title(proj_dict)
+    if bom_title:
+        raw_name = bom_title
+    elif system_name and system_name != '风力发电机组':
         raw_name = system_name
     elif name and name != '风力发电机组':
         raw_name = name

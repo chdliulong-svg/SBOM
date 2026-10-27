@@ -99,6 +99,8 @@ def export_project_data(project_id):
             'name': project_info.get('name') or '',
             'system_name': project_info.get('system_name') or '',
             'platform': project_info.get('platform') or '',
+            'supplier': project_info.get('supplier') or '',
+            'model': project_info.get('model') or '',
             'doc_no': project_info.get('doc_no') or '',
             'ecn_no': project_info.get('ecn_no') or '',
             'form_no': project_info.get('form_no') or config.form_no_default,
@@ -300,6 +302,8 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
     code = (proj.get('code') or name).strip()
     system_name = (proj.get('system_name') or name).strip()
     platform = (proj.get('platform') or '').strip()
+    supplier = (proj.get('supplier') or '').strip()
+    model = (proj.get('model') or '').strip()
     doc_no = proj.get('doc_no', '')
     ecn_no = proj.get('ecn_no', '')
     form_no = proj.get('form_no') or config.form_no_default
@@ -373,9 +377,9 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
         project_id = int(target_project_id)
         # Update project info
         cursor.execute('''
-        UPDATE projects SET code = ?, name = ?, system_name = ?, platform = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
+        UPDATE projects SET code = ?, name = ?, system_name = ?, platform = ?, supplier = ?, model = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
         WHERE id = ?
-        ''', (code, name, system_name, platform, doc_no, ecn_no, form_no, company, project_id))
+        ''', (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, project_id))
 
         # Clear existing project details to be replaced
         cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
@@ -393,9 +397,9 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
             system_name = f"{system_name} (已导入)"
 
         cursor.execute('''
-        INSERT INTO projects (code, name, system_name, platform, doc_no, ecn_no, form_no, company, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (code, name, system_name, platform, doc_no, ecn_no, form_no, company))
+        INSERT INTO projects (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 
     # 3. Insert signatures

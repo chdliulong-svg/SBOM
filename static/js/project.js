@@ -127,6 +127,8 @@
                     // Fill cover form
                     document.getElementById('cov-code').value = data.code || '';
                     if (document.getElementById('cov-platform')) document.getElementById('cov-platform').value = data.platform || '';
+                    if (document.getElementById('cov-supplier')) document.getElementById('cov-supplier').value = data.supplier || '';
+                    if (document.getElementById('cov-model')) document.getElementById('cov-model').value = data.model || '';
                     document.getElementById('cov-name').value = data.name || '风力发电机组';
                     document.getElementById('cov-system').value = data.system_name || '';
                     document.getElementById('cov-doc').value = data.doc_no || '';
@@ -139,6 +141,7 @@
                     if (document.getElementById('cov-updated-at')) {
                         document.getElementById('cov-updated-at').value = data.updated_at || data.created_at || '未记录';
                     }
+                    updateCoverTitlePreview();
 
                     // Apply project lock state to UI
                     applyProjectLockUI(data.is_locked == 1);
@@ -271,7 +274,7 @@
             }
 
             // Cover Form inputs and save button
-            ['cov-code', 'cov-platform', 'cov-name', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
+            ['cov-code', 'cov-platform', 'cov-supplier', 'cov-system', 'cov-model', 'cov-name', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.disabled = isLocked;
             });
@@ -519,6 +522,8 @@
                 // 1. 提取当前封面表单最新值（若页面未显示该元素则回退为缓存数据）
                 const codeEl = document.getElementById('cov-code');
                 const platformEl = document.getElementById('cov-platform');
+                const supplierEl = document.getElementById('cov-supplier');
+                const modelEl = document.getElementById('cov-model');
                 const nameEl = document.getElementById('cov-name');
                 const systemEl = document.getElementById('cov-system');
                 const docEl = document.getElementById('cov-doc');
@@ -530,6 +535,8 @@
                     id: currentProjectId,
                     code: (codeEl && codeEl.value.trim()) ? codeEl.value.trim() : (currentProjectData.code || ''),
                     platform: (platformEl && platformEl.value.trim()) ? platformEl.value.trim() : (currentProjectData.platform || ''),
+                    supplier: (supplierEl && supplierEl.value.trim()) ? supplierEl.value.trim() : (currentProjectData.supplier || ''),
+                    model: (modelEl && modelEl.value.trim()) ? modelEl.value.trim() : (currentProjectData.model || ''),
                     name: (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : (currentProjectData.name || '风力发电机组'),
                     system_name: (systemEl && systemEl.value.trim()) ? systemEl.value.trim() : (currentProjectData.system_name || ''),
                     doc_no: (codeEl && docEl) ? docEl.value.trim() : (currentProjectData.doc_no || ''),
@@ -587,6 +594,7 @@
                 const covUp = document.getElementById('cov-updated-at');
                 if (covUp && currentProjectData) covUp.value = currentProjectData.updated_at || '';
                 refreshProjectSelectOnly(currentProjectId);
+                updateCoverTitlePreview();
 
                 // 4. 成功提示
                 showToast('项目所有修改已成功保存至数据库！', 'success');
@@ -603,6 +611,43 @@
         // --- Save Project Cover (封面内保存按钮复用) ---
         async function saveProjectCover() {
             await saveCurrentProjectToDatabase();
+        }
+
+        // --- 实时更新封面与 BOM 页名称预览 ---
+        function updateCoverTitlePreview() {
+            const platEl = document.getElementById('cov-platform');
+            const codeEl = document.getElementById('cov-code');
+            const suppEl = document.getElementById('cov-supplier');
+            const sysEl = document.getElementById('cov-system');
+            const modEl = document.getElementById('cov-model');
+
+            const platform = platEl ? platEl.value.trim() : '';
+            const code = codeEl ? codeEl.value.trim() : '';
+            const supplier = suppEl ? suppEl.value.trim() : '';
+            let system = sysEl ? sysEl.value.trim() : '';
+            let model = modEl ? modEl.value.trim() : '';
+
+            if (!model && typeof currentProjectData !== 'undefined' && currentProjectData && currentProjectData.model) {
+                model = currentProjectData.model;
+            }
+
+            let partName = system || '变桨轴承润滑系统';
+            if (supplier && partName.startsWith(supplier)) partName = partName.substring(supplier.length).trim();
+            if (code && partName.startsWith(code)) partName = partName.substring(code.length).trim();
+            if (platform && partName.startsWith(platform)) partName = partName.substring(platform.length).trim();
+            if (partName.toUpperCase().endsWith('SBOM')) partName = partName.substring(0, partName.length - 4).trim();
+            partName = partName.replace(/^[_\s-]+|[_\s-]+$/g, '') || '变桨轴承润滑系统';
+
+            const modelSuffix = model ? `_${model}` : '';
+            const coverTitle = `${supplier}${partName}SBOM${modelSuffix}`;
+
+            const prefixPlatCode = code || platform || 'EW-DEFAULT';
+            const bomTitle = `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}`;
+
+            const prevCov = document.getElementById('cov-preview-cover');
+            const prevBom = document.getElementById('cov-preview-bom');
+            if (prevCov) prevCov.textContent = coverTitle;
+            if (prevBom) prevBom.textContent = bomTitle;
         }
 
         // ==========================================
@@ -1075,24 +1120,82 @@
         let isRenameProjSystemManual = false;
 
         function openNewProjectModal() {
-            document.getElementById('new-proj-name').value = '';
+            const legacyEl = document.getElementById('new-proj-name');
+            if (legacyEl) legacyEl.value = '';
+            const codeEl = document.getElementById('new-proj-code');
+            if (codeEl) codeEl.value = '';
+            const platEl = document.getElementById('new-proj-platform');
+            if (platEl) platEl.value = '';
+            const suppEl = document.getElementById('new-proj-supplier');
+            if (suppEl) suppEl.value = '';
+            const modEl = document.getElementById('new-proj-model');
+            if (modEl) modEl.value = '';
+            const sysEl = document.getElementById('new-proj-system');
+            if (sysEl) sysEl.value = '变桨轴承润滑系统';
+
+            updateNewProjectModalPreview();
             openModal('newProjectModal');
             setTimeout(() => {
-                const el = document.getElementById('new-proj-name');
-                if (el) el.focus();
+                if (codeEl) codeEl.focus();
+                else if (legacyEl) legacyEl.focus();
             }, 100);
+        }
+
+        function updateNewProjectModalPreview() {
+            const codeEl = document.getElementById('new-proj-code');
+            const platEl = document.getElementById('new-proj-platform');
+            const suppEl = document.getElementById('new-proj-supplier');
+            const sysEl = document.getElementById('new-proj-system');
+            const modEl = document.getElementById('new-proj-model');
+
+            const code = codeEl ? codeEl.value.trim() : '';
+            const platform = platEl ? platEl.value.trim() : '';
+            const supplier = suppEl ? suppEl.value.trim() : '';
+            const system = sysEl ? sysEl.value.trim() : '变桨轴承润滑系统';
+            const model = modEl ? modEl.value.trim() : '';
+
+            let partName = system || '变桨轴承润滑系统';
+            if (supplier && partName.startsWith(supplier)) partName = partName.substring(supplier.length).trim();
+            if (code && partName.startsWith(code)) partName = partName.substring(code.length).trim();
+            if (platform && partName.startsWith(platform)) partName = partName.substring(platform.length).trim();
+            if (partName.toUpperCase().endsWith('SBOM')) partName = partName.substring(0, partName.length - 4).trim();
+            partName = partName.replace(/^[_\s-]+|[_\s-]+$/g, '') || '变桨轴承润滑系统';
+
+            const modelSuffix = model ? `_${model}` : '';
+            const coverTitle = `${supplier}${partName}SBOM${modelSuffix}`;
+            const prefixPlatCode = code || platform || 'EW-DEFAULT';
+            const bomTitle = `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}`;
+
+            const prevCov = document.getElementById('new-proj-preview-cover');
+            const prevBom = document.getElementById('new-proj-preview-bom');
+            if (prevCov) prevCov.textContent = coverTitle;
+            if (prevBom) prevBom.textContent = bomTitle;
         }
 
         let isSubmittingNewProject = false;
         async function submitNewProject() {
             if (isSubmittingNewProject) return;
-            const inputEl = document.getElementById('new-proj-name');
-            const inputVal = inputEl ? inputEl.value.trim() : '';
-            if (!inputVal) {
-                alert('请输入新项目名称！');
-                if (inputEl) inputEl.focus();
+            const codeEl = document.getElementById('new-proj-code');
+            const codeVal = codeEl ? codeEl.value.trim() : '';
+            const legacyEl = document.getElementById('new-proj-name');
+            const legacyVal = legacyEl ? legacyEl.value.trim() : '';
+            const code = codeVal || legacyVal;
+
+            if (!code) {
+                alert('请输入机型代号！');
+                if (codeEl) codeEl.focus();
+                else if (legacyEl) legacyEl.focus();
                 return;
             }
+
+            const platEl = document.getElementById('new-proj-platform');
+            const platform = platEl ? platEl.value.trim() : '';
+            const suppEl = document.getElementById('new-proj-supplier');
+            const supplier = suppEl ? suppEl.value.trim() : '';
+            const sysEl = document.getElementById('new-proj-system');
+            const system_name = (sysEl && sysEl.value.trim()) ? sysEl.value.trim() : '变桨轴承润滑系统';
+            const modEl = document.getElementById('new-proj-model');
+            const model = modEl ? modEl.value.trim() : '';
 
             const btn = document.getElementById('btnSubmitNewProject');
             if (btn) {
@@ -1102,14 +1205,12 @@
             isSubmittingNewProject = true;
 
             const name = '风力发电机组';
-            const system_name = inputVal;
-            const code = inputVal;
 
             try {
                 const res = await safeFetchJson('/api/project/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, system_name, code })
+                    body: JSON.stringify({ name, system_name, code, platform, supplier, model })
                 });
                 if (res && res.success) {
                     closeModal('newProjectModal');

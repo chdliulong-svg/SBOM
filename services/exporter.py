@@ -1,6 +1,7 @@
 import os
 import io
 import sys
+import re
 import zipfile
 from datetime import datetime
 import openpyxl
@@ -46,11 +47,85 @@ def format_pipe_multiline(val):
         return val
     s = str(val)
     if '|' in s or '｜' in s:
-        import re
         parts = [p.strip() for p in re.split(r'[|｜]', s)]
         non_empty = [p for p in parts if p]
         return '\n'.join(non_empty) if non_empty else s
     return val
+
+
+def clean_subsystem_part_name(system_name, supplier="", code="", platform="", model=""):
+    """
+    从可能带有冗余前缀后缀的文本中提取纯净的部套/零部件名称。
+    例如 '变桨轴承润滑系统'、'变桨轴承润滑系统SBOM'、'变桨系统SBOM_电力电子' -> '变桨轴承润滑系统' / '变桨系统'
+    """
+    s = (system_name or '').strip()
+    if not s:
+        return '变桨轴承润滑系统'
+    s = s.strip('_ -')
+    for item in [code, platform, supplier, model]:
+        item = (item or '').strip()
+        if item and s.startswith(item):
+            s = s[len(item):].strip('_ -')
+        if item and s.endswith(item):
+            s = s[:-len(item)].strip('_ -')
+    if supplier:
+        s = re.sub(rf'^(?:{re.escape(supplier)}[_]?|[_]?{re.escape(supplier)}$)', '', s, flags=re.IGNORECASE).strip('_ -')
+        s = re.sub(rf'_{re.escape(supplier)}$', '', s, flags=re.IGNORECASE).strip('_ -')
+        s = re.sub(rf'^{re.escape(supplier)}_', '', s, flags=re.IGNORECASE).strip('_ -')
+    if s.upper().endswith('SBOM'):
+        s = s[:-4].strip('_ -')
+    return s or '变桨轴承润滑系统'
+
+
+def build_cover_file_title(project, level1_model=None):
+    """
+    生成封面文件名称（Cell A4），格式为：
+    供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）
+    例如：变桨轴承润滑系统SBOM_40116237600 或 盘古变桨轴承润滑系统SBOM_40116237600
+    签字页 A3 与 更改页 A3 均引用此名称。
+    """
+    if project and not isinstance(project, dict):
+        project = dict(project)
+    project = project or {}
+
+    supplier = (project.get('supplier') or '').strip()
+    code = (project.get('code') or '').strip()
+    platform = (project.get('platform') or '').strip()
+    model = (project.get('model') or level1_model or '').strip()
+    part_name = clean_subsystem_part_name(project.get('system_name'), supplier=supplier, code=code, platform=platform, model=model)
+    model_suffix = f"_{model}" if model else ""
+    return f"{supplier}{part_name}SBOM{model_suffix}"
+
+
+def build_bom_file_title(project, sub=None, level1_model=None):
+    """
+    生成 BOM 清单页的文件名（Cell I2），格式为：
+    平台/机型 + 供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）
+    例如：EW6.25-220盘古变桨轴承润滑系统SBOM_40116237600
+    """
+    if project and not isinstance(project, dict):
+        project = dict(project)
+    project = project or {}
+    if sub and not isinstance(sub, dict):
+        sub = dict(sub)
+    sub = sub or {}
+
+    code = (project.get('code') or '').strip()
+    platform = (project.get('platform') or '').strip()
+    prefix_plat_code = code if code else platform
+
+    sub_supplier = (sub.get('supplier') if sub else '') or ''
+    if not sub_supplier and sub and sub.get('name'):
+        sname = sub['name'].strip()
+        if sname.upper().endswith('SBOM') and len(sname) > 4:
+            sub_supplier = sname[:-4].strip()
+            
+    supplier = sub_supplier or (project.get('supplier') or '').strip()
+    model = (project.get('model') or level1_model or '').strip()
+    part_name = clean_subsystem_part_name(project.get('system_name'), supplier=supplier, code=code, platform=platform, model=model)
+    model_suffix = f"_{model}" if model else ""
+    return f"{prefix_plat_code}{supplier}{part_name}SBOM{model_suffix}"
+
 
 def export_project_sbom(project_id, output_path, embed_manuals=False, manual_relative_dir='manuals'):
     """
@@ -100,7 +175,24 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
     # E3: 机型（举例：EW6.25-220。注释说明：平台通用的话，机型不用填）
     ws_cover['E3'].value = project['code'] or 'EW6.25-220'
     # A4: 供应商名称+部套名称+SBOM+型号（举例：变桨轴承润滑系统SBOM_40116237600。注释：属于系统集成，没有型号的，型号可以省略）
-    ws_cover['A4'].value = project['system_name'] or f"{project['code']}变桨轴承润滑系统SBOM"
+    # 优先查找整机工程中首个子系统的顶层根节点物料（Level 1）型号
+    project_level1_model = (project['model'] if 'model' in project.keys() and project['model'] else '').strip()
+    if not project_level1_model:
+        cursor.execute('''
+            SELECT m.spec_model
+            FROM bom_items b
+            JOIN subsystems s ON b.subsystem_id = s.id
+            LEFT JOIN materials m ON b.material_no = m.material_no
+            WHERE s.project_id = ? AND b.level_num = 1 AND m.spec_model IS NOT NULL AND m.spec_model != ''
+            ORDER BY s.sort_order, s.id, b.row_num
+            LIMIT 1
+        ''', (project_id,))
+        m_row = cursor.fetchone()
+        if m_row and m_row['spec_model']:
+            project_level1_model = m_row['spec_model'].strip()
+
+    cover_title = build_cover_file_title(project, project_level1_model)
+    ws_cover['A4'].value = cover_title
     # A5: 文件号 (DFD...)
     ws_cover['A5'].value = project['doc_no'] or ''
     # E5: ECN 号
@@ -117,7 +209,8 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
     # ================= 2. 签字页 (Signatures) =================
     if '签字页' in wb.sheetnames:
         ws_sig = wb['签字页']
-        # Note: A3 包含公式 =封面!A4（注释：直接引用封面文件名），J1 包含公式 =封面!A5，保持不变
+        # Note: A3 显式确保引用封面文件名 =封面!A4，J1 包含公式 =封面!A5
+        ws_sig['A3'].value = '=封面!A4'
         cursor.execute('SELECT * FROM signatures WHERE project_id = ?', (project_id,))
         sigs = {s['role']: (s['sign_name'], s['sign_date']) for s in cursor.fetchall()}
 
@@ -142,7 +235,8 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
     # ================= 3. 更改页 (ECN Records) =================
     if '更改页' in wb.sheetnames:
         ws_change = wb['更改页']
-        # Note: A3 包含公式 =封面!A4（注释：直接引用封面文件名），L1 包含公式 =封面!A5，保持不变
+        # Note: A3 显式确保引用封面文件名 =封面!A4，L1 包含公式 =封面!A5
+        ws_change['A3'].value = '=封面!A4'
         # 清空模版占位行 (第8至32行)
         for r in range(8, 33):
             ws_change[f'B{r}'].value = None
@@ -201,20 +295,39 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
         if ws.max_row >= 4:
             ws.delete_rows(4, ws.max_row - 3)
 
+        # Fetch BOM items with material master details
+        cursor.execute('''
+        SELECT b.*, m.name as m_name, m.description as m_desc, m.spec_model as m_model,
+               m.manufacturer as m_mfr, m.unit as m_unit, m.image_path, m.manual_path,
+               m.drawing_no as m_drawing_no
+        FROM bom_items b
+        LEFT JOIN materials m ON b.material_no = m.material_no
+        WHERE b.subsystem_id = ?
+        ORDER BY b.row_num, b.id
+        ''', (sub['id'],))
+        bom_items = cursor.fetchall()
+
         # Update headers in row 1 & row 2
         ws['F1'].value = project['company'] or '上海电气风电集团股份有限公司'
         sub_doc_no = (sub['doc_no'] or '').strip() or (project['doc_no'] or '').strip() or '/'
         ws['I1'].value = sub_doc_no
         ws['M1'].value = project['ecn_no'] or ''
         
+        # 寻找本子系统 Level 1 根节点型号
+        sub_level1_model = (project['model'] if 'model' in project.keys() and project['model'] else '').strip()
+        if not sub_level1_model:
+            for it in bom_items:
+                if it['level_num'] == 1 and it['m_model']:
+                    sub_level1_model = it['m_model'].strip()
+                    break
+            if not sub_level1_model and bom_items and bom_items[0]['m_model']:
+                sub_level1_model = bom_items[0]['m_model'].strip()
+
+        # BOM 页文件名规范：平台/机型+供应商名称+部套名称+SBOM+型号（举例：EW6.25-220盘古变桨轴承润滑系统SBOM_40116237600）
         if sub['system_title']:
             ws['I2'].value = sub['system_title']
-        elif sub_name == 'SBOM':
-            ws['I2'].value = project['system_name'] or f"{project['code']}变桨轴承润滑系统"
-        elif sub_name.endswith('SBOM'):
-            ws['I2'].value = f"{project['code']}{sub_name[:-4]}变桨轴承润滑系统"
         else:
-            ws['I2'].value = f"{project['code']}{sub_name}润滑系统"
+            ws['I2'].value = build_bom_file_title(project, sub, sub_level1_model)
 
         # Standardize Row 3 header fonts: ensure uniform 12pt bold font across all columns
         for c in range(1, 17):
@@ -227,18 +340,6 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
                     bold=True,
                     color=h_cell.font.color if (h_cell.font and h_cell.font.color) else None
                 )
-
-        # Fetch BOM items with material master details
-        cursor.execute('''
-        SELECT b.*, m.name as m_name, m.description as m_desc, m.spec_model as m_model,
-               m.manufacturer as m_mfr, m.unit as m_unit, m.image_path, m.manual_path,
-               m.drawing_no as m_drawing_no
-        FROM bom_items b
-        LEFT JOIN materials m ON b.material_no = m.material_no
-        WHERE b.subsystem_id = ?
-        ORDER BY b.row_num, b.id
-        ''', (sub['id'],))
-        bom_items = cursor.fetchall()
 
         # Check duplicate material numbers within this subsystem
         sub_mat_counts = {}

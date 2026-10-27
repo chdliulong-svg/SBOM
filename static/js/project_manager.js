@@ -184,11 +184,11 @@ function filterAndRenderProjectManagerTable() {
 
     let list = allProjectsData.slice();
 
-    // 1. 关键字搜索 (代号/名称/系统名/平台/文件号/ECN)
+    // 1. 关键字搜索 (代号/名称/系统名/供应商/平台/文件号/ECN)
     if (query) {
         const terms = query.split(/\s+/);
         list = list.filter(p => {
-            const str = `${p.code || ''} ${p.name || ''} ${p.system_name || ''} ${p.platform || ''} ${p.doc_no || ''} ${p.ecn_no || ''} ${p.company || ''}`.toLowerCase();
+            const str = `${p.code || ''} ${p.name || ''} ${p.system_name || ''} ${p.supplier || ''} ${p.platform || ''} ${p.doc_no || ''} ${p.ecn_no || ''} ${p.company || ''}`.toLowerCase();
             return terms.every(t => str.includes(t));
         });
     }
@@ -316,6 +316,7 @@ function renderProjectManagerTable(projects) {
                 <td style="min-width: 220px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <a href="javascript:void(0)" class="pm-file-link" onclick="openProjectFromManager(${p.id})" style="font-weight: 600; color: #2563eb; text-decoration: none; cursor: pointer;" title="点击进入此工程">${escapeHtml(fileName)}</a>
+                        ${p.supplier ? `<span style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; font-size: 11px; padding: 1px 6px; border-radius: 4px; font-weight: 500;" title="供应商: ${escapeHtml(p.supplier)}">${escapeHtml(p.supplier)}</span>` : ''}
                         ${currentTag}
                     </div>
                     ${(name && name !== fileName && name !== '风力发电机组') ? `<div style="font-size: 12px; color: #64748b; margin-top: 2px;">${escapeHtml(name)}</div>` : ''}

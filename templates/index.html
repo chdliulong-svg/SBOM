@@ -199,19 +199,27 @@
                     <h3 style="margin-bottom: 20px; font-size: 16px;">封面与基本信息</h3>
                     <div class="cover-row">
                         <label class="form-label">所属平台 (Platform):</label>
-                        <input id="cov-platform" class="form-input" placeholder="例如: WL (若平台通用则可填写平台，机型可留空)">
+                        <input id="cov-platform" class="form-input" placeholder="例如: WL (若平台通用则可填写平台，机型可留空)" oninput="updateCoverTitlePreview()">
                     </div>
                     <div class="cover-row">
                         <label class="form-label">机型代号 (Code):</label>
-                        <input id="cov-code" class="form-input" placeholder="例如: EW6.25-220">
+                        <input id="cov-code" class="form-input" placeholder="例如: EW6.25-220" oninput="updateCoverTitlePreview()">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">供应商名称 (Supplier):</label>
+                        <input id="cov-supplier" class="form-input" placeholder="例如: 盘古 或 电力电子 (可选，用于自动生成标准文件名)" oninput="updateCoverTitlePreview()">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">部套/系统名称 (System):</label>
+                        <input id="cov-system" class="form-input" placeholder="例如: 变桨轴承润滑系统 或 变桨系统" oninput="updateCoverTitlePreview()">
+                    </div>
+                    <div class="cover-row">
+                        <label class="form-label">部套型号 (Model):</label>
+                        <input id="cov-model" class="form-input" placeholder="例如: 40116237600 (可选，系统集成无型号可留空，或自动从BOM根节点提取)" oninput="updateCoverTitlePreview()">
                     </div>
                     <div class="cover-row">
                         <label class="form-label">产品名称 (Name):</label>
                         <input id="cov-name" class="form-input" value="风力发电机组" placeholder="默认: 风力发电机组">
-                    </div>
-                    <div class="cover-row">
-                        <label class="form-label">文件名称 (Title):</label>
-                        <input id="cov-system" class="form-input">
                     </div>
                     <div class="cover-row">
                         <label class="form-label">文件号:</label>
@@ -234,6 +242,19 @@
                         <label class="form-label">上次修改时间:</label>
                         <input id="cov-updated-at" class="form-input" readonly style="background: #f8fafc; color: #0f172a; font-weight: 600; cursor: default;" placeholder="自动记录">
                     </div>
+
+                    <!-- 文件名规则与实时预览卡片 -->
+                    <div style="margin-top: 20px; padding: 14px 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;">
+                        <div style="font-size: 13px; font-weight: 600; color: #166534; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                            Excel 导出标准命名规范与实时预览
+                        </div>
+                        <div style="font-size: 12px; color: #15803d; line-height: 1.8;">
+                            <div><b>1. 封面 / 签字页 / 更改页文件名：</b><code id="cov-preview-cover" style="background: #dcfce7; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #14532d;">-</code> <span style="color: #65a30d; font-size: 11px;">(供应商名称+部套名称+SBOM+型号)</span></div>
+                            <div style="margin-top: 4px;"><b>2. BOM 清单页文件名 (Cell I2)：</b><code id="cov-preview-bom" style="background: #dcfce7; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #14532d;">-</code> <span style="color: #65a30d; font-size: 11px;">(平台/机型+供应商名称+部套名称+SBOM+型号)</span></div>
+                        </div>
+                    </div>
+
                     <div style="text-align: right; margin-top: 20px;">
                         <button class="btn btn-primary" id="btnSaveCover" type="button" onclick="saveProjectCover()">保存封面信息</button>
                     </div>

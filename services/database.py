@@ -85,7 +85,9 @@ def init_db():
         locked_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
         updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
-        platform TEXT DEFAULT ''
+        platform TEXT DEFAULT '',
+        supplier TEXT DEFAULT '',
+        model TEXT DEFAULT ''
     )
     ''')
 
@@ -97,6 +99,7 @@ def init_db():
         name TEXT NOT NULL,
         system_title TEXT DEFAULT '',
         doc_no TEXT DEFAULT '',
+        supplier TEXT DEFAULT '',
         sort_order INTEGER DEFAULT 0,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
@@ -207,10 +210,20 @@ def init_db():
         cursor.execute("ALTER TABLE projects ADD COLUMN locked_at TIMESTAMP")
     if 'platform' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN platform TEXT DEFAULT ''")
+    if 'supplier' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN supplier TEXT DEFAULT ''")
+    if 'model' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN model TEXT DEFAULT ''")
     if 'created_at' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN created_at TIMESTAMP")
     if 'updated_at' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN updated_at TIMESTAMP")
+
+    # Migration for subsystems: add supplier column if not present
+    cursor.execute("PRAGMA table_info(subsystems)")
+    sub_cols = [r['name'] for r in cursor.fetchall()]
+    if 'supplier' not in sub_cols:
+        cursor.execute("ALTER TABLE subsystems ADD COLUMN supplier TEXT DEFAULT ''")
     
     # 补齐已有历史数据的创建时间与修改时间
     cursor.execute("UPDATE projects SET created_at = datetime('now', 'localtime') WHERE created_at IS NULL OR created_at = ''")
@@ -218,6 +231,7 @@ def init_db():
     conn.commit()
 
     # 自动维护 projects.updated_at 的数据库级触发器
+    cursor.execute('DROP TRIGGER IF EXISTS trg_projects_update_touch')
     cursor.execute('''
     CREATE TRIGGER IF NOT EXISTS trg_projects_update_touch
     AFTER UPDATE ON projects
@@ -227,6 +241,8 @@ def init_db():
         OLD.name IS NOT NEW.name OR
         OLD.system_name IS NOT NEW.system_name OR
         OLD.platform IS NOT NEW.platform OR
+        OLD.supplier IS NOT NEW.supplier OR
+        OLD.model IS NOT NEW.model OR
         OLD.doc_no IS NOT NEW.doc_no OR
         OLD.ecn_no IS NOT NEW.ecn_no OR
         OLD.form_no IS NOT NEW.form_no OR
