@@ -15,19 +15,16 @@
     <header class="header">
         <div class="logo-area">
             <div class="logo-icon">S</div>
-            <div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <div class="app-title">风电机组 Service BOM</div>
-                    <span class="app-version-badge" onclick="showVersionDetails()" title="Git 提交代码: {{ app_version.commit }} ({{ app_version.date }})&#10;说明: {{ app_version.message }}&#10;点击查看版本详情">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="4"></circle>
-                            <line x1="1.05" y1="12" x2="7" y2="12"></line>
-                            <line x1="17.01" y1="12" x2="22.96" y2="12"></line>
-                        </svg>
-                        <span>{{ app_version.commit }}</span>
-                    </span>
-                </div>
-                <div class="app-subtitle">统一物料主库 · 变桨与变流器工程 · 装配结构管理</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="app-title">风电机组 Service BOM</div>
+                <span class="app-version-badge" onclick="showVersionDetails()" title="Git 提交代码: {{ app_version.commit }} ({{ app_version.date }})&#10;说明: {{ app_version.message }}&#10;点击查看版本详情">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="4"></circle>
+                        <line x1="1.05" y1="12" x2="7" y2="12"></line>
+                        <line x1="17.01" y1="12" x2="22.96" y2="12"></line>
+                    </svg>
+                    <span>{{ app_version.commit }}</span>
+                </span>
             </div>
         </div>
         <div class="header-actions">
@@ -607,20 +604,20 @@
     <script src="/static/js/three_step_viewer.js?v=20261011_3"></script>
 
     <!-- Modular Application Scripts -->
-    <script src="/static/js/core.js?v=20261112_tablock"></script>
-    <script src="/static/js/table_utils.js?v=20261112_tablock"></script>
-    <script src="/static/js/project.js?v=20261112_tablock"></script>
+    <script src="/static/js/core.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/table_utils.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/project.js?v=20261112_cleanhead"></script>
     <script>
         window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};
         window.IS_WINDOWS_SERVER = {{ 'true' if is_windows_server else 'false' }};
     </script>
-    <script src="/static/js/project_manager.js?v=20261112_tablock"></script>
-    <script src="/static/js/bom.js?v=20261112_tablock"></script>
-    <script src="/static/js/material.js?v=20261112_tablock"></script>
-    <script src="/static/js/compare.js?v=20261112_tablock"></script>
-    <script src="/static/js/pdf_viewer.js?v=20261112_tablock"></script>
-    <script src="/static/js/backup.js?v=20261112_tablock"></script>
-    <script src="/static/js/audit.js?v=20261112_tablock"></script>
-    <script src="/static/js/main.js?v=20261112_tablock"></script>
+    <script src="/static/js/project_manager.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/bom.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/material.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/compare.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/pdf_viewer.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/backup.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/audit.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/main.js?v=20261112_cleanhead"></script>
 </body>
 </html>
