@@ -315,7 +315,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
             currentProjectId = projectId;
             const contentArea = document.getElementById('projectContentArea');
             const placeholder = document.getElementById('noProjectPlaceholder');
-            if (contentArea) contentArea.style.display = 'block';
+            if (contentArea) contentArea.style.display = 'flex';
             if (placeholder) placeholder.style.display = 'none';
             setProjectActionButtonsDisabled(false);
 

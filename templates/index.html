@@ -7,7 +7,7 @@
     <!-- Mozilla PDF.js Local Offline Engine (Zero Browser Plugin Dependency) -->
     <script src="/static/pdfjs/pdf.min.js"></script>
     <!-- Global Application Stylesheet -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20261112_catnav">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261112_fitviewport">
 </head>
 <body>
 
@@ -203,7 +203,7 @@
             <div id="projectContentArea">
 
             <!-- Tab Navigation (含右侧空白区紧凑嵌入式锁定提示) -->
-            <div class="tab-nav" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap; min-height: 46px;">
+            <div class="tab-nav" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap; min-height: 40px;">
                 <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
                     <button class="tab-btn" id="tab-btn-cover" onclick="switchTab('cover')">
                         封面
@@ -467,7 +467,7 @@
 
             <!-- TAB 2: BOM Table -->
             <div id="tabContent-bom">
-                <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                         <!-- Unified Row Actions: select row first then operate -->
                         <button class="btn btn-primary btn-sm" id="btnRowAdd" onclick="openAddBomModal()" title="添加新的BOM物料行（若已选中行则默认插入在其后）">
@@ -606,13 +606,13 @@
     <!-- Modular Application Scripts -->
     <script src="/static/js/core.js?v=20261112_cleanhead"></script>
     <script src="/static/js/table_utils.js?v=20261112_cleanhead"></script>
-    <script src="/static/js/project.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/project.js?v=20261112_fitviewport"></script>
     <script>
         window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};
         window.IS_WINDOWS_SERVER = {{ 'true' if is_windows_server else 'false' }};
     </script>
     <script src="/static/js/project_manager.js?v=20261112_cleanhead"></script>
-    <script src="/static/js/bom.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/bom.js?v=20261112_fitviewport"></script>
     <script src="/static/js/material.js?v=20261112_cleanhead"></script>
     <script src="/static/js/compare.js?v=20261112_cleanhead"></script>
     <script src="/static/js/pdf_viewer.js?v=20261112_cleanhead"></script>

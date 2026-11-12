@@ -31,7 +31,7 @@
 
             document.getElementById('tabContent-cover').style.display = 'none';
             if (document.getElementById('tabContent-revision')) document.getElementById('tabContent-revision').style.display = 'none';
-            document.getElementById('tabContent-bom').style.display = 'block';
+            document.getElementById('tabContent-bom').style.display = 'flex';
 
             const searchInput = document.getElementById('bomSearchInput');
             if (searchInput) searchInput.value = '';
