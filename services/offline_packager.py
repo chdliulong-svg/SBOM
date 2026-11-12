@@ -35,7 +35,9 @@ def build_offline_html(project_info, materials_summary, items_list):
     allowing technicians to search parts, view photos and open manuals offline.
     """
     json_data = json.dumps(items_list, ensure_ascii=False)
-    proj_title = project_info.get('system_name') or project_info.get('name') or project_info.get('code') or '变桨系统Service BOM'
+    cat_code = project_info.get('category', 'pitch')
+    cat_name = project_info.get('category_name') or ('变流器系统' if cat_code == 'converter' else '变桨系统')
+    proj_title = project_info.get('system_name') or project_info.get('name') or project_info.get('code') or f'{cat_name} Service BOM'
     proj_code = project_info.get('code') or '-'
     doc_no = project_info.get('doc_no') or '-'
     export_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -502,7 +504,7 @@ def generate_offline_package(project_id):
     # Build README text
     timestamp_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     readme_text = f"""========================================================================
-变桨系统备件 Service BOM 现场离线运维工程资料包
+{project_info.get("category_name") or ("变流器系统" if project_info.get("category") == "converter" else "变桨系统")}备件 Service BOM 现场离线运维工程资料包
 ========================================================================
 
 【机组项目信息】

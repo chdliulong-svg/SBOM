@@ -48,8 +48,13 @@
                             重置列宽
                         </button>
                         <span style="color: #cbd5e1; margin: 0 4px;">|</span>
+                        <select id="masterFilterCategory" class="form-select" style="font-size: 13px; font-weight: 500; border-color: #cbd5e1;" onchange="loadMasterMaterials()">
+                            <option value="all">全部系统分类</option>
+                            <option value="pitch">变桨系统</option>
+                            <option value="converter">变流器系统</option>
+                        </select>
                         <select id="masterFilterType" class="form-select" style="font-size: 13px; font-weight: 500; border-color: #cbd5e1;" onchange="loadMasterMaterials()">
-                            <option value="all">全部物料</option>
+                            <option value="all">全部物料类型</option>
                             <option value="referenced">仅看已引用物料</option>
                             <option value="unreferenced">仅看未引用物料</option>
                             <option value="has_children">仅看总成结构</option>

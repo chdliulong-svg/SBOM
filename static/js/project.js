@@ -1,11 +1,33 @@
 // ==========================================
 // Service BOM - Project Lifecycle, Revision, ECN & Bundles
 // ==========================================
+let currentMainCategory = 'all';
+let currentMainPlatform = 'all';
+let allMainProjectsCache = [];
+let allMainCategoriesCache = [
+    { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统', icon: '' },
+    { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' }
+];
+
+function getMainFilteredProjects() {
+    let list = allMainProjectsCache || [];
+    if (currentMainCategory && currentMainCategory !== 'all') {
+        list = list.filter(p => (p.category || 'pitch').toLowerCase() === currentMainCategory.toLowerCase());
+    }
+    if (currentMainPlatform && currentMainPlatform !== 'all') {
+        list = list.filter(p => ((p.platform || '').trim()) === currentMainPlatform);
+    }
+    return list;
+}
 
         function renderProjectSelectOptions(projects, selectedId = null) {
             const sel = document.getElementById('projectSelect');
             if (!sel) return;
-            sel.innerHTML = '<option value="">-- 请选择或新建/打开工程项目 --</option>';
+            if (projects.length === 0) {
+                sel.innerHTML = '<option value="">-- 当前分类/平台下暂无工程 (请在分类或平台中切换) --</option>';
+                return;
+            }
+            sel.innerHTML = '<option value="">-- 请选择工程项目 --</option>';
             projects.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
@@ -73,34 +95,216 @@
             if (covUp) covUp.value = currentProjectData.updated_at || '';
         }
 
-        function refreshProjectSelectOnly(selectedId = null) {
-            return safeFetchJson('/api/projects')
-                .then(projects => {
-                    renderProjectSelectOptions(projects, selectedId || currentProjectId);
-                })
-                .catch(() => {});
+        
+// ==============================================================================
+// 主界面系统分类导航器 (Main System Category Navigator)
+// ==============================================================================
+function renderMainCategoryNav() {
+    const pillsContainer = document.getElementById('categoryNavPills');
+    if (!pillsContainer) return;
+
+    if (!allMainCategoriesCache || allMainCategoriesCache.length === 0) {
+        allMainCategoriesCache = [
+            { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统', icon: '' },
+            { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' }
+        ];
+    }
+
+    const total = allMainProjectsCache.length;
+    const counts = {};
+    allMainProjectsCache.forEach(p => {
+        const cat = (p.category || 'pitch').toLowerCase();
+        counts[cat] = (counts[cat] || 0) + 1;
+    });
+
+    const hasData = (allMainProjectsCache && allMainProjectsCache.length > 0);
+
+    let html = `
+        <button type="button" class="cat-pill ${currentMainCategory === 'all' ? 'active' : ''}" onclick="switchMainCategory('all')" title="显示所有分类下的全部工程项目">
+            <span>全部分类</span>
+            <span class="cat-pill-count" id="catNavCount-all">${hasData ? total : (document.getElementById('catNavCount-all')?.textContent || '-')}</span>
+        </button>
+    `;
+
+    (allMainCategoriesCache || []).forEach(cat => {
+        const catCode = (cat.code || '').toLowerCase();
+        const isActive = (currentMainCategory === catCode);
+        const icon = cat.icon || '📁';
+        const cnt = counts[catCode] || 0;
+        const fallbackEl = document.getElementById(`catNavCount-${catCode}`);
+        const countDisplay = hasData ? cnt : (fallbackEl ? fallbackEl.textContent : '-');
+        html += `
+            <button type="button" class="cat-pill ${isActive ? 'active' : ''}" onclick="switchMainCategory('${escapeHtml(catCode)}')" title="快速切换至【${escapeHtml(cat.name)}】分类工程视图">
+                <span>${escapeHtml(cat.name)}</span>
+                <span class="cat-pill-count" id="catNavCount-${escapeHtml(catCode)}">${countDisplay}</span>
+            </button>
+        `;
+    });
+
+    pillsContainer.innerHTML = html;
+}
+
+// ==============================================================================
+// 主界面机型平台下拉选项构建 (Main Platform Options & Cascading Filter)
+// ==============================================================================
+function renderMainPlatformOptions() {
+    const sel = document.getElementById('platformSelect');
+    if (!sel) return;
+
+    // 仅基于当前选中的大分类统计可用机型平台
+    const catProjects = (currentMainCategory === 'all')
+        ? allMainProjectsCache
+        : allMainProjectsCache.filter(p => (p.category || 'pitch').toLowerCase() === currentMainCategory.toLowerCase());
+
+    const platformCounts = {};
+    catProjects.forEach(p => {
+        const plat = (p.platform || '').trim();
+        if (plat) {
+            platformCounts[plat] = (platformCounts[plat] || 0) + 1;
+        }
+    });
+
+    const sortedPlatforms = Object.keys(platformCounts).sort();
+    const total = catProjects.length;
+
+    // 如果当前选中的平台在当前大分类下已不存在，重置为 all
+    if (currentMainPlatform !== 'all' && !platformCounts[currentMainPlatform]) {
+        currentMainPlatform = 'all';
+    }
+
+    let html = `<option value="all">-- 全部平台 (${total}) --</option>`;
+    sortedPlatforms.forEach(plat => {
+        const cnt = platformCounts[plat] || 0;
+        const isSel = (currentMainPlatform === plat) ? 'selected' : '';
+        html += `<option value="${escapeHtml(plat)}" ${isSel}>${escapeHtml(plat)} (${cnt})</option>`;
+    });
+
+    sel.innerHTML = html;
+    sel.value = currentMainPlatform;
+}
+
+function handlePlatformFilterChange(plat) {
+    currentMainPlatform = (plat || 'all').trim();
+    
+    const filtered = getMainFilteredProjects();
+    const currentInFiltered = filtered.some(p => p.id == currentProjectId);
+
+    if (currentInFiltered) {
+        renderProjectSelectOptions(filtered, currentProjectId);
+    } else {
+        if (filtered.length > 0) {
+            renderProjectSelectOptions(filtered, filtered[0].id);
+            loadProject(filtered[0].id);
+        } else {
+            renderProjectSelectOptions([], null);
+            closeCurrentProject();
+            const ph = document.getElementById('noProjectPlaceholder');
+            if (ph) {
+                const h3 = ph.querySelector('h3');
+                if (h3) h3.textContent = `当前【${currentMainPlatform}】平台下暂无工程项目`;
+            }
+        }
+    }
+}
+
+async function switchMainCategory(catCode) {
+    currentMainCategory = (catCode || 'all').toLowerCase();
+    renderMainCategoryNav();
+
+    if (!allMainProjectsCache || allMainProjectsCache.length === 0) {
+        await loadProjects();
+        return;
+    }
+
+    // 重新渲染平台选项列表（分类变动会导致所属平台集合联动变动）
+    renderMainPlatformOptions();
+
+    const filtered = getMainFilteredProjects();
+
+    // 检查当前打开的项目是否在当前分类+平台过滤列表中
+    const currentInFiltered = filtered.some(p => p.id == currentProjectId);
+    if (currentInFiltered) {
+        renderProjectSelectOptions(filtered, currentProjectId);
+    } else {
+        if (filtered.length > 0) {
+            renderProjectSelectOptions(filtered, filtered[0].id);
+            loadProject(filtered[0].id);
+        } else {
+            renderProjectSelectOptions([], null);
+            closeCurrentProject();
+            const ph = document.getElementById('noProjectPlaceholder');
+            if (ph) {
+                const targetCat = (allMainCategoriesCache || []).find(c => c.code === currentMainCategory);
+                const catName = targetCat ? targetCat.name : currentMainCategory;
+                const h3 = ph.querySelector('h3');
+                if (h3) h3.textContent = `当前【${catName}】分类下暂无已打开的工程`;
+            }
+        }
+    }
+}
+
+async function refreshProjectSelectOnly(selectedId = null) {
+            try {
+                const [projects, catRes] = await Promise.all([
+                    safeFetchJson('/api/projects'),
+                    safeFetchJson('/api/categories?all=1').catch(() => ({ categories: [] }))
+                ]);
+                allMainProjectsCache = Array.isArray(projects) ? projects : [];
+                if (catRes && catRes.categories && catRes.categories.length > 0) {
+                    allMainCategoriesCache = catRes.categories;
+                }
+                renderMainCategoryNav();
+                renderMainPlatformOptions();
+                const filtered = getMainFilteredProjects();
+                renderProjectSelectOptions(filtered, selectedId || currentProjectId);
+            } catch (e) {
+                console.error("刷新项目列表失败", e);
+            }
         }
 
-        function loadProjects(selectId = null, targetSubsystemId = null) {
-            safeFetchJson('/api/projects')
-                .then(projects => {
-                    renderProjectSelectOptions(projects, selectId);
+        async function loadProjects(selectId = null, targetSubsystemId = null) {
+            // 先立即渲染默认分类与平台，杜绝白屏/空白闪烁
+            renderMainCategoryNav();
+            renderMainPlatformOptions();
+            try {
+                const [projects, catRes] = await Promise.all([
+                    safeFetchJson('/api/projects'),
+                    safeFetchJson('/api/categories?all=1').catch(() => ({ categories: [] }))
+                ]);
+                allMainProjectsCache = Array.isArray(projects) ? projects : [];
+                if (catRes && catRes.categories && catRes.categories.length > 0) {
+                    allMainCategoriesCache = catRes.categories;
+                }
 
-                    if (selectId === 'none') {
-                        closeCurrentProject();
-                    } else if (selectId && projects.some(p => p.id == selectId)) {
-                        const sel = document.getElementById('projectSelect');
-                        if (sel) sel.value = selectId;
-                        loadProject(selectId, targetSubsystemId);
-                    } else if (projects.length > 0) {
-                        const targetId = projects[0].id;
-                        const sel = document.getElementById('projectSelect');
-                        if (sel) sel.value = targetId;
-                        loadProject(targetId, targetSubsystemId);
-                    } else {
-                        closeCurrentProject();
-                    }
-                });
+                renderMainCategoryNav();
+                renderMainPlatformOptions();
+
+                const filtered = getMainFilteredProjects();
+
+                renderProjectSelectOptions(filtered, selectId);
+
+                if (selectId === 'none') {
+                    closeCurrentProject();
+                } else if (selectId && allMainProjectsCache.some(p => p.id == selectId)) {
+                    const sel = document.getElementById('projectSelect');
+                    if (sel) sel.value = selectId;
+                    loadProject(selectId, targetSubsystemId);
+                } else if (filtered.length > 0) {
+                    const targetId = filtered[0].id;
+                    const sel = document.getElementById('projectSelect');
+                    if (sel) sel.value = targetId;
+                    loadProject(targetId, targetSubsystemId);
+                } else if (allMainProjectsCache.length > 0 && currentMainCategory === 'all') {
+                    const targetId = allMainProjectsCache[0].id;
+                    const sel = document.getElementById('projectSelect');
+                    if (sel) sel.value = targetId;
+                    loadProject(targetId, targetSubsystemId);
+                } else {
+                    closeCurrentProject();
+                }
+            } catch (err) {
+                console.error("加载项目数据失败", err);
+            }
         }
 
         function loadProject(projectId, targetSubsystemId = null) {
@@ -123,6 +327,23 @@
                     }
                     currentProjectData = data;
                     renderProjectHeaderSummary(data);
+
+                    // 自动对齐主界面系统分类导航器与机型平台高亮状态
+                    let needRefilter = false;
+                    if (data.category && currentMainCategory !== 'all' && currentMainCategory !== data.category.toLowerCase()) {
+                        currentMainCategory = data.category.toLowerCase();
+                        renderMainCategoryNav();
+                        needRefilter = true;
+                    }
+                    if (data.platform && currentMainPlatform !== 'all' && currentMainPlatform !== data.platform.trim()) {
+                        currentMainPlatform = data.platform.trim();
+                        needRefilter = true;
+                    }
+                    if (needRefilter) {
+                        renderMainPlatformOptions();
+                        const filtered = getMainFilteredProjects();
+                        renderProjectSelectOptions(filtered, projectId);
+                    }
                     
                     // Fill cover form
                     document.getElementById('cov-code').value = data.code || '';
@@ -243,12 +464,12 @@
             }
 
             if (alertBanner) {
-                alertBanner.style.display = isLocked ? 'flex' : 'none';
+                alertBanner.style.display = isLocked ? 'inline-flex' : 'none';
                 if (alertText) {
                     if (lockedBy) {
-                        alertText.innerHTML = `当前工程处于<b>锁定保护状态（只读）</b>。占用人记录：<b>${lockedBy}</b>。如需编辑修改，请先解锁。`;
+                        alertText.innerHTML = `当前工程处于<b>只读锁定保护状态</b> (占用人: <b>${escapeHtml(lockedBy)}</b>)，如需编辑请先解锁`;
                     } else {
-                        alertText.innerHTML = `当前工程处于<b>锁定保护状态（只读）</b>，所有 BOM 清单及属性仅供查阅、导出与比对。如需进行编辑修改，请先解锁。`;
+                        alertText.innerHTML = `当前工程处于<b>只读锁定保护状态</b>，如需编辑请先解锁`;
                     }
                 }
                 if (btnForce) {
@@ -539,6 +760,9 @@
                     model: (modelEl && modelEl.value.trim()) ? modelEl.value.trim() : (currentProjectData.model || ''),
                     name: (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : (currentProjectData.name || '风力发电机组'),
                     system_name: (systemEl && systemEl.value.trim()) ? systemEl.value.trim() : (currentProjectData.system_name || ''),
+
+                    category: (currentProjectData.category || 'pitch'),
+                    category: (currentProjectData.category || 'pitch'),
                     doc_no: (codeEl && docEl) ? docEl.value.trim() : (currentProjectData.doc_no || ''),
                     ecn_no: (codeEl && ecnEl) ? ecnEl.value.trim() : (currentProjectData.ecn_no || ''),
                     form_no: (formEl && formEl.value.trim()) ? formEl.value.trim() : (currentProjectData.form_no || 'FDJL-JS-037'),
@@ -1113,7 +1337,7 @@
 
         let isRenameProjSystemManual = false;
 
-        function openNewProjectModal() {
+        async function openNewProjectModal() {
             const legacyEl = document.getElementById('new-proj-name');
             if (legacyEl) legacyEl.value = '';
             const codeEl = document.getElementById('new-proj-code');
@@ -1125,7 +1349,29 @@
             const modEl = document.getElementById('new-proj-model');
             if (modEl) modEl.value = '';
             const sysEl = document.getElementById('new-proj-system');
-            if (sysEl) sysEl.value = '变桨轴承润滑系统';
+
+            // 动态拉取系统分类列表并填充下拉框
+            const catEl = document.getElementById('new-proj-category');
+            if (catEl) {
+                try {
+                    const res = await safeFetchJson('/api/categories');
+                    const categories = (res && res.categories) ? res.categories : [
+                        { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统', icon: '' },
+                        { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' }
+                    ];
+                    catEl.innerHTML = categories.map(c => 
+                        `<option value="${escapeHtml(c.code)}" data-default="${escapeHtml(c.default_system_name || c.name)}">${escapeHtml(c.name)}</option>`
+                    ).join('');
+                    const defaultCat = (currentMainCategory !== 'all') ? currentMainCategory : 'pitch';
+                    catEl.value = defaultCat;
+                    const selectedOpt = catEl.options[catEl.selectedIndex];
+                    const defName = selectedOpt ? selectedOpt.getAttribute('data-default') : (defaultCat === 'converter' ? '变流器系统' : '变桨系统');
+                    if (sysEl) sysEl.value = defName || '变桨系统';
+                } catch (e) {
+                    console.warn("加载系统分类失败", e);
+                    if (sysEl) sysEl.value = '变桨系统';
+                }
+            }
 
             updateNewProjectModalPreview();
             openModal('newProjectModal');
@@ -1135,7 +1381,25 @@
             }, 100);
         }
 
+        function onNewProjectCategoryChange() {
+            const catEl = document.getElementById('new-proj-category');
+            const sysEl = document.getElementById('new-proj-system');
+            if (!catEl || !sysEl) return;
+            const selectedOpt = catEl.options[catEl.selectedIndex];
+            const defName = selectedOpt ? selectedOpt.getAttribute('data-default') : '';
+            if (defName) {
+                sysEl.value = defName;
+            } else {
+                sysEl.value = catEl.value === 'converter' ? '变流器系统' : '变桨系统';
+            }
+            updateNewProjectModalPreview();
+        }
+
         function updateNewProjectModalPreview() {
+            const catEl = document.getElementById('new-proj-category');
+            const category = (catEl ? catEl.value.trim().toLowerCase() : 'pitch');
+            const defaultPart = category === 'converter' ? '变流器系统' : '变桨系统';
+
             const codeEl = document.getElementById('new-proj-code');
             const platEl = document.getElementById('new-proj-platform');
             const suppEl = document.getElementById('new-proj-supplier');
@@ -1145,10 +1409,10 @@
             const code = codeEl ? codeEl.value.trim() : '';
             const platform = platEl ? platEl.value.trim() : '';
             const supplier = suppEl ? suppEl.value.trim() : '';
-            const system = sysEl ? sysEl.value.trim() : '变桨轴承润滑系统';
+            const system = sysEl ? sysEl.value.trim() : defaultPart;
             const model = modEl ? modEl.value.trim() : '';
 
-            const partName = cleanSubsystemPartName(system, supplier, code, platform, model);
+            const partName = cleanSubsystemPartName(system, supplier, code, platform, model, defaultPart);
             const modelSuffix = model ? `_${model}` : '';
             const coverTitle = `${supplier}${partName}SBOM${modelSuffix}`;
             const prefixPlatCode = code || platform || 'EW-DEFAULT';
@@ -1176,12 +1440,16 @@
                 return;
             }
 
+            const catEl = document.getElementById('new-proj-category');
+            const category = (catEl ? catEl.value.trim().toLowerCase() : 'pitch');
+            const defaultPart = category === 'converter' ? '变流器系统' : '变桨系统';
+
             const platEl = document.getElementById('new-proj-platform');
             const platform = platEl ? platEl.value.trim() : '';
             const suppEl = document.getElementById('new-proj-supplier');
             const supplier = suppEl ? suppEl.value.trim() : '';
             const sysEl = document.getElementById('new-proj-system');
-            const system_name = (sysEl && sysEl.value.trim()) ? sysEl.value.trim() : '变桨轴承润滑系统';
+            const system_name = (sysEl && sysEl.value.trim()) ? sysEl.value.trim() : defaultPart;
             const modEl = document.getElementById('new-proj-model');
             const model = modEl ? modEl.value.trim() : '';
 
@@ -1198,7 +1466,7 @@
                 const res = await safeFetchJson('/api/project/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, system_name, code, platform, supplier, model })
+                    body: JSON.stringify({ name, system_name, code, platform, supplier, model, category })
                 });
                 if (res && res.success) {
                     closeModal('newProjectModal');
@@ -1533,5 +1801,24 @@
                 alert('打开项目异常: ' + err.message);
             });
         }
+
+// ==============================================================================
+// 页面脚本就绪后立即尝试渲染主界面分类导航与平台下拉（杜绝任何时序白屏）
+// ==============================================================================
+try {
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                if (typeof renderMainCategoryNav === 'function') renderMainCategoryNav();
+                if (typeof renderMainPlatformOptions === 'function') renderMainPlatformOptions();
+            });
+        } else {
+            if (typeof renderMainCategoryNav === 'function') renderMainCategoryNav();
+            if (typeof renderMainPlatformOptions === 'function') renderMainPlatformOptions();
+        }
+    }
+} catch (e) {
+    console.warn('init renderMainCategoryNav & platform warning:', e);
+}
 
 

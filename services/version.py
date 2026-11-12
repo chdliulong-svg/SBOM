@@ -44,17 +44,20 @@ def get_app_version(force_refresh=False):
         res = subprocess.run(
             cmd,
             cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False,  # 采用原始二进制读取，彻底规避 Windows 下 _readerthread 默认使用 GBK 解码导致的 UnicodeDecodeError
             timeout=1.5,
             check=False
         )
-        if res.returncode == 0 and res.stdout.strip():
-            parts = res.stdout.strip().split('|', 3)
-            commit = parts[0].strip()
-            commit_full = parts[1].strip() if len(parts) > 1 else commit
-            commit_date = parts[2].strip() if len(parts) > 2 else ""
-            commit_msg = parts[3].strip() if len(parts) > 3 else ""
+        if res.returncode == 0 and res.stdout:
+            stdout_text = res.stdout.decode('utf-8', errors='replace').strip()
+            if stdout_text:
+                parts = stdout_text.split('|', 3)
+                commit = parts[0].strip()
+                commit_full = parts[1].strip() if len(parts) > 1 else commit
+                commit_date = parts[2].strip() if len(parts) > 2 else ""
+                commit_msg = parts[3].strip() if len(parts) > 3 else ""
     except Exception:
         pass
 

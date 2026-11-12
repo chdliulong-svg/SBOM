@@ -90,8 +90,9 @@
             }
             const search = document.getElementById('masterSearch') ? document.getElementById('masterSearch').value.trim() : '';
             const filterType = document.getElementById('masterFilterType') ? document.getElementById('masterFilterType').value : 'all';
+            const catFilter = document.getElementById('masterFilterCategory') ? document.getElementById('masterFilterCategory').value : 'all';
 
-            fetch(`/api/materials?q=${encodeURIComponent(search)}&filter_type=${encodeURIComponent(filterType)}`)
+            fetch(`/api/materials?q=${encodeURIComponent(search)}&filter_type=${encodeURIComponent(filterType)}&category=${encodeURIComponent(catFilter)}`)
                 .then(r => r.json())
                 .then(materials => {
                     const list = Array.isArray(materials) ? materials : [];

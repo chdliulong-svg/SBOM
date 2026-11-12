@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>变桨系统Service BOM</title>
+    <title>风电机组 Service BOM 管理系统</title>
     <!-- Mozilla PDF.js Local Offline Engine (Zero Browser Plugin Dependency) -->
     <script src="/static/pdfjs/pdf.min.js"></script>
     <!-- Global Application Stylesheet -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20261016_4">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261112_catnav">
 </head>
 <body>
 
@@ -17,7 +17,7 @@
             <div class="logo-icon">S</div>
             <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <div class="app-title">变桨系统Service BOM</div>
+                    <div class="app-title">风电机组 Service BOM</div>
                     <span class="app-version-badge" onclick="showVersionDetails()" title="Git 提交代码: {{ app_version.commit }} ({{ app_version.date }})&#10;说明: {{ app_version.message }}&#10;点击查看版本详情">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="4"></circle>
@@ -27,7 +27,7 @@
                         <span>{{ app_version.commit }}</span>
                     </span>
                 </div>
-                <div class="app-subtitle">统一物料主库 · 装配结构管理 · 标准化导出</div>
+                <div class="app-subtitle">统一物料主库 · 变桨与变流器工程 · 装配结构管理</div>
             </div>
         </div>
         <div class="header-actions">
@@ -93,11 +93,56 @@
 
     <div class="container">
         <div class="card">
+            <!-- System Category Navigator (主界面系统分类导航器) -->
+            <div class="category-nav-bar" id="categoryNavBar">
+                <div class="category-nav-left">
+                    <div class="category-nav-title">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        <span>系统分类:</span>
+                    </div>
+                    <div class="category-nav-pills" id="categoryNavPills">
+                        <!-- 内置静态兜底胶囊，杜绝首屏/缓存空白，JS加载后自动更新项目数量与扩展分类 -->
+                        <button type="button" class="cat-pill active" onclick="switchMainCategory('all')" title="显示所有分类下的全部工程项目">
+                            <span>全部分类</span>
+                            <span class="cat-pill-count" id="catNavCount-all">7</span>
+                        </button>
+                        <button type="button" class="cat-pill" onclick="switchMainCategory('pitch')" title="快速切换至【变桨系统】分类工程视图">
+                            <span>变桨系统</span>
+                            <span class="cat-pill-count" id="catNavCount-pitch">6</span>
+                        </button>
+                        <button type="button" class="cat-pill" onclick="switchMainCategory('converter')" title="快速切换至【变流器系统】分类工程视图">
+                            <span>变流器系统</span>
+                            <span class="cat-pill-count" id="catNavCount-converter">1</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="category-nav-right">
+                    <button type="button" class="btn btn-outline btn-sm cat-nav-mgr-btn" onclick="openSystemCategoryModal()" title="系统分类管理中心（预留与配置变桨、变流器、主控等各类系统字典）">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                        <span>分类管理</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Project Bar -->
             <div class="project-bar">
                 <div class="project-select-group" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span style="font-weight: 600; font-size: 13px; color: #1e293b;">当前项目:</span>
-                    <select id="projectSelect" class="form-select" style="font-weight: bold; min-width: 440px; max-width: 650px;" onchange="loadProject(this.value)">
+                    <select id="platformSelect" class="form-select" style="font-weight: 600; min-width: 140px; max-width: 200px; font-size: 13px; background-color: #f8fafc;" onchange="handlePlatformFilterChange(this.value)" title="所属平台列表：按机型所属平台快速筛选联动工程">
+                        <option value="all">-- 全部平台 --</option>
+                        <option value="WL平台">WL平台</option>
+                        <option value="H3平台">H3平台</option>
+                        <option value="H4平台">H4平台</option>
+                        <option value="TEST_PLATFORM_V3">TEST_PLATFORM_V3</option>
+                    </select>
+                    <select id="projectSelect" class="form-select" style="font-weight: bold; min-width: 380px; max-width: 580px;" onchange="loadProject(this.value)" title="项目名称列表：请选择具体工程项目">
                         <!-- Populated by JS -->
                     </select>
                     <div id="projectLockStatusGroup" style="display: inline-flex; align-items: center;">
@@ -160,24 +205,8 @@
             <!-- Project Content Area (Tabs, Cover & BOM Tables) -->
             <div id="projectContentArea">
 
-            <!-- Locked Notice Alert Banner -->
-            <div id="projectLockedAlert" style="display: none; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 10px 18px; border-radius: 6px; font-size: 13px; margin: 12px 20px 0 20px; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 18px;">🔒</span>
-                    <span id="projectLockedAlertText">当前工程处于<b>锁定保护状态（只读）</b>，所有 BOM 清单及属性仅供查阅、导出与比对。如需进行编辑修改，请先解锁。</span>
-                </div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <button type="button" class="btn btn-warning btn-sm" id="btnUnlockProjectBanner" onclick="unlockCurrentProject()" style="padding: 4px 14px; font-weight: 600;">
-                        🔓 立即解锁编辑
-                    </button>
-                    <button type="button" class="btn btn-danger btn-sm" id="btnForceTakeoverBanner" onclick="unlockCurrentProject(true)" style="padding: 4px 12px; font-weight: 600; display: none;" title="强制从占用人手中接管编辑权限">
-                        ⚡ 强制接管
-                    </button>
-                </div>
-            </div>
-
-            <!-- Tab Navigation -->
-            <div class="tab-nav" style="display: flex; align-items: center; justify-content: space-between;">
+            <!-- Tab Navigation (含右侧空白区紧凑嵌入式锁定提示) -->
+            <div class="tab-nav" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap; min-height: 46px;">
                 <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
                     <button class="tab-btn" id="tab-btn-cover" onclick="switchTab('cover')">
                         封面
@@ -190,6 +219,22 @@
                     <button class="btn btn-outline btn-sm" id="btnAddNewSheet" style="margin-left: 8px; border-style: dashed;" onclick="addNewSubsystemSheet()" title="添加新的BOM子系统Sheet">
                         + 新建 Sheet
                     </button>
+                </div>
+
+                <!-- Locked Notice Alert (右侧空白区域只读锁定提醒) -->
+                <div id="projectLockedAlert" style="display: none; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 3px 10px; border-radius: 6px; font-size: 12px; align-items: center; gap: 8px; margin: 0; white-space: nowrap; flex-shrink: 0;" title="所有 BOM 清单及属性仅供查阅、导出与比对。如需进行编辑修改，请先解锁。">
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span style="font-size: 13px;">🔒</span>
+                        <span id="projectLockedAlertText">当前工程处于<b>只读锁定保护状态</b>，如需编辑请先解锁</span>
+                    </div>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <button type="button" class="btn btn-warning btn-sm" id="btnUnlockProjectBanner" onclick="unlockCurrentProject()" style="padding: 2px 10px; font-weight: 600; font-size: 12px; height: 26px; line-height: 20px;">
+                            🔓 立即解锁编辑
+                        </button>
+                        <button type="button" class="btn btn-danger btn-sm" id="btnForceTakeoverBanner" onclick="unlockCurrentProject(true)" style="padding: 2px 8px; font-weight: 600; font-size: 12px; height: 26px; line-height: 20px; display: none;" title="强制从占用人手中接管编辑权限">
+                            ⚡ 强制接管
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -562,20 +607,20 @@
     <script src="/static/js/three_step_viewer.js?v=20261011_3"></script>
 
     <!-- Modular Application Scripts -->
-    <script src="/static/js/core.js?v=20261014_1"></script>
-    <script src="/static/js/table_utils.js?v=20261014_1"></script>
-    <script src="/static/js/project.js?v=20261016_4"></script>
+    <script src="/static/js/core.js?v=20261112_tablock"></script>
+    <script src="/static/js/table_utils.js?v=20261112_tablock"></script>
+    <script src="/static/js/project.js?v=20261112_tablock"></script>
     <script>
         window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};
         window.IS_WINDOWS_SERVER = {{ 'true' if is_windows_server else 'false' }};
     </script>
-    <script src="/static/js/project_manager.js?v=20261016_5"></script>
-    <script src="/static/js/bom.js?v=20261016_9"></script>
-    <script src="/static/js/material.js?v=20261016_3"></script>
-    <script src="/static/js/compare.js?v=20261014_1"></script>
-    <script src="/static/js/pdf_viewer.js?v=20261014_1"></script>
-    <script src="/static/js/backup.js?v=20261014_1"></script>
-    <script src="/static/js/audit.js?v=20261014_1"></script>
-    <script src="/static/js/main.js?v=20261016_5"></script>
+    <script src="/static/js/project_manager.js?v=20261112_tablock"></script>
+    <script src="/static/js/bom.js?v=20261112_tablock"></script>
+    <script src="/static/js/material.js?v=20261112_tablock"></script>
+    <script src="/static/js/compare.js?v=20261112_tablock"></script>
+    <script src="/static/js/pdf_viewer.js?v=20261112_tablock"></script>
+    <script src="/static/js/backup.js?v=20261112_tablock"></script>
+    <script src="/static/js/audit.js?v=20261112_tablock"></script>
+    <script src="/static/js/main.js?v=20261112_tablock"></script>
 </body>
 </html>

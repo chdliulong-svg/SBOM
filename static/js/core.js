@@ -164,9 +164,10 @@
         }
 
         // 纯净部套名称提取辅助工具
-        function cleanSubsystemPartName(systemName, supplier = '', code = '', platform = '', model = '') {
+        function cleanSubsystemPartName(systemName, supplier = '', code = '', platform = '', model = '', defaultPartName = '') {
+            const fallback = defaultPartName || '变桨系统';
             let s = (systemName || '').trim().replace(/^[_\s-]+|[_\s-]+$/g, '');
-            if (!s) return '变桨轴承润滑系统';
+            if (!s) return fallback;
 
             // 兼容处理历史数据中包含 'SBOM_供应商' 的情况
             const m = s.match(/SBOM[_\s]*(.*?)$/i);
@@ -206,7 +207,7 @@
                 s = s.substring(0, s.length - 4).replace(/[_\s-]+$/, '');
             }
 
-            return s.replace(/^[_\s-]+|[_\s-]+$/g, '') || '变桨轴承润滑系统';
+            return s.replace(/^[_\s-]+|[_\s-]+$/g, '') || fallback;
         }
 
         // 统一格式化工程项目的展示名称: (平台/机型+供应商名称+部套名称+SBOM+型号)
@@ -235,7 +236,12 @@
                 }
             }
 
-            const partName = cleanSubsystemPartName(rawSys, supplier, code, platform, model);
+            const category = (p.category || '').toLowerCase();
+            let defaultPart = '变流器系统';
+            if (category === 'pitch' || (!category && !rawSys.includes('变流'))) {
+                defaultPart = '变桨系统';
+            }
+            const partName = cleanSubsystemPartName(rawSys, supplier, code, platform, model, defaultPart);
             const modelSuffix = model ? `_${model}` : '';
 
             return `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}`;

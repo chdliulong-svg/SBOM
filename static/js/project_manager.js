@@ -5,6 +5,7 @@
  */
 
 let allProjectsData = [];
+let systemCategoriesList = [];
 let pmSelectedProjectIds = new Set();
 let pmIsMaximized = false;
 
@@ -16,6 +17,8 @@ function openProjectManagerModal() {
     // 默认检索与排序重置
     const sInput = document.getElementById('pmSearchInput');
     if (sInput) sInput.value = '';
+    const fCat = document.getElementById('pmFilterCategory');
+    if (fCat) fCat.value = 'all';
     const fStatus = document.getElementById('pmFilterStatus');
     if (fStatus) fStatus.value = 'all';
     const fPlatform = document.getElementById('pmFilterPlatform');
@@ -68,8 +71,13 @@ async function loadProjectManagerData(quiet = false) {
     if (loadingEl && !quiet) loadingEl.style.display = 'flex';
 
     try {
-        const res = await safeFetchJson('/api/projects');
-        allProjectsData = Array.isArray(res) ? res : [];
+        const [projRes, catRes] = await Promise.all([
+            safeFetchJson('/api/projects'),
+            safeFetchJson('/api/categories?all=1').catch(() => ({ categories: [] }))
+        ]);
+        allProjectsData = Array.isArray(projRes) ? projRes : [];
+        systemCategoriesList = (catRes && catRes.categories) ? catRes.categories : [];
+        renderProjectManagerCategoryOptions(systemCategoriesList);
         renderProjectManagerStats(allProjectsData);
         renderProjectManagerPlatformOptions(allProjectsData);
         renderProjectManagerCodeOptions(allProjectsData, document.getElementById('pmFilterPlatform')?.value || 'all');
@@ -110,6 +118,21 @@ function renderProjectManagerStats(projects) {
 
     const elLocked = document.getElementById('pmStatLocked');
     if (elLocked) elLocked.textContent = lockedCount;
+}
+
+
+// 系统分类下拉选项构建
+function renderProjectManagerCategoryOptions(categories) {
+    const sel = document.getElementById('pmFilterCategory');
+    if (!sel) return;
+
+    const curVal = sel.value || 'all';
+    let opts = '<option value="all">全部分类 (全部)</option>';
+    (categories || []).forEach(cat => {
+        const cnt = cat.project_count !== undefined ? ` (${cat.project_count})` : '';
+        opts += `<option value="${escapeHtml(cat.code)}" ${curVal === cat.code ? 'selected' : ''}>${escapeHtml(cat.name)}${cnt}</option>`;
+    });
+    sel.innerHTML = opts;
 }
 
 // 机型平台下拉选项构建
@@ -177,6 +200,7 @@ function onPmPlatformFilterChange() {
 // 筛选与排序逻辑
 function filterAndRenderProjectManagerTable() {
     const query = (document.getElementById('pmSearchInput')?.value || '').trim().toLowerCase();
+    const catFilter = (document.getElementById('pmFilterCategory')?.value || 'all').toLowerCase();
     const platFilter = document.getElementById('pmFilterPlatform')?.value || 'all';
     const codeFilter = document.getElementById('pmFilterCode')?.value || 'all';
     const statusFilter = document.getElementById('pmFilterStatus')?.value || 'all';
@@ -191,6 +215,11 @@ function filterAndRenderProjectManagerTable() {
             const str = `${p.code || ''} ${p.name || ''} ${p.system_name || ''} ${p.supplier || ''} ${p.platform || ''} ${p.doc_no || ''} ${p.ecn_no || ''} ${p.company || ''}`.toLowerCase();
             return terms.every(t => str.includes(t));
         });
+    }
+
+    // 1.5 系统分类过滤
+    if (catFilter !== 'all') {
+        list = list.filter(p => (p.category || 'pitch').toLowerCase() === catFilter);
     }
 
     // 2. 平台过滤
@@ -307,6 +336,18 @@ function renderProjectManagerTable(projects) {
                     <input type="checkbox" class="pm-row-cb" value="${p.id}" ${isSelected ? 'checked' : ''} onchange="togglePmRowSelection(${p.id}, this.checked)">
                 </td>
                 <td class="col-center" style="width: 50px; color: #94a3b8; font-size: 12px;">${idx + 1}</td>
+                <td style="min-width: 105px;">
+                    ${(() => {
+                        const catCode = (p.category || 'pitch').toLowerCase();
+                        const catName = p.category_name || (catCode === 'converter' ? '变流器系统' : '变桨系统');
+                        const catStyle = catCode === 'converter' 
+                            ? 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a;' 
+                            : (catCode === 'pitch' 
+                                ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;' 
+                                : 'background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;');
+                        return `<span class="pm-cat-badge" style="display: inline-flex; align-items: center; gap: 4px; ${catStyle} padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;">${escapeHtml(catName)}</span>`;
+                    })()}
+                </td>
                 <td style="min-width: 110px;">
                     <span class="pm-platform-badge" style="display: inline-block; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;">${escapeHtml(platform)}</span>
                 </td>
@@ -744,3 +785,216 @@ window.addEventListener('DOMContentLoaded', () => {
         }, 150);
     }
 });
+
+
+// ==============================================================================
+// 系统分类管理中心 (System Category Management Hub - 预留与扩展新分类)
+// ==============================================================================
+let currentEditingCategoryCode = null;
+
+async function openSystemCategoryModal() {
+    closeCategoryForm();
+    openModal('systemCategoryModal');
+    await loadCategoriesManagementTable();
+}
+
+async function loadCategoriesManagementTable() {
+    const tbody = document.getElementById('categoryTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #94a3b8;">加载中...</td></tr>';
+
+    try {
+        const res = await safeFetchJson('/api/categories?all=1');
+        const list = (res && res.categories) ? res.categories : [];
+        systemCategoriesList = list;
+
+        if (list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #94a3b8;">暂无分类记录</td></tr>';
+            return;
+        }
+
+        let html = '';
+        list.forEach(cat => {
+            const isSys = cat.is_system == 1;
+            const typeBadge = isSys 
+                ? '<span style="background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;">内置核心</span>' 
+                : '<span style="background: #f0fdf4; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;">自定义扩展</span>';
+            const projCount = cat.project_count || 0;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; hover: background: #f8fafc;">
+                    <td style="padding: 9px 10px; text-align: center; font-size: 14px; color: #94a3b8;">${cat.icon || '-'}</td>
+                    <td style="padding: 9px 10px; font-weight: 600; color: #1e293b;">${escapeHtml(cat.name)}</td>
+                    <td style="padding: 9px 10px; font-family: monospace; color: #2563eb;">${escapeHtml(cat.code)}</td>
+                    <td style="padding: 9px 10px; color: #64748b;">${escapeHtml(cat.default_system_name || '-')}</td>
+                    <td style="padding: 9px 10px; text-align: center; font-weight: 600; color: #0284c7;">${projCount}</td>
+                    <td style="padding: 9px 10px; text-align: center;">${typeBadge}</td>
+                    <td style="padding: 9px 10px; text-align: center;">
+                        <button class="btn btn-outline btn-sm" onclick="editCategoryItem('${escapeHtml(cat.code)}')" style="height: 24px; padding: 0 6px; font-size: 11px;">编辑</button>
+                        ${(!isSys && projCount === 0) 
+                            ? `<button class="btn btn-danger btn-sm" onclick="deleteCategoryItem('${escapeHtml(cat.code)}')" style="height: 24px; padding: 0 6px; font-size: 11px; margin-left: 4px;">删除</button>` 
+                            : ''}
+                    </td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+
+        // 同步更新项目管理中心下拉框
+        renderProjectManagerCategoryOptions(list);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">加载失败: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+function openAddCategoryForm() {
+    currentEditingCategoryCode = null;
+    const titleEl = document.getElementById('categoryFormTitle');
+    if (titleEl) titleEl.textContent = '➕ 新增自定义分类';
+    const codeEl = document.getElementById('cat-form-code');
+    if (codeEl) {
+        codeEl.value = '';
+        codeEl.disabled = false;
+    }
+    const nameEl = document.getElementById('cat-form-name');
+    if (nameEl) nameEl.value = '';
+    const shortEl = document.getElementById('cat-form-short-name');
+    if (shortEl) shortEl.value = '';
+    const defEl = document.getElementById('cat-form-default-system');
+    if (defEl) defEl.value = '';
+    const iconEl = document.getElementById('cat-form-icon');
+    if (iconEl) iconEl.value = '';
+    const sortEl = document.getElementById('cat-form-sort');
+    if (sortEl) sortEl.value = '10';
+    const descEl = document.getElementById('cat-form-desc');
+    if (descEl) descEl.value = '';
+
+    const card = document.getElementById('categoryEditCard');
+    if (card) {
+        card.style.display = 'block';
+        setTimeout(() => { if (codeEl) codeEl.focus(); }, 50);
+    }
+}
+
+function editCategoryItem(code) {
+    const cat = (systemCategoriesList || []).find(c => c.code === code);
+    if (!cat) return;
+
+    currentEditingCategoryCode = code;
+    const titleEl = document.getElementById('categoryFormTitle');
+    if (titleEl) titleEl.textContent = `✏️ 编辑分类: ${cat.name} (${cat.code})`;
+    const codeEl = document.getElementById('cat-form-code');
+    if (codeEl) {
+        codeEl.value = cat.code;
+        codeEl.disabled = true; // code 不可变更以保障外键数据完整性
+    }
+    const nameEl = document.getElementById('cat-form-name');
+    if (nameEl) nameEl.value = cat.name || '';
+    const shortEl = document.getElementById('cat-form-short-name');
+    if (shortEl) shortEl.value = cat.short_name || '';
+    const defEl = document.getElementById('cat-form-default-system');
+    if (defEl) defEl.value = cat.default_system_name || '';
+    const iconEl = document.getElementById('cat-form-icon');
+    if (iconEl) iconEl.value = cat.icon || '';
+    const sortEl = document.getElementById('cat-form-sort');
+    if (sortEl) sortEl.value = cat.sort_order || 0;
+    const descEl = document.getElementById('cat-form-desc');
+    if (descEl) descEl.value = cat.description || '';
+
+    const card = document.getElementById('categoryEditCard');
+    if (card) {
+        card.style.display = 'block';
+        setTimeout(() => { if (nameEl) nameEl.focus(); }, 50);
+    }
+}
+
+function closeCategoryForm() {
+    currentEditingCategoryCode = null;
+    const card = document.getElementById('categoryEditCard');
+    if (card) card.style.display = 'none';
+}
+
+async function submitCategoryForm() {
+    const codeEl = document.getElementById('cat-form-code');
+    const code = (codeEl ? codeEl.value.trim() : '').toLowerCase();
+    const nameEl = document.getElementById('cat-form-name');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const shortEl = document.getElementById('cat-form-short-name');
+    const short_name = shortEl ? shortEl.value.trim() : '';
+    const defEl = document.getElementById('cat-form-default-system');
+    const default_system_name = defEl ? defEl.value.trim() : '';
+    const iconEl = document.getElementById('cat-form-icon');
+    const icon = iconEl ? iconEl.value.trim() : '';
+    const sortEl = document.getElementById('cat-form-sort');
+    const sort_order = parseInt(sortEl ? sortEl.value : '0') || 0;
+    const descEl = document.getElementById('cat-form-desc');
+    const description = descEl ? descEl.value.trim() : '';
+
+    if (!currentEditingCategoryCode && !code) {
+        alert('请输入分类代码 (Code)！');
+        if (codeEl) codeEl.focus();
+        return;
+    }
+    if (!name) {
+        alert('请输入分类名称 (Name)！');
+        if (nameEl) nameEl.focus();
+        return;
+    }
+
+    const payload = {
+        name,
+        short_name: short_name || name.slice(0, 4),
+        default_system_name: default_system_name || name,
+        icon: icon || '',
+        sort_order,
+        description
+    };
+
+    try {
+        let res;
+        if (currentEditingCategoryCode) {
+            res = await safeFetchJson(`/api/categories/${encodeURIComponent(currentEditingCategoryCode)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            payload.code = code;
+            res = await safeFetchJson('/api/categories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        if (res && res.success) {
+            closeCategoryForm();
+            await loadCategoriesManagementTable();
+            // 刷新全景列表与主界面分类导航器
+            await loadProjectManagerData(true);
+            if (typeof refreshProjectSelectOnly === 'function') refreshProjectSelectOnly();
+        } else {
+            alert((res && res.error) ? res.error : '保存分类失败');
+        }
+    } catch (err) {
+        alert('提交失败: ' + err.message);
+    }
+}
+
+async function deleteCategoryItem(code) {
+    if (!confirm(`确定要删除分类 [${code}] 吗？`)) return;
+    try {
+        const res = await safeFetchJson(`/api/categories/${encodeURIComponent(code)}`, {
+            method: 'DELETE'
+        });
+        if (res && res.success) {
+            await loadCategoriesManagementTable();
+            await loadProjectManagerData(true);
+            if (typeof refreshProjectSelectOnly === 'function') refreshProjectSelectOnly();
+        } else {
+            alert((res && res.error) ? res.error : '删除失败');
+        }
+    } catch (err) {
+        alert('删除操作失败: ' + err.message);
+    }
+}

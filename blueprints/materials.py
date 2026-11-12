@@ -25,6 +25,7 @@ materials_bp = Blueprint('materials', __name__)
 def get_materials():
     search = request.args.get('q', '').strip()
     filter_type = request.args.get('filter_type', 'all').strip()
+    category = request.args.get('category', '').strip().lower()
     conn = get_db()
     cursor = conn.cursor()
 
@@ -91,6 +92,17 @@ def get_materials():
         sql += " AND COALESCE(u.total_cnt, 0) > 0"
     elif filter_type == 'unreferenced':
         sql += " AND COALESCE(u.total_cnt, 0) = 0"
+
+    if category and category != 'all':
+        sql += """ AND (
+            m.category = ? OR EXISTS (
+                SELECT 1 FROM bom_items b
+                JOIN subsystems sub ON b.subsystem_id = sub.id
+                JOIN projects p ON sub.project_id = p.id
+                WHERE b.material_no = m.material_no AND p.category = ?
+            )
+        )"""
+        params.extend([category, category])
 
     sql += " ORDER BY m.material_no"
 
@@ -180,6 +192,7 @@ def save_material():
     substitute = data.get('substitute', '').strip()
     drawing_no = data.get('drawing_no', '/').strip() or '/'
     notes = data.get('notes', '').strip()
+    category = (data.get('category') or '').strip().lower()
     is_create = data.get('is_create', False)
     sync_bom = data.get('sync_bom', False)
     remove_image = bool(data.get('remove_image'))
@@ -195,10 +208,10 @@ def save_material():
             return jsonify({'error': f'物料号 [{mat_no}] 已存在于主库中，请勿重复创建！'}), 400
 
         cursor.execute('''
-        INSERT INTO materials (material_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute, image_path, manual_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO materials (material_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute, image_path, manual_path, category)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (mat_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute,
-              data.get('image_path', '').strip(), data.get('manual_path', '').strip()))
+              data.get('image_path', '').strip(), data.get('manual_path', '').strip(), category))
     else:
         target_old = old_mat_no if old_mat_no else mat_no
         if target_old != mat_no:
@@ -211,9 +224,10 @@ def save_material():
 
             cursor.execute('''
             UPDATE materials
-            SET material_no = ?, name = ?, description = ?, spec_model = ?, manufacturer = ?, unit = ?, drawing_no = ?, notes = ?, substitute = ?
+            SET material_no = ?, name = ?, description = ?, spec_model = ?, manufacturer = ?, unit = ?, drawing_no = ?, notes = ?, substitute = ?,
+                category = CASE WHEN ? != '' THEN ? ELSE category END
             WHERE material_no = ?
-            ''', (mat_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute, target_old))
+            ''', (mat_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute, category, category, target_old))
 
             cursor.execute('UPDATE material_structures SET parent_material_no = ? WHERE parent_material_no = ?', (mat_no, target_old))
             cursor.execute('UPDATE material_structures SET child_material_no = ? WHERE child_material_no = ?', (mat_no, target_old))
@@ -221,8 +235,8 @@ def save_material():
             cursor.execute('UPDATE bom_items SET parent_material_no = ? WHERE parent_material_no = ?', (mat_no, target_old))
         else:
             cursor.execute('''
-            INSERT INTO materials (material_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute, image_path, manual_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO materials (material_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute, image_path, manual_path, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(material_no) DO UPDATE SET
                 name=excluded.name,
                 description=excluded.description,
@@ -232,10 +246,11 @@ def save_material():
                 drawing_no=excluded.drawing_no,
                 notes=excluded.notes,
                 substitute=excluded.substitute,
+                category=CASE WHEN excluded.category != '' THEN excluded.category ELSE materials.category END,
                 image_path=CASE WHEN excluded.image_path != '' THEN excluded.image_path ELSE materials.image_path END,
                 manual_path=CASE WHEN excluded.manual_path != '' THEN excluded.manual_path ELSE materials.manual_path END
             ''', (mat_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute,
-                  data.get('image_path', '').strip(), data.get('manual_path', '').strip()))
+                  data.get('image_path', '').strip(), data.get('manual_path', '').strip(), category))
 
     if remove_image:
         cursor.execute("UPDATE materials SET image_path = '' WHERE material_no = ?", (mat_no,))

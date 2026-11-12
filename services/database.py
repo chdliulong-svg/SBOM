@@ -69,6 +69,33 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # 0. System Categories table (系统分类字典表，预留未来任意分类扩展)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS system_categories (
+        code TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        short_name TEXT DEFAULT '',
+        default_system_name TEXT DEFAULT '',
+        icon TEXT DEFAULT '📁',
+        sort_order INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        is_system INTEGER DEFAULT 0,
+        description TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+    )
+    ''')
+
+    # 预置核心系统分类（变桨系统、变流器系统）
+    default_categories = [
+        ('pitch', '变桨系统', '变桨', '变桨系统', '', 1, 1, 1, '风电机组变桨系统备件管理'),
+        ('converter', '变流器系统', '变流器', '变流器系统', '', 2, 1, 1, '风电机组变流器系统备件管理')
+    ]
+    for cat in default_categories:
+        cursor.execute('''
+        INSERT OR IGNORE INTO system_categories (code, name, short_name, default_system_name, icon, sort_order, is_active, is_system, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', cat)
+
     # 1. Projects table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS projects (
@@ -87,7 +114,8 @@ def init_db():
         updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
         platform TEXT DEFAULT '',
         supplier TEXT DEFAULT '',
-        model TEXT DEFAULT ''
+        model TEXT DEFAULT '',
+        category TEXT DEFAULT 'pitch'
     )
     ''')
 
@@ -199,7 +227,7 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at DESC)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_projects_platform ON projects(platform)')
 
-    # Migration for projects: add is_locked, locked_by, locked_at, platform columns if not present
+    # Migration for projects: add is_locked, locked_by, locked_at, platform, category columns if not present
     cursor.execute("PRAGMA table_info(projects)")
     proj_cols = [r['name'] for r in cursor.fetchall()]
     if 'is_locked' not in proj_cols:
@@ -214,20 +242,32 @@ def init_db():
         cursor.execute("ALTER TABLE projects ADD COLUMN supplier TEXT DEFAULT ''")
     if 'model' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN model TEXT DEFAULT ''")
+    if 'category' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN category TEXT DEFAULT 'pitch'")
+        cursor.execute("UPDATE projects SET category = 'pitch' WHERE category IS NULL OR category = ''")
     if 'created_at' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN created_at TIMESTAMP")
     if 'updated_at' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN updated_at TIMESTAMP")
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_projects_category ON projects(category)')
 
     # Migration for subsystems: add supplier column if not present
     cursor.execute("PRAGMA table_info(subsystems)")
     sub_cols = [r['name'] for r in cursor.fetchall()]
     if 'supplier' not in sub_cols:
         cursor.execute("ALTER TABLE subsystems ADD COLUMN supplier TEXT DEFAULT ''")
+
+    # Migration for materials: add category column if not present
+    cursor.execute("PRAGMA table_info(materials)")
+    mat_cols = [r['name'] for r in cursor.fetchall()]
+    if 'category' not in mat_cols:
+        cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT ''")
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_materials_category ON materials(category)')
     
     # 补齐已有历史数据的创建时间与修改时间
     cursor.execute("UPDATE projects SET created_at = datetime('now', 'localtime') WHERE created_at IS NULL OR created_at = ''")
     cursor.execute("UPDATE projects SET updated_at = COALESCE(created_at, datetime('now', 'localtime')) WHERE updated_at IS NULL OR updated_at = ''")
+    cursor.execute("UPDATE projects SET category = 'pitch' WHERE category IS NULL OR category = ''")
     conn.commit()
 
     # 自动维护 projects.updated_at 的数据库级触发器
@@ -240,6 +280,7 @@ def init_db():
         OLD.code IS NOT NEW.code OR
         OLD.name IS NOT NEW.name OR
         OLD.system_name IS NOT NEW.system_name OR
+        OLD.category IS NOT NEW.category OR
         OLD.platform IS NOT NEW.platform OR
         OLD.supplier IS NOT NEW.supplier OR
         OLD.model IS NOT NEW.model OR

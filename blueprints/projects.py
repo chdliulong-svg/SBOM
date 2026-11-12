@@ -41,11 +41,24 @@ projects_bp = Blueprint('projects', __name__)
 # ----------------- Project Query & Details -----------------
 @projects_bp.route('/api/projects', methods=['GET'])
 def get_projects():
+    category_filter = request.args.get('category', '').strip().lower()
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
+    
+    where_clauses = []
+    params = []
+    if category_filter and category_filter != 'all':
+        where_clauses.append("p.category = ?")
+        params.append(category_filter)
+    
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    cursor.execute(f'''
         SELECT 
             p.*,
+            COALESCE(c.name, '变桨系统') AS category_name,
+            COALESCE(c.short_name, '变桨') AS category_short_name,
+            COALESCE(c.icon, '') AS category_icon,
             COUNT(DISTINCT s.id) AS subsystem_count,
             COUNT(b.id) AS item_count,
             (
@@ -58,11 +71,13 @@ def get_projects():
                 LIMIT 1
             ) AS root_model
         FROM projects p
+        LEFT JOIN system_categories c ON c.code = p.category
         LEFT JOIN subsystems s ON s.project_id = p.id
         LEFT JOIN bom_items b ON b.subsystem_id = s.id
+        {where_sql}
         GROUP BY p.id
         ORDER BY COALESCE(p.updated_at, p.created_at) DESC, p.id DESC
-    ''')
+    ''', params)
     projects = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(projects)
@@ -75,6 +90,9 @@ def get_project_detail(project_id):
     cursor.execute('''
         SELECT 
             p.*,
+            COALESCE(c.name, '变桨系统') AS category_name,
+            COALESCE(c.short_name, '变桨') AS category_short_name,
+            COALESCE(c.icon, '') AS category_icon,
             (
                 SELECT m.spec_model
                 FROM bom_items b2
@@ -85,6 +103,7 @@ def get_project_detail(project_id):
                 LIMIT 1
             ) AS root_model
         FROM projects p 
+        LEFT JOIN system_categories c ON c.code = p.category
         WHERE p.id = ?
     ''', (project_id,))
     project = cursor.fetchone()
@@ -265,6 +284,13 @@ def save_project():
     system_name = (data.get('system_name') or '').strip()
     supplier = (data.get('supplier') or '').strip()
     model = (data.get('model') or '').strip()
+    category = (data.get('category') or '').strip().lower()
+
+    if not category:
+        if '变流' in system_name or '变流' in name:
+            category = 'converter'
+        else:
+            category = 'pitch'
 
     if not code and not system_name and not name:
         return jsonify({'success': False, 'error': '项目名称不能为空'}), 400
@@ -288,19 +314,19 @@ def save_project():
             platform = (data.get('platform') or '').strip()
             cursor.execute('''
             UPDATE projects SET
-                code=?, name=?, system_name=?, platform=?, supplier=?, model=?, doc_no=?, ecn_no=?, form_no=?, company=?,
+                code=?, name=?, system_name=?, category=?, platform=?, supplier=?, model=?, doc_no=?, ecn_no=?, form_no=?, company=?,
                 updated_at=datetime('now', 'localtime')
             WHERE id=?
-            ''', (code, name, system_name, platform, supplier, model,
+            ''', (code, name, system_name, category, platform, supplier, model,
                   data.get('doc_no', ''), data.get('ecn_no', ''),
                   data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                   project_id))
         else:
             client_tag = get_client_identity()
             cursor.execute('''
-            INSERT INTO projects (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
-            ''', (code, name, system_name, (data.get('platform') or '').strip(), supplier, model,
+            INSERT INTO projects (code, name, system_name, category, platform, supplier, model, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
+            ''', (code, name, system_name, category, (data.get('platform') or '').strip(), supplier, model,
                   data.get('doc_no', ''), data.get('ecn_no', ''),
                   data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                   client_tag))
@@ -322,6 +348,7 @@ def save_project():
             'name': name,
             'system_name': system_name,
             'code': code,
+            'category': category,
             'platform': (data.get('platform') or '').strip(),
             'supplier': supplier,
             'model': model,
@@ -430,10 +457,13 @@ def copy_project():
         orig_platform = orig['platform'] if 'platform' in orig.keys() else ''
         orig_supplier = orig['supplier'] if 'supplier' in orig.keys() else ''
         orig_model = orig['model'] if 'model' in orig.keys() else ''
+        orig_category = orig['category'] if 'category' in orig.keys() else 'pitch'
+        user_category = (data.get('category') or orig_category or 'pitch').strip().lower()
+
         cursor.execute('''
-            INSERT INTO projects (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (user_code, user_name, user_system_name, orig_platform or '', orig_supplier or '', orig_model or '',
+            INSERT INTO projects (code, name, system_name, category, platform, supplier, model, doc_no, ecn_no, form_no, company, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (user_code, user_name, user_system_name, user_category, orig_platform or '', orig_supplier or '', orig_model or '',
               orig['doc_no'] or '', orig['ecn_no'] or '',
               orig['form_no'] or config.form_no_default, orig['company'] or config.company_default))
         new_project_id = cursor.lastrowid

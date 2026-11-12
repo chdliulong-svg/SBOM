@@ -53,14 +53,15 @@ def format_pipe_multiline(val):
     return val
 
 
-def clean_subsystem_part_name(system_name, supplier="", code="", platform="", model=""):
+def clean_subsystem_part_name(system_name, supplier="", code="", platform="", model="", default_part_name=None):
     """
     从可能带有冗余前缀后缀的文本中提取纯净的部套/零部件名称。
-    例如 '变桨轴承润滑系统'、'变桨轴承润滑系统SBOM'、'变桨系统SBOM_电力电子' -> '变桨轴承润滑系统' / '变桨系统'
+    例如 '变桨轴承润滑系统'、'变流器系统'、'机侧变流器'、'变桨系统SBOM_电力电子' -> '变桨系统' / '变流器系统'
     """
+    fallback = default_part_name or '变桨轴承润滑系统'
     s = (system_name or '').strip().strip('_ -')
     if not s:
-        return '变桨轴承润滑系统'
+        return fallback
 
     # 兼容处理历史数据中包含 'SBOM_供应商' 的情况
     m = re.search(r'SBOM[_\s]*(.*?)$', s, flags=re.IGNORECASE)
@@ -92,7 +93,7 @@ def clean_subsystem_part_name(system_name, supplier="", code="", platform="", mo
     if s.upper().endswith('SBOM'):
         s = s[:-4].strip('_ -')
 
-    return s or '变桨轴承润滑系统'
+    return s or fallback
 
 
 def extract_project_components(project, sub=None, level1_model=None):
@@ -106,6 +107,11 @@ def extract_project_components(project, sub=None, level1_model=None):
         sub = dict(sub)
     sub = sub or {}
 
+    category = (project.get('category') or '').strip().lower()
+    default_fallback_name = '变流器系统' if category == 'converter' else ('变桨系统' if category == 'pitch' else '变桨轴承润滑系统')
+    if '变流' in (project.get('system_name') or '') or '变流' in (project.get('name') or ''):
+        default_fallback_name = '变流器系统'
+
     code = (project.get('code') or '').strip()
     platform = (project.get('platform') or '').strip()
     prefix_plat_code = code if code else platform
@@ -117,7 +123,7 @@ def extract_project_components(project, sub=None, level1_model=None):
             sub_supplier = sname[:-4].strip()
 
     supplier = sub_supplier or (project.get('supplier') or '').strip()
-    raw_sys = (project.get('system_name') or '').strip() or ((project.get('name') or '').strip() if project.get('name') != '风力发电机组' else '') or '变桨轴承润滑系统'
+    raw_sys = (project.get('system_name') or '').strip() or ((project.get('name') or '').strip() if project.get('name') != '风力发电机组' else '') or default_fallback_name
 
     if not supplier:
         m = re.search(r'SBOM[_\s]*(.*?)$', raw_sys, flags=re.IGNORECASE)
@@ -129,7 +135,7 @@ def extract_project_components(project, sub=None, level1_model=None):
                     supplier = parts[-1]
 
     model = (project.get('model') or project.get('root_model') or level1_model or '').strip()
-    part_name = clean_subsystem_part_name(raw_sys, supplier=supplier, code=code, platform=platform, model=model)
+    part_name = clean_subsystem_part_name(raw_sys, supplier=supplier, code=code, platform=platform, model=model, default_part_name=default_fallback_name)
     return prefix_plat_code, supplier, part_name, model
 
 

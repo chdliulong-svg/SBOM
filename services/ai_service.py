@@ -14,20 +14,20 @@ from services.logging_setup import get_logger
 logger = get_logger('sbom.ai')
 
 
-SYSTEM_PROMPT = """你是一个专业的变桨系统工程物料(Service BOM)语义推断专家。
+SYSTEM_PROMPT = """你是一个专业的风电机组工程物料(Service BOM，涵盖变桨系统、变流器系统等部套)语义推断专家。
 工程人员输入的物料描述可能具有任意词序、下划线、空格等连接形式。
 请从物料描述中精准推断并提取以下三个核心字段，不要受词语先后顺序的影响：
-1. name: 具体的零部件/元器件实体名称（如“插座”、“维护开关”、“绑线支架”；过滤“备件_”、“变桨备件_”等通用分类前缀）。
+1. name: 具体的零部件/元器件实体名称（如“插座”、“维护开关”、“IGBT模组”、“绑线支架”；过滤“备件_”、“变桨备件_”、“变流器备件_”、“变流备件_”等通用分类前缀）。
 2. spec_model: 零件的规格型号、订货号或图纸代号（如 EA9X310_2P+E/10A、3LD2704-0TK51、D8-07-02-Q00632-00）。注意：规格型号应仅为零件自身的参数编码，切勿包含供应商/品牌名称！
-3. manufacturer: 供应商/制造商品牌（如 施耐德、西门子、SSB、诺雅克、ABB等，国际品牌自动转换为中文规范名）。
+3. manufacturer: 供应商/制造商品牌（如 施耐德、西门子、SSB、阳光电源、禾望、诺雅克、ABB等，国际品牌自动转换为中文规范名）。
 
 【示例1】
 输入：变桨备件_传感器撞块_DBJ00.004.1386.01_电力电子
 输出：{"name": "传感器撞块", "spec_model": "DBJ00.004.1386.01", "manufacturer": "电力电子"}
 
 【示例2】
-输入：支架_66-31-02-Q00448-00_限位开关支架_X3_SSB
-输出：{"name": "限位开关支架", "spec_model": "66-31-02-Q00448-00", "manufacturer": "SSB"}
+输入：变流备件_IGBT驱动板_VLA500-01R_禾望
+输出：{"name": "IGBT驱动板", "spec_model": "VLA500-01R", "manufacturer": "禾望"}
 
 【示例3】
 输入：维护开关_3LD2704-0TK51_Siemens
@@ -125,7 +125,7 @@ def parse_with_rule_fallback(description: str) -> dict:
     code_pat = re.compile(r'^[A-Za-z0-9]+[-.][A-Za-z0-9\-.]+$')
     model_cands = [p for p in parts if code_pat.match(p)]
 
-    name_cands = [p for p in parts if p != mfr and p not in model_cands and p not in {'备件', '变桨备件', '变桨系统'}]
+    name_cands = [p for p in parts if p != mfr and p not in model_cands and p not in {'备件', '变桨备件', '变桨系统', '变流备件', '变流器备件', '变流器系统', '通用备件'}]
 
     name = max(name_cands, key=len) if name_cands else ""
     spec = model_cands[0] if model_cands else ""

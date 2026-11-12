@@ -79,6 +79,11 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" style="position: absolute; left: 9px; top: 9px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
 
+                        <!-- Category Select -->
+                        <select id="pmFilterCategory" class="form-select" style="height: 32px; font-size: 12px; min-width: 130px; font-weight: 600;" onchange="filterAndRenderProjectManagerTable()">
+                            <option value="all">全部分类 (全部)</option>
+                        </select>
+
                         <!-- Platform Select -->
                         <select id="pmFilterPlatform" class="form-select" style="height: 32px; font-size: 12px; min-width: 130px;" onchange="onPmPlatformFilterChange()">
                             <option value="all">全部机型平台</option>
@@ -148,6 +153,9 @@
                         <button class="btn btn-outline btn-sm" onclick="closeProjectManagerModal(); triggerOpenProjectFile();" style="height: 32px;" title="导入已保存的 .sbom 工程归档包">
                             📦 打开 .sbom
                         </button>
+                        <button class="btn btn-outline btn-sm" onclick="openSystemCategoryModal()" style="height: 32px;" title="系统分类管理（预留与配置变桨、变流器、主控等各类系统字典）">
+                            ⚙️ 分类管理
+                        </button>
                         <button class="btn btn-outline btn-sm" onclick="loadProjectManagerData()" style="height: 32px;" title="刷新工程数据">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                         </button>
@@ -168,6 +176,7 @@
                                     <input type="checkbox" id="pmSelectAll" onchange="togglePmSelectAll(this.checked)" title="全选 / 取消全选">
                                 </th>
                                 <th class="col-center" style="width: 50px;">#</th>
+                                <th style="min-width: 105px;">系统分类</th>
                                 <th style="min-width: 110px;">机型平台</th>
                                 <th style="min-width: 170px;">机型代号 (Code)</th>
                                 <th style="min-width: 220px;">文件名称</th>
@@ -218,20 +227,28 @@
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div class="form-group">
                             <label class="form-label" style="font-size: 13px;">
+                                <span>所属系统分类 (Category) <span style="color: #ef4444;">*</span>:</span>
+                            </label>
+                            <select id="new-proj-category" class="form-select" style="font-size: 13px; padding: 7px 10px; font-weight: 600;" onchange="onNewProjectCategoryChange()">
+                                <!-- 由 JS 动态获取分类列表填充 -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" style="font-size: 13px;">
                                 <span>机型代号 (Code) <span style="color: #ef4444;">*</span>:</span>
                             </label>
                             <input id="new-proj-code" class="form-input" style="font-size: 13px; padding: 7px 10px; font-weight: 600;" placeholder="例如: EW6.25-220" autocomplete="off" oninput="updateNewProjectModalPreview()" onkeydown="if(event.key==='Enter') submitNewProject()">
                         </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
                         <div class="form-group">
                             <label class="form-label" style="font-size: 13px;">所属平台 (Platform):</label>
                             <input id="new-proj-platform" class="form-input" style="font-size: 13px; padding: 7px 10px;" placeholder="例如: WL (可选)" autocomplete="off" oninput="updateNewProjectModalPreview()" onkeydown="if(event.key==='Enter') submitNewProject()">
                         </div>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div class="form-group">
                             <label class="form-label" style="font-size: 13px;">供应商名称 (Supplier):</label>
-                            <input id="new-proj-supplier" class="form-input" style="font-size: 13px; padding: 7px 10px;" placeholder="例如: 盘古 或 电力电子" autocomplete="off" oninput="updateNewProjectModalPreview()" onkeydown="if(event.key==='Enter') submitNewProject()">
+                            <input id="new-proj-supplier" class="form-input" style="font-size: 13px; padding: 7px 10px;" placeholder="例如: 阳光电源 或 禾望" autocomplete="off" oninput="updateNewProjectModalPreview()" onkeydown="if(event.key==='Enter') submitNewProject()">
                         </div>
                         <div class="form-group">
                             <label class="form-label" style="font-size: 13px;">部套型号 (Model):</label>
@@ -243,7 +260,7 @@
                         <label class="form-label" style="font-size: 13px;">
                             <span>部套/系统名称 (System) <span style="color: #ef4444;">*</span>:</span>
                         </label>
-                        <input id="new-proj-system" class="form-input" style="font-size: 13px; padding: 7px 10px;" value="变桨轴承润滑系统" placeholder="例如: 变桨轴承润滑系统 或 变桨系统" autocomplete="off" oninput="updateNewProjectModalPreview()" onkeydown="if(event.key==='Enter') submitNewProject()">
+                        <input id="new-proj-system" class="form-input" style="font-size: 13px; padding: 7px 10px;" value="变桨系统" placeholder="例如: 变桨系统 或 变流器系统" autocomplete="off" oninput="updateNewProjectModalPreview()" onkeydown="if(event.key==='Enter') submitNewProject()">
                     </div>
 
                     <!-- 动态生成预览卡片 -->
@@ -540,3 +557,99 @@
             </div>
         </div>
     </div>
+
+<!-- MODAL: System Category Management (系统分类管理中心 - 预留与扩展新分类) -->
+<div id="systemCategoryModal" class="modal-mask">
+    <div class="modal-dialog" style="width: 860px; max-width: 96vw; max-height: 92vh; display: flex; flex-direction: column;">
+        <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid var(--border); padding: 12px 20px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 32px; height: 32px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+                    ⚙️
+                </div>
+                <div>
+                    <div class="modal-title" style="font-size: 16px; font-weight: 700; color: #1e293b;">
+                        系统分类管理
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 1px;">
+                        统一系统分类字典 · 预留无限扩展能力 · 自定义新增主控、偏航、发电机等任意分类
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="modal-close" onclick="closeModal('systemCategoryModal')">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+            <!-- Category List Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span style="font-size: 13px; font-weight: 600; color: #334155;">当前已注册系统分类</span>
+                <button class="btn btn-primary btn-sm" onclick="openAddCategoryForm()" style="padding: 4px 12px; font-size: 12px;">
+                    ➕ 新增分类
+                </button>
+            </div>
+            
+            <div style="border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin-bottom: 16px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: left; color: #475569;">
+                            <th style="padding: 8px 10px; width: 60px; text-align: center;">图标</th>
+                            <th style="padding: 8px 10px; width: 130px;">分类名称</th>
+                            <th style="padding: 8px 10px; width: 110px;">代码 (Code)</th>
+                            <th style="padding: 8px 10px;">默认部套名</th>
+                            <th style="padding: 8px 10px; width: 75px; text-align: center;">工程数</th>
+                            <th style="padding: 8px 10px; width: 85px; text-align: center;">类型</th>
+                            <th style="padding: 8px 10px; width: 100px; text-align: center;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="categoryTableBody">
+                        <!-- 由 JS 渲染 -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Add / Edit Category Inline Form -->
+            <div id="categoryEditCard" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px 18px; margin-top: 10px;">
+                <div style="font-weight: 600; font-size: 13px; color: #1e3a8a; margin-bottom: 10px;" id="categoryFormTitle">
+                    ➕ 新增自定义分类
+                </div>
+                <div style="display: grid; grid-template-columns: 110px 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 12px;">图标 (可选):</label>
+                        <input id="cat-form-icon" class="form-input" style="font-size: 13px; text-align: center;" value="" placeholder="选填，可留空">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 12px;">分类代码 (Code) *:</label>
+                        <input id="cat-form-code" class="form-input" style="font-size: 12px;" placeholder="如 yaw 或 main_control">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 12px;">分类名称 (Name) *:</label>
+                        <input id="cat-form-name" class="form-input" style="font-size: 12px;" placeholder="如 偏航系统, 主控系统">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 100px; gap: 10px; margin-bottom: 10px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 12px;">分类简称 (Short Name):</label>
+                        <input id="cat-form-short-name" class="form-input" style="font-size: 12px;" placeholder="如 偏航, 主控">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 12px;">新建默认部套名称:</label>
+                        <input id="cat-form-default-system" class="form-input" style="font-size: 12px;" placeholder="如 偏航系统">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size: 12px;">排序权重:</label>
+                        <input type="number" id="cat-form-sort" class="form-input" style="font-size: 12px;" value="10">
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label class="form-label" style="font-size: 12px;">分类描述说明 (可选):</label>
+                    <input id="cat-form-desc" class="form-input" style="font-size: 12px;" placeholder="简要说明该分类适用的风电机组部套范围">
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                    <button class="btn btn-outline btn-sm" onclick="closeCategoryForm()">取消</button>
+                    <button class="btn btn-primary btn-sm" id="btnSaveCategory" onclick="submitCategoryForm()">保存分类</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+            <button class="btn btn-primary btn-sm" onclick="closeModal('systemCategoryModal')">完成关闭</button>
+        </div>
+    </div>
+</div>
