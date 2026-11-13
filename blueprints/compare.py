@@ -4,6 +4,7 @@ Project Comparison, BOM Diff Analyzer, Procurement Increment Excel & ECN Generat
 """
 
 from flask import Blueprint, request, jsonify, send_file
+from services.logging_setup import get_logger, new_error_id
 from services.comparator import (
     compare_projects,
     generate_comparison_excel,
@@ -11,6 +12,7 @@ from services.comparator import (
     generate_ecn_change_description
 )
 
+logger = get_logger('sbom.compare')
 compare_bp = Blueprint('compare', __name__)
 
 
@@ -32,8 +34,10 @@ def compare_projects_api():
     try:
         res = compare_projects(int(proj_a_id), int(proj_b_id), subsystem_filter=subsystem)
         return jsonify(res)
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'项目比对分析失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 项目比对分析失败: A=%s, B=%s", err_id, proj_a_id, proj_b_id)
+        return jsonify({'success': False, 'error': f'项目比对分析失败，请查看服务日志（错误码 {err_id}）'}), 500
 
 
 @compare_bp.route('/api/projects/compare/export', methods=['GET', 'POST'])
@@ -60,8 +64,10 @@ def export_comparison_excel_api():
             download_name=filename,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'导出比对报告失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 导出比对报告失败: A=%s, B=%s", err_id, proj_a_id, proj_b_id)
+        return jsonify({'success': False, 'error': f'导出比对报告失败，请查看服务日志（错误码 {err_id}）'}), 500
 
 
 @compare_bp.route('/api/projects/compare/export_procurement', methods=['GET', 'POST'])
@@ -88,8 +94,10 @@ def export_procurement_excel_api():
             download_name=filename,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'导出技改增量采购清单失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 导出技改增量采购清单失败: A=%s, B=%s", err_id, proj_a_id, proj_b_id)
+        return jsonify({'success': False, 'error': f'导出技改增量采购清单失败，请查看服务日志（错误码 {err_id}）'}), 500
 
 
 @compare_bp.route('/api/projects/compare/generate_ecn', methods=['GET', 'POST'])
@@ -111,5 +119,7 @@ def generate_compare_ecn_api():
         res = compare_projects(int(proj_a_id), int(proj_b_id), subsystem_filter=subsystem)
         ecn_res = generate_ecn_change_description(res)
         return jsonify(ecn_res)
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'生成 ECN 变更说明失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 生成 ECN 变更说明失败: A=%s, B=%s", err_id, proj_a_id, proj_b_id)
+        return jsonify({'success': False, 'error': f'生成 ECN 变更说明失败，请查看服务日志（错误码 {err_id}）'}), 500

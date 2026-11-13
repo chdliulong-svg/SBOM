@@ -1,7 +1,14 @@
 import sqlite3
 import os
+import json
+import logging
+import threading
+from contextlib import contextmanager
 
-from flask import g, has_request_context
+from flask import g, has_request_context, request
+
+logger = logging.getLogger(__name__)
+_db_write_lock = threading.RLock()
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
@@ -49,6 +56,77 @@ def close_db(e=None):
             except Exception:
                 pass
             g.db = None
+
+
+@contextmanager
+def write_transaction(conn=None):
+    """
+    串行化并发写事务上下文管理器：
+    通过进程内 RLock + SQLite BEGIN IMMEDIATE 确保多步写操作的原子性与互斥，
+    异常时自动回滚，成功退出时自动提交。
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db()
+    with _db_write_lock:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            if own_conn and not has_request_context():
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+
+def record_operation_log(action, target_type='', target_id='', detail='', client_ip='', cursor=None):
+    """记录关键写操作审计日志（异常不阻断主流程）"""
+    if not client_ip:
+        if has_request_context():
+            from services.config import config
+            if getattr(config, 'trust_proxy', False):
+                client_ip = request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or (request.remote_addr or '')
+            else:
+                client_ip = request.remote_addr or ''
+        else:
+            client_ip = 'system'
+    if isinstance(detail, (dict, list)):
+        try:
+            detail_str = json.dumps(detail, ensure_ascii=False)
+        except Exception:
+            detail_str = str(detail)
+    else:
+        detail_str = str(detail or '')
+
+    own_conn = cursor is None
+    conn = None
+    try:
+        if own_conn:
+            conn = get_db()
+            cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO operation_logs (action, target_type, target_id, detail, client_ip)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (str(action), str(target_type or ''), str(target_id or ''), detail_str[:2000], str(client_ip or '')))
+        if own_conn:
+            conn.commit()
+    except Exception as ex:
+        logger.warning("Failed to write operation log (%s): %s", action, ex)
+    finally:
+        if own_conn and conn is not None and not has_request_context():
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def find_template_path():
@@ -268,6 +346,21 @@ def init_db():
     cursor.execute("UPDATE projects SET created_at = datetime('now', 'localtime') WHERE created_at IS NULL OR created_at = ''")
     cursor.execute("UPDATE projects SET updated_at = COALESCE(created_at, datetime('now', 'localtime')) WHERE updated_at IS NULL OR updated_at = ''")
     cursor.execute("UPDATE projects SET category = 'pitch' WHERE category IS NULL OR category = ''")
+
+    # Audit log table for critical write operations
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS operation_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        target_type TEXT DEFAULT '',
+        target_id TEXT DEFAULT '',
+        detail TEXT DEFAULT '',
+        client_ip TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+    )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_operation_logs_created ON operation_logs(created_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action)')
     conn.commit()
 
     # 自动维护 projects.updated_at 的数据库级触发器
@@ -557,48 +650,83 @@ def sync_material_structures(conn):
 
 def get_material_tree(cursor, parent_material_no, visited=None, current_depth=1):
     """
-    Recursively returns pre-order list of all descendant items under parent_material_no.
-    Includes material master metadata (name, description, spec_model, etc.) and relative_depth.
+    Single-query CTE replacement returning pre-order list of all descendant items under parent_material_no.
+    Preserves max depth (10), cycle prevention, and exact output metadata fields without N+1 queries.
     """
-    if current_depth > 10:
+    if current_depth > 10 or not parent_material_no:
         return []
     if visited is None:
-        visited = set()
-    if parent_material_no in visited:
-        return []
-    visited.add(parent_material_no)
+        visited = {parent_material_no}
+    else:
+        visited = set(visited) | {parent_material_no}
 
     cursor.execute('''
-        SELECT s.*,
-               COALESCE(NULLIF(s.drawing_no, '/'), NULLIF(s.drawing_no, ''), m.drawing_no, '/') as drawing_no,
-               m.drawing_no as m_drawing_no,
-               m.name as m_name, m.description as m_desc, m.spec_model as m_model,
-               m.manufacturer as m_mfr, m.unit as m_unit, m.image_path, m.manual_path
-        FROM material_structures s
-        LEFT JOIN materials m ON s.child_material_no = m.material_no
-        WHERE s.parent_material_no = ?
-        ORDER BY s.sort_order, s.id
-    ''', (parent_material_no,))
-    direct_children = [dict(r) for r in cursor.fetchall()]
+        WITH RECURSIVE tree(
+            id, parent_material_no, child_material_no, child_level_num, child_level_str,
+            sort_order, qty, unit, drawing_no, notes, substitute, created_at,
+            relative_depth, path
+        ) AS (
+            SELECT s.id, s.parent_material_no, s.child_material_no, s.child_level_num, s.child_level_str,
+                   s.sort_order, s.qty, s.unit, s.drawing_no, s.notes, s.substitute, s.created_at,
+                   ? AS relative_depth,
+                   '|' || s.parent_material_no || '|' || s.child_material_no || '|' AS path
+            FROM material_structures s
+            WHERE s.parent_material_no = ?
+            UNION ALL
+            SELECT s.id, s.parent_material_no, s.child_material_no, s.child_level_num, s.child_level_str,
+                   s.sort_order, s.qty, s.unit, s.drawing_no, s.notes, s.substitute, s.created_at,
+                   t.relative_depth + 1 AS relative_depth,
+                   t.path || s.child_material_no || '|' AS path
+            FROM material_structures s
+            JOIN tree t ON s.parent_material_no = t.child_material_no
+            WHERE t.relative_depth < 10
+              AND instr(t.path, '|' || s.child_material_no || '|') = 0
+        )
+        SELECT t.id, t.parent_material_no, t.child_material_no, t.child_level_num, t.child_level_str,
+               t.sort_order, t.qty, t.unit,
+               COALESCE(NULLIF(t.drawing_no, '/'), NULLIF(t.drawing_no, ''), m.drawing_no, '/') AS drawing_no,
+               t.notes, t.substitute, t.created_at,
+               t.relative_depth,
+               m.drawing_no AS m_drawing_no,
+               m.name AS m_name, m.description AS m_desc, m.spec_model AS m_model,
+               m.manufacturer AS m_mfr, m.unit AS m_unit, m.image_path, m.manual_path
+        FROM tree t
+        LEFT JOIN materials m ON t.child_material_no = m.material_no
+        ORDER BY t.relative_depth, t.sort_order, t.id
+    ''', (current_depth, parent_material_no))
+
+    rows = [dict(r) for r in cursor.fetchall()]
+    if not rows:
+        return []
+
+    by_parent = {}
+    for row in rows:
+        by_parent.setdefault(row['parent_material_no'], []).append(row)
 
     result = []
-    for child in direct_children:
-        child['relative_depth'] = current_depth
-        result.append(child)
-        sub_children = get_material_tree(cursor, child['child_material_no'], visited, current_depth + 1)
-        result.extend(sub_children)
 
+    def _walk(parent_no):
+        for item in by_parent.get(parent_no, []):
+            result.append(item)
+            child_no = item['child_material_no']
+            if child_no not in visited and item['relative_depth'] < 10:
+                visited.add(child_no)
+                _walk(child_no)
+
+    _walk(parent_material_no)
     return result
 
 
 def touch_project_updated(project_id, cursor=None):
     """
     主动刷新项目的上次修改时间为当前系统本地时间。
-    如果外部未传入 cursor，则自动创建临时连接并立即 commit。
+    如果外部未传入 cursor，则自动获取连接并在非请求上下文结束时安全关闭。
     """
     if not project_id:
         return
     need_commit = False
+    conn = None
+    in_req = has_request_context()
     if cursor is None:
         conn = get_db()
         cursor = conn.cursor()
@@ -607,8 +735,14 @@ def touch_project_updated(project_id, cursor=None):
         cursor.execute("UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = ?", (project_id,))
         if need_commit:
             conn.commit()
-    except Exception:
-        pass
+    except Exception as ex:
+        logger.warning("touch_project_updated failed for project_id=%s: %s", project_id, ex)
+    finally:
+        if need_commit and conn is not None and not in_req:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 if __name__ == '__main__':

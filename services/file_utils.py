@@ -105,3 +105,29 @@ def validate_upload_stream(file_obj, ext):
         return True, ''
 
     return False, f'不支持的文件类型: {ext}'
+
+
+def safe_upload_temp_name(prefix, original_filename, default_ext='.xlsx'):
+    """生成基于 UUID 的安全临时文件名，隔离用户输入路径与特殊字符"""
+    import time
+    import uuid
+    from werkzeug.utils import secure_filename
+    cleaned = secure_filename(original_filename or '')
+    _, ext = os.path.splitext(cleaned)
+    if not ext:
+        ext = default_ext
+    safe_prefix = re.sub(r'[^a-zA-Z0-9_-]', '_', str(prefix or 'tmp'))
+    return f"{safe_prefix}_{int(time.time())}_{uuid.uuid4().hex[:10]}{ext.lower()}"
+
+
+def parse_safe_xml(xml_bytes, max_bytes=32 * 1024 * 1024):
+    """安全解析 XML 字节流，拒绝 DTD / ENTITY 声明并限制大小以防御 XXE 与实体膨胀攻击"""
+    import re
+    import xml.etree.ElementTree as ET
+    if isinstance(xml_bytes, str):
+        xml_bytes = xml_bytes.encode('utf-8')
+    if len(xml_bytes) > max_bytes:
+        raise ValueError(f'XML 文件过大 ({len(xml_bytes)} bytes)，超出安全解析上限')
+    if re.search(rb'<!\s*(?:DOCTYPE|ENTITY)\b', xml_bytes, re.IGNORECASE):
+        raise ValueError('检测到不安全的 XML DTD/ENTITY 声明，已拒绝解析')
+    return ET.fromstring(xml_bytes)

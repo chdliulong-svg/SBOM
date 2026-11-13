@@ -154,6 +154,7 @@ class Config:
             raw_mode = 'on'
         self.auth_mode = raw_mode
         self.admin_password = self._get_str('security', 'admin_password', '102345678')
+        self.trust_proxy = self._get_bool('security', 'trust_proxy', False)
 
         # --- [storage] ---
         self.upload_max_mb = self._get_int('storage', 'upload_max_mb', 200, 1, 4096)

@@ -41,7 +41,8 @@
                             <span>智能查重</span>
                         </button>
                         <button type="button" class="btn btn-outline" id="btnMasterStatsToggle" onclick="toggleMasterStats()" title="查看/折叠主库全局物料统计指标">
-                            <span>📊 物料统计</span>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                            <span>物料统计</span>
                         </button>
                         <span style="color: #cbd5e1; margin: 0 4px;">|</span>
                         <button class="btn btn-outline" onclick="resetAllColumnWidths('masterTable')" title="重置主库表格所有列为推荐默认宽度">
@@ -63,7 +64,16 @@
                         </select>
                     </div>
                     <div style="display: flex; gap: 8px; align-items: center;">
-                        <input id="masterSearch" class="form-input" style="width: 320px;" placeholder="搜索物料号/名称/型号/描述/图纸/制造商..." oninput="handleMasterSearchInput(this.value)">
+                        <div class="search-input-wrap" style="width: 320px;">
+                            <span class="search-icon">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            </span>
+                            <input id="masterSearch" class="form-input" placeholder="搜索物料号/名称/型号/描述/图纸/制造商..." oninput="handleMasterSearchInput(this.value)">
+                            <span class="search-right-meta">
+                                <span id="masterSearchCountBadge" class="search-count-badge" style="display: none;"></span>
+                                <button type="button" id="masterSearchClearBtn" class="search-clear-btn" onclick="clearMasterSearch()" title="清空搜索 (Esc)">&times;</button>
+                            </span>
+                        </div>
                         <button class="btn btn-outline" onclick="loadMasterMaterials()" title="刷新主库数据">刷新</button>
                     </div>
                 </div>
@@ -103,23 +113,23 @@
                         <span style="color: #cbd5e1; margin: 0 2px;">|</span>
 
                         <button type="button" class="btn btn-outline btn-sm" id="btnMasterEdit" onclick="handleMasterToolbarEdit()" title="编辑当前选中的物料（或直接双击表格行）">
-                            <span>✏️ 编辑物料</span>
+                            <span>编辑物料</span>
                         </button>
 
                         <button type="button" class="btn btn-outline btn-sm" id="btnMasterHierarchy" onclick="handleMasterToolbarHierarchy()" style="color: #166534; border-color: #bbf7d0; background: #f0fdf4;" title="维护当前选中物料的下属装配结构与子零部件">
-                            <span>🌳 总成结构</span>
+                            <span>总成结构</span>
                         </button>
 
                         <button type="button" class="btn btn-outline btn-sm" id="btnMasterInsertBom" onclick="handleMasterToolbarInsertBom()" style="color: #0284c7; border-color: #bae6fd; background: #f0f9ff;" title="将当前勾选的物料（单项或多项）导入到当前打开的 Sheet 中">
-                            <span>➕ 引用至当前BOM</span>
+                            <span>+ 引用至当前BOM</span>
                         </button>
 
                         <button type="button" class="btn btn-outline btn-sm" id="btnMasterUsage" onclick="handleMasterToolbarUsage()" style="color: #7e22ce; border-color: #e9d5ff; background: #faf5ff;" title="查看当前选中物料在各工程机型中的被引用明细">
-                            <span>🔍 引用追溯</span>
+                            <span>引用追溯</span>
                         </button>
 
                         <button type="button" class="btn btn-outline btn-sm btn-delete" id="btnMasterDelete" onclick="handleMasterToolbarDelete()" style="color: #dc2626; border-color: #fca5a5; background: #fff5f5;" title="删除当前勾选的物料（支持单项/批量删除，带风险二次确认）">
-                            <span>❌ 删除物料</span>
+                            <span>删除物料</span>
                         </button>
                     </div>
 
@@ -128,7 +138,7 @@
                         <button type="button" class="btn btn-outline btn-sm" id="btnMasterResetSort" onclick="resetMasterSort()" style="display: none; padding: 2px 8px; font-size: 11px; color: #475569;" title="恢复原始物料列表排版顺序">
                             恢复默认排序
                         </button>
-                        <span style="font-size: 12px; color: #94a3b8; user-select: none;">💡 提示：双击任一行可直接编辑物料</span>
+                        <span style="font-size: 12px; color: #94a3b8; user-select: none;">提示: 双击行编辑 · 右键弹出快捷菜单</span>
                     </div>
                 </div>
 

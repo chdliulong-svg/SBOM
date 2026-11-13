@@ -26,9 +26,14 @@ from services.file_utils import (
 
 # ----------------- 协同锁与用户身份工具 -----------------
 def get_client_identity():
-    """以客户端 IP 地址作为协同身份标识"""
+    """以客户端 IP 地址作为协同身份标识（仅当明确开启 trust_proxy 时信任 X-Forwarded-For）"""
     if has_request_context():
-        return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
+        from services.config import config
+        if getattr(config, 'trust_proxy', False):
+            xff = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+            if xff:
+                return xff
+        return request.remote_addr or '127.0.0.1'
     return '127.0.0.1'
 
 

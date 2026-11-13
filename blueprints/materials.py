@@ -8,12 +8,12 @@ import io
 import time
 import json
 from flask import Blueprint, request, jsonify, send_file
-from werkzeug.utils import secure_filename
-from services.database import get_db, get_material_tree
+from services.database import get_db, get_material_tree, record_operation_log
 from services.backup_manager import create_backup_snapshot
 from services.data_audit import get_duplicate_materials_report, check_single_material_duplicate
 from services.master_importer import analyze_master_excel, execute_master_import
-from services.logging_setup import get_logger
+from services.logging_setup import get_logger, new_error_id
+from services.file_utils import safe_path_under, safe_upload_temp_name
 from blueprints.common import UPLOAD_DIR
 
 logger = get_logger('sbom.materials')
@@ -128,7 +128,6 @@ def get_materials():
         else:
             d['referenced_projects'] = []
         materials.append(d)
-    conn.close()
     return jsonify(materials)
 
 
@@ -146,7 +145,6 @@ def get_materials_stats():
     with_manual = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(DISTINCT material_no) FROM bom_items WHERE material_no IS NOT NULL AND material_no != ''")
     referenced_count = cursor.fetchone()[0]
-    conn.close()
     return jsonify({
         'total': total,
         'total_materials': total,
@@ -167,7 +165,6 @@ def get_material_children_api(material_no):
     conn = get_db()
     cursor = conn.cursor()
     children = get_material_tree(cursor, mat_no)
-    conn.close()
     return jsonify({
         'has_children': len(children) > 0,
         'count': len(children),
@@ -204,7 +201,6 @@ def save_material():
     if is_create:
         cursor.execute('SELECT COUNT(*) FROM materials WHERE material_no = ?', (mat_no,))
         if cursor.fetchone()[0] > 0:
-            conn.close()
             return jsonify({'error': f'物料号 [{mat_no}] 已存在于主库中，请勿重复创建！'}), 400
 
         cursor.execute('''
@@ -272,6 +268,7 @@ def save_material():
         synced_rows_count = cursor.rowcount
 
     conn.commit()
+    record_operation_log('save_material', 'material', mat_no, {'is_create': bool(is_create), 'sync_bom': bool(sync_bom)})
     return jsonify({'success': True, 'material_no': mat_no, 'synced_rows_count': synced_rows_count})
 
 
@@ -309,6 +306,7 @@ def delete_material():
     cursor.execute('DELETE FROM material_structures WHERE parent_material_no = ? OR child_material_no = ?', (mat_no, mat_no))
     cursor.execute('DELETE FROM materials WHERE material_no = ?', (mat_no,))
     conn.commit()
+    record_operation_log('delete_material', 'material', mat_no, {'material_no': mat_no})
     return jsonify({'success': True, 'message': f'物料 [{mat_no}] 已成功从全局通用物料主库中移除！'})
 
 
@@ -389,7 +387,6 @@ def get_material_usage(material_no):
     ORDER BY COALESCE(NULLIF(p.system_name, ''), p.name), s.name, b.row_num
     ''', (mat_no,))
     usage_list = [dict(r) for r in cursor.fetchall()]
-    conn.close()
     return jsonify({
         'material_no': mat_no,
         'count': len(usage_list),
@@ -422,7 +419,6 @@ def get_material_structure(material_no):
     ORDER BY s.sort_order, s.id
     ''', (mat_no,))
     children = [dict(r) for r in cursor.fetchall()]
-    conn.close()
     return jsonify({
         'parent_material_no': mat_no,
         'count': len(children),
@@ -498,7 +494,6 @@ def save_material_structure():
             ''', (parent_mat, child_mat, lvl, lvl_str, next_sort, qty, unit, dwg, notes, substitute))
 
     conn.commit()
-    conn.close()
     return jsonify({'success': True})
 
 
@@ -513,7 +508,6 @@ def delete_material_structure():
     cursor = conn.cursor()
     cursor.execute('DELETE FROM material_structures WHERE id = ?', (struct_id,))
     conn.commit()
-    conn.close()
     return jsonify({'success': True})
 
 
@@ -529,7 +523,7 @@ def clear_material_structures():
     cursor.execute('DELETE FROM material_structures WHERE parent_material_no = ?', (parent_mat,))
     deleted_count = cursor.rowcount
     conn.commit()
-    conn.close()
+    record_operation_log('clear_material_structures', 'material', parent_mat, {'deleted_count': deleted_count})
     return jsonify({
         'success': True,
         'deleted_count': deleted_count,
@@ -550,7 +544,6 @@ def move_material_structure():
     cursor.execute('SELECT id, parent_material_no, sort_order FROM material_structures WHERE id = ?', (struct_id,))
     curr = cursor.fetchone()
     if not curr:
-        conn.close()
         return jsonify({'error': '结构记录未找到'}), 404
 
     parent_mat = curr['parent_material_no']
@@ -566,7 +559,6 @@ def move_material_structure():
     elif direction == 'down' and idx < len(all_ids) - 1:
         other_id = all_ids[idx + 1]
     else:
-        conn.close()
         return jsonify({'success': True})
 
     cursor.execute('SELECT sort_order FROM material_structures WHERE id = ?', (other_id,))
@@ -575,7 +567,6 @@ def move_material_structure():
     cursor.execute('UPDATE material_structures SET sort_order = ? WHERE id = ?', (other_order, struct_id))
     cursor.execute('UPDATE material_structures SET sort_order = ? WHERE id = ?', (curr_order, other_id))
     conn.commit()
-    conn.close()
     return jsonify({'success': True})
 
 
@@ -594,7 +585,6 @@ def delete_material_asset():
     elif asset_type == 'manual':
         cursor.execute("UPDATE materials SET manual_path = '' WHERE material_no = ?", (mat_no,))
     conn.commit()
-    conn.close()
     return jsonify({'success': True})
 
 
@@ -618,7 +608,6 @@ def export_materials_excel():
     ORDER BY m.material_no
     ''')
     rows = cursor.fetchall()
-    conn.close()
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -708,32 +697,42 @@ def analyze_master_import():
     if 'file' not in request.files:
         return jsonify({'error': '未选择要上传的 Excel 文件'}), 400
     file = request.files['file']
-    if not file.filename.lower().endswith('.xlsx'):
+    if not file.filename or not file.filename.lower().endswith('.xlsx'):
         return jsonify({'error': '请上传 .xlsx 格式的 Excel 文件'}), 400
 
-    filename = secure_filename(file.filename) or 'master_import.xlsx'
-    temp_filename = f"temp_master_{int(time.time())}_{filename}"
-    save_path = os.path.join(UPLOAD_DIR, temp_filename)
+    temp_filename = safe_upload_temp_name('temp_master', file.filename, default_ext='.xlsx')
+    save_path = safe_path_under(UPLOAD_DIR, temp_filename)
+    if not save_path:
+        return jsonify({'error': '非法的文件路径，已被安全策略拒绝'}), 400
     file.save(save_path)
 
     try:
         res = analyze_master_excel(save_path)
         res['temp_filename'] = temp_filename
-        res['original_filename'] = file.filename
+        res['original_filename'] = os.path.basename(file.filename)
         return jsonify(res)
-    except Exception as e:
-        return jsonify({'error': f'解析 Excel 文件失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 解析主库 Excel 文件失败: %s", err_id, temp_filename)
+        if os.path.exists(save_path):
+            try:
+                os.remove(save_path)
+            except Exception:
+                pass
+        return jsonify({'error': f'解析 Excel 文件失败，请检查文件格式（错误码 {err_id}）'}), 500
 
 
 @materials_bp.route('/api/materials/import/reanalyze', methods=['POST'])
 def reanalyze_master_import():
     data = request.json or {}
-    temp_filename = data.get('temp_filename', '').strip()
-    sheet_name = data.get('sheet_name', '').strip()
+    temp_filename = os.path.basename((data.get('temp_filename') or '').strip())
+    sheet_name = (data.get('sheet_name') or '').strip()
     if not temp_filename:
         return jsonify({'error': '缺少临时文件名'}), 400
 
-    save_path = os.path.join(UPLOAD_DIR, temp_filename)
+    save_path = safe_path_under(UPLOAD_DIR, temp_filename)
+    if not save_path:
+        return jsonify({'error': '非法的临时文件名，已被安全策略拒绝'}), 400
     if not os.path.exists(save_path):
         return jsonify({'error': '上传的临时文件已过期，请重新选择文件上传'}), 400
 
@@ -741,15 +740,17 @@ def reanalyze_master_import():
         res = analyze_master_excel(save_path, sheet_name)
         res['temp_filename'] = temp_filename
         return jsonify(res)
-    except Exception as e:
-        return jsonify({'error': f'切换工作表分析失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 切换主库 Excel 工作表分析失败: %s", err_id, temp_filename)
+        return jsonify({'error': f'切换工作表分析失败（错误码 {err_id}）'}), 500
 
 
 @materials_bp.route('/api/materials/import/execute', methods=['POST'])
 def execute_master_import_api():
     data = request.json or {}
-    temp_filename = data.get('temp_filename', '').strip()
-    sheet_name = data.get('sheet_name', '').strip()
+    temp_filename = os.path.basename((data.get('temp_filename') or '').strip())
+    sheet_name = (data.get('sheet_name') or '').strip()
     header_row = data.get('header_row', 1)
     mapping = data.get('mapping', {})
     overwrite = data.get('overwrite', True)
@@ -757,7 +758,9 @@ def execute_master_import_api():
     if not temp_filename:
         return jsonify({'error': '缺少临时文件名'}), 400
 
-    save_path = os.path.join(UPLOAD_DIR, temp_filename)
+    save_path = safe_path_under(UPLOAD_DIR, temp_filename)
+    if not save_path:
+        return jsonify({'error': '非法的临时文件名，已被安全策略拒绝'}), 400
     if not os.path.exists(save_path):
         return jsonify({'error': '上传的临时文件已过期，请重新选择文件上传'}), 400
 
@@ -778,9 +781,16 @@ def execute_master_import_api():
         except Exception:
             pass
 
+        record_operation_log('import_master_materials', 'materials', temp_filename, {
+            'sheet': sheet_name,
+            'inserted': res.get('inserted', 0) if isinstance(res, dict) else 0,
+            'updated': res.get('updated', 0) if isinstance(res, dict) else 0,
+        })
         return jsonify(res)
-    except Exception as e:
-        return jsonify({'error': f'导入物料失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 批量导入主库物料失败: %s", err_id, temp_filename)
+        return jsonify({'error': f'导入物料失败，请检查表格映射与数据格式（错误码 {err_id}）'}), 500
 
 
 @materials_bp.route('/api/material/<path:material_no>', methods=['GET'])
@@ -795,7 +805,6 @@ def get_single_material(material_no):
     WHERE m.material_no = ?
     ''', (material_no.strip(),))
     row = cursor.fetchone()
-    conn.close()
     if row:
         return jsonify(dict(row))
     return jsonify(None), 404
@@ -807,8 +816,10 @@ def api_materials_audit():
     try:
         report = get_duplicate_materials_report()
         return jsonify({'success': True, 'report': report})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 主库查重审计失败", err_id)
+        return jsonify({'success': False, 'error': f'主库查重审计失败（错误码 {err_id}）'}), 500
 
 
 @materials_bp.route('/api/materials/check_duplicate', methods=['GET'])
@@ -819,8 +830,10 @@ def api_check_duplicate():
     try:
         matches = check_single_material_duplicate(name, spec_model, exclude_mat_no=mat_no)
         return jsonify({'success': True, 'matches': matches})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 单条物料查重失败", err_id)
+        return jsonify({'success': False, 'error': f'查重失败（错误码 {err_id}）'}), 500
 
 
 # ----------------- AI Material Extraction API -----------------
@@ -835,6 +848,8 @@ def api_ai_parse_material():
     try:
         result = extract_material_semantics(desc)
         return jsonify(result)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] AI 物料语义解析失败", err_id)
+        return jsonify({'success': False, 'error': f'智能解析失败（错误码 {err_id}）'}), 500
 

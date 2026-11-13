@@ -9,12 +9,13 @@ Static Asset Serving (Photos, Manuals) and File Upload APIs.
 """
 
 import os
+from urllib.parse import quote
 from flask import Blueprint, request, jsonify, send_from_directory
-from werkzeug.utils import secure_filename
-from services.database import get_db
+from services.database import get_db, record_operation_log
 from services.importer import import_excel_sbom
 from services.backup_manager import create_backup_snapshot
-from services.logging_setup import get_logger
+from services.logging_setup import get_logger, new_error_id
+from services.file_utils import safe_upload_temp_name
 from blueprints.common import (
     IMAGES_DIR,
     MANUALS_DIR,
@@ -34,10 +35,10 @@ ALLOWED_IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.emf', '.webp']
 # ----------------- Assets Serving -----------------
 @assets_bp.route('/assets/images/<path:filename>')
 def serve_image(filename):
-    # 局域网关键优化：开启客户端 HTTP 强缓存（3天）与 ETag 条件请求，
-    # 彻底释放 Waitress 后台线程，避免浏览物料时并发请求耗尽线程池
-    response = send_from_directory(IMAGES_DIR, filename, max_age=259200)
-    response.headers['Cache-Control'] = 'public, max-age=259200'
+    # 使用 max-age=0 + must-revalidate + ETag 条件请求：
+    # 未修改时返回 304，替换图片后无需清空浏览器缓存即可立即生效
+    response = send_from_directory(IMAGES_DIR, filename, max_age=0)
+    response.headers['Cache-Control'] = 'public, max-age=0, must-revalidate'
     return response
 
 
@@ -67,7 +68,11 @@ def serve_manual(filename):
         )
     else:
         response = send_from_directory(MANUALS_DIR, filename, mimetype='application/pdf', max_age=86400)
-        response.headers['Content-Disposition'] = f'inline; filename="{custom_name}"'
+        ascii_name = custom_name.encode('ascii', 'ignore').decode('ascii').strip() or 'manual.pdf'
+        encoded_name = quote(custom_name)
+        response.headers['Content-Disposition'] = (
+            f'inline; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded_name}'
+        )
     response.headers['Cache-Control'] = 'public, max-age=86400'
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
@@ -157,24 +162,37 @@ def import_excel():
     if 'file' not in request.files:
         return jsonify({'error': '未选择文件'}), 400
     file = request.files['file']
-    if file.filename == '' or not file.filename.endswith('.xlsx'):
+    if not file.filename or not file.filename.lower().endswith('.xlsx'):
         return jsonify({'error': '请上传有效的 .xlsx 文件'}), 400
 
-    filename = secure_filename(file.filename) or 'upload.xlsx'
-    save_path = safe_path_under(UPLOAD_DIR, filename)
+    category = (request.form.get('category') or 'pitch').strip() or 'pitch'
+    platform = (request.form.get('platform') or '').strip()
+
+    temp_filename = safe_upload_temp_name('sbom_import', file.filename, default_ext='.xlsx')
+    save_path = safe_path_under(UPLOAD_DIR, temp_filename)
     if not save_path:
         return jsonify({'error': '非法的文件名，已被安全策略拒绝'}), 400
     file.save(save_path)
 
     # 触发自动安全快照备份
     try:
-        create_backup_snapshot(reason='import_excel', note=f'导入Excel模版 [{file.filename}] 前自动备份')
+        create_backup_snapshot(reason='import_excel', note=f'导入Excel模版 [{os.path.basename(file.filename)}] 前自动备份')
     except Exception as e_snap:
         logger.warning("导入 Excel 前自动备份失败: %s", e_snap)
 
     try:
-        import_excel_sbom(save_path)
+        import_excel_sbom(save_path, category=category, platform=platform)
+        record_operation_log('import_excel_sbom', 'project', os.path.basename(file.filename), {'category': category, 'platform': platform})
         return jsonify({'success': True, 'message': '导入成功'})
-    except Exception as e:
-        logger.exception("导入 Excel 失败: %s", save_path)
-        return jsonify({'error': f'导入失败: {str(e)}'}), 500
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 导入 Excel 失败: %s", err_id, save_path)
+        return jsonify({'error': f'导入失败，请检查文件格式是否符合模版规范（错误码 {err_id}）'}), 500
+    finally:
+        if os.path.exists(save_path):
+            try:
+                os.remove(save_path)
+            except Exception:
+                pass

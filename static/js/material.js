@@ -25,10 +25,22 @@
         };
 
         function handleMasterSearchInput(val) {
+            if (typeof updateSearchBoxMeta === 'function') {
+                updateSearchBoxMeta('masterSearch', 'masterSearchClearBtn', 'masterSearchCountBadge', (allMasterMaterials || []).length, (allMasterMaterials || []).length);
+            }
             clearTimeout(masterSearchDebounceTimer);
             masterSearchDebounceTimer = setTimeout(() => {
                 loadMasterMaterials();
             }, 250);
+        }
+
+        function clearMasterSearch() {
+            const inp = document.getElementById('masterSearch');
+            if (inp) {
+                inp.value = '';
+                loadMasterMaterials('');
+                inp.focus();
+            }
         }
 
         function filterMasterByStatus(status) {
@@ -40,8 +52,7 @@
         }
 
         function loadMasterStats() {
-            fetch('/api/materials/stats')
-                .then(r => r.json())
+            safeFetchJson('/api/materials/stats')
                 .then(stats => {
                     const elTotal = document.getElementById('stat-total');
                     const elRef = document.getElementById('stat-referenced');
@@ -92,8 +103,7 @@
             const filterType = document.getElementById('masterFilterType') ? document.getElementById('masterFilterType').value : 'all';
             const catFilter = document.getElementById('masterFilterCategory') ? document.getElementById('masterFilterCategory').value : 'all';
 
-            fetch(`/api/materials?q=${encodeURIComponent(search)}&filter_type=${encodeURIComponent(filterType)}&category=${encodeURIComponent(catFilter)}`)
-                .then(r => r.json())
+            safeFetchJson(`/api/materials?q=${encodeURIComponent(search)}&filter_type=${encodeURIComponent(filterType)}&category=${encodeURIComponent(catFilter)}`)
                 .then(materials => {
                     const list = Array.isArray(materials) ? materials : [];
                     rawMasterMaterialsOrder = [...list];
@@ -115,7 +125,12 @@
                     populateMasterDatalists();
                     renderMasterMaterialsTable();
                 })
-                .catch(err => console.error('Error loading master materials:', err));
+                .catch(err => {
+                    console.error('Error loading master materials:', err);
+                    if (typeof showToast === 'function') {
+                        showToast(err.message || '加载全局物料库失败', 'error');
+                    }
+                });
         }
 
         function populateMasterDatalists() {
@@ -144,11 +159,97 @@
         }
         window.populateMasterDatalists = populateMasterDatalists;
 
+        let _masterRenderToken = 0;
+
+        function _buildMasterRowElement(m) {
+            const isSelected = selectedMasterMatNos.has(m.material_no);
+            const tr = document.createElement('tr');
+            if (isSelected) {
+                tr.className = 'master-row-selected';
+            }
+            tr.ondblclick = () => openEditMasterModal(m.material_no);
+            tr.onclick = (e) => handleMasterRowClick(e, m.material_no);
+            tr.oncontextmenu = (e) => openMasterRowContextMenu(e, m.material_no);
+            tr.title = '双击编辑该物料 · 单击勾选行 · 右键快捷菜单';
+
+            const selectCellHtml = `
+                <td class="col-center" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="master-row-cb" value="${escapeHtml(m.material_no)}" ${isSelected ? 'checked' : ''} onchange="toggleMasterRowSelect('${escapeHtml(m.material_no)}', this.checked)" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
+                </td>`;
+
+            let imgTag = '';
+            if (m.image_path) {
+                const safeImg = `/${m.image_path}`;
+                imgTag = `
+                    <div class="asset-btn-wrap">
+                        <img src="${escapeHtml(safeImg)}" loading="lazy" class="thumb-img" onclick="event.stopPropagation(); showImgPreview('${escapeHtml(safeImg)}')" onmouseenter="if (typeof showHoverImgPreview === 'function') showHoverImgPreview(this, '${escapeHtml(safeImg)}', '${escapeHtml(m.material_no)}')" onmouseleave="if (typeof hideHoverImgPreview === 'function') hideHoverImgPreview()" title="悬停预览 · 点击放大">
+                        <button type="button" class="asset-del-btn" onclick="event.stopPropagation(); deleteMasterAsset('${escapeHtml(m.material_no)}', 'image')" title="移除图片">&times;</button>
+                    </div>`;
+            } else {
+                imgTag = `<span class="thumb-placeholder" onclick="event.stopPropagation(); triggerImgUpload('${escapeHtml(m.material_no)}')" title="点击上传实物图片">上传图片</span>`;
+            }
+
+            let manTag = '';
+            if (m.manual_path) {
+                const safeName = (m.name || '').replace(/'/g, "\\'");
+                manTag = `
+                    <div class="asset-btn-wrap">
+                        <button type="button" class="manual-link" style="border: 1px solid #bae6fd; cursor: pointer; background: #f0f9ff; padding: 2px 7px;" onclick="event.stopPropagation(); previewManualOnline('/${m.manual_path}', '${escapeHtml(m.material_no)}', '${safeName}')" title="在线查阅 PDF 手册">查看手册</button>
+                        <button type="button" class="asset-del-btn" onclick="event.stopPropagation(); deleteMasterAsset('${escapeHtml(m.material_no)}', 'manual')" title="移除手册">&times;</button>
+                    </div>`;
+            } else {
+                manTag = `<span class="manual-empty" onclick="event.stopPropagation(); triggerManualUpload('${escapeHtml(m.material_no)}')" title="点击上传技术手册">上传手册</span>`;
+            }
+
+            let childBadge = '';
+            if (m.child_count > 0) {
+                childBadge = `<span class="badge-child-tag" onclick="event.stopPropagation(); openMasterHierarchyModal('${escapeHtml(m.material_no)}')" title="包含 ${m.child_count} 项子零部件，点击管理结构">${m.child_count}项结构</span>`;
+            }
+
+            const projList = m.referenced_projects || [];
+            let projCellHtml = '';
+            if (projList && projList.length > 0) {
+                const projBadges = projList.slice(0, 2).map(p => {
+                    const pTitle = p.name || p.code || '未命名项目';
+                    return `<span class="badge-project-ref" onclick="event.stopPropagation(); openMasterUsageModal('${escapeHtml(m.material_no)}')" title="点击查看项目 [${escapeHtml(pTitle)}] 详细引用位置与Sheet">${escapeHtml(pTitle)}</span>`;
+                }).join('');
+
+                let moreBadge = '';
+                if (projList.length > 2) {
+                    moreBadge = `<span class="badge-project-ref badge-project-more" onclick="event.stopPropagation(); openMasterUsageModal('${escapeHtml(m.material_no)}')" title="共 ${projList.length} 个项目引用，点击查看全部">+${projList.length - 2}</span>`;
+                }
+                const allProjNames = projList.map(p => p.name || p.code).join(', ');
+                projCellHtml = `<div style="display: flex; gap: 4px; align-items: center; overflow: hidden; flex-wrap: nowrap;" title="引用项目 (${projList.length}个): ${escapeHtml(allProjNames)}&#10;点击查看具体Sheet和行号">${projBadges}${moreBadge}</div>`;
+            } else {
+                projCellHtml = `<span style="color: #94a3b8; font-size: 12px;">未引用</span>`;
+            }
+
+            tr.innerHTML = `
+                ${selectCellHtml}
+                <td>${formatPipeMultilineMatNo(m.material_no, childBadge)}</td>
+                <td>${formatPipeMultilineHtml(m.name || '')}</td>
+                <td>${projCellHtml}</td>
+                <td>${formatPipeMultilineHtml(m.description || '')}</td>
+                <td>${formatPipeMultilineHtml(m.spec_model || '')}</td>
+                <td>${formatPipeMultilineHtml(m.manufacturer || '')}</td>
+                <td class="col-center">${formatPipeMultilineHtml(m.unit || 'PC', true)}</td>
+                <td>${formatPipeMultilineHtml(m.drawing_no || '/')}</td>
+                <td class="col-center">${imgTag}</td>
+                <td class="col-center">${manTag}</td>
+            `;
+            return tr;
+        }
+
         function renderMasterMaterialsTable() {
             const tbody = document.getElementById('masterTableBody');
             if (!tbody) return;
 
+            const renderToken = ++_masterRenderToken;
             tbody.innerHTML = '';
+            const totalMatched = (allMasterMaterials || []).length;
+            if (typeof updateSearchBoxMeta === 'function') {
+                updateSearchBoxMeta('masterSearch', 'masterSearchClearBtn', 'masterSearchCountBadge', totalMatched, totalMatched);
+            }
             if (!allMasterMaterials || allMasterMaterials.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; color: var(--text-muted); padding: 40px;">未找到匹配的通用物料</td></tr>`;
                 applyColumnWidths('masterTable');
@@ -156,93 +257,32 @@
                 return;
             }
 
-            const fragment = document.createDocumentFragment();
+            // 首屏先挂载 120 条保证立即响应，超出部分通过 requestAnimationFrame 分片挂载防止大主库卡死
+            const CHUNK_SIZE = 120;
+            let idx = 0;
 
-            allMasterMaterials.forEach(m => {
-                const isSelected = selectedMasterMatNos.has(m.material_no);
-                const tr = document.createElement('tr');
-                if (isSelected) {
-                    tr.className = 'master-row-selected';
+            function appendChunk() {
+                if (renderToken !== _masterRenderToken) return;
+                const fragment = document.createDocumentFragment();
+                const end = Math.min(idx + CHUNK_SIZE, allMasterMaterials.length);
+                for (; idx < end; idx++) {
+                    fragment.appendChild(_buildMasterRowElement(allMasterMaterials[idx]));
                 }
-                tr.ondblclick = () => openEditMasterModal(m.material_no);
-                tr.onclick = (e) => handleMasterRowClick(e, m.material_no);
-                tr.title = '双击编辑该物料 · 单击勾选行';
+                tbody.appendChild(fragment);
 
-                // Checkbox cell (replaces old action column)
-                const selectCellHtml = `
-                    <td class="col-center" onclick="event.stopPropagation()">
-                        <input type="checkbox" class="master-row-cb" value="${escapeHtml(m.material_no)}" ${isSelected ? 'checked' : ''} onchange="toggleMasterRowSelect('${escapeHtml(m.material_no)}', this.checked)" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
-                    </td>`;
-
-                // Image cell
-                let imgTag = '';
-                if (m.image_path) {
-                    imgTag = `
-                        <div class="asset-btn-wrap">
-                            <img src="/${m.image_path}" class="thumb-img" onclick="event.stopPropagation(); showImgPreview('/${m.image_path}')" title="点击放大预览">
-                            <button type="button" class="asset-del-btn" onclick="event.stopPropagation(); deleteMasterAsset('${escapeHtml(m.material_no)}', 'image')" title="移除图片">&times;</button>
-                        </div>`;
+                if (idx < allMasterMaterials.length) {
+                    requestAnimationFrame(appendChunk);
                 } else {
-                    imgTag = `<span class="thumb-placeholder" onclick="event.stopPropagation(); triggerImgUpload('${escapeHtml(m.material_no)}')" title="点击上传实物图片">上传图片</span>`;
+                    applyColumnWidths('masterTable');
+                    updateMasterToolbarState();
                 }
+            }
 
-                // Manual cell
-                let manTag = '';
-                if (m.manual_path) {
-                    const safeName = (m.name || '').replace(/'/g, "\\'");
-                    manTag = `
-                        <div class="asset-btn-wrap">
-                            <button type="button" class="manual-link" style="border: 1px solid #bae6fd; cursor: pointer; background: #f0f9ff; padding: 2px 7px;" onclick="event.stopPropagation(); previewManualOnline('/${m.manual_path}', '${escapeHtml(m.material_no)}', '${safeName}')" title="在线查阅 PDF 手册">查看手册</button>
-                            <button type="button" class="asset-del-btn" onclick="event.stopPropagation(); deleteMasterAsset('${escapeHtml(m.material_no)}', 'manual')" title="移除手册">&times;</button>
-                        </div>`;
-                } else {
-                    manTag = `<span class="manual-empty" onclick="event.stopPropagation(); triggerManualUpload('${escapeHtml(m.material_no)}')" title="点击上传技术手册">上传手册</span>`;
-                }
-
-                // Child count badge
-                let childBadge = '';
-                if (m.child_count > 0) {
-                    childBadge = `<span class="badge-child-tag" onclick="event.stopPropagation(); openMasterHierarchyModal('${escapeHtml(m.material_no)}')" title="包含 ${m.child_count} 项子零部件，点击管理结构">${m.child_count}项结构</span>`;
-                }
-
-                // Referenced projects cell
-                const projList = m.referenced_projects || [];
-                let projCellHtml = '';
-                if (projList && projList.length > 0) {
-                    const projBadges = projList.slice(0, 2).map(p => {
-                        const pTitle = p.name || p.code || '未命名项目';
-                        return `<span class="badge-project-ref" onclick="event.stopPropagation(); openMasterUsageModal('${escapeHtml(m.material_no)}')" title="点击查看项目 [${escapeHtml(pTitle)}] 详细引用位置与Sheet">${escapeHtml(pTitle)}</span>`;
-                    }).join('');
-
-                    let moreBadge = '';
-                    if (projList.length > 2) {
-                        moreBadge = `<span class="badge-project-ref badge-project-more" onclick="event.stopPropagation(); openMasterUsageModal('${escapeHtml(m.material_no)}')" title="共 ${projList.length} 个项目引用，点击查看全部">+${projList.length - 2}</span>`;
-                    }
-                    const allProjNames = projList.map(p => p.name || p.code).join(', ');
-                    projCellHtml = `<div style="display: flex; gap: 4px; align-items: center; overflow: hidden; flex-wrap: nowrap;" title="引用项目 (${projList.length}个): ${escapeHtml(allProjNames)}&#10;点击查看具体Sheet和行号">${projBadges}${moreBadge}</div>`;
-                } else {
-                    projCellHtml = `<span style="color: #94a3b8; font-size: 12px;">未引用</span>`;
-                }
-
-                tr.innerHTML = `
-                    ${selectCellHtml}
-                    <td>${formatPipeMultilineMatNo(m.material_no, childBadge)}</td>
-                    <td>${formatPipeMultilineHtml(m.name || '')}</td>
-                    <td>${projCellHtml}</td>
-                    <td>${formatPipeMultilineHtml(m.description || '')}</td>
-                    <td>${formatPipeMultilineHtml(m.spec_model || '')}</td>
-                    <td>${formatPipeMultilineHtml(m.manufacturer || '')}</td>
-                    <td class="col-center">${formatPipeMultilineHtml(m.unit || 'PC', true)}</td>
-                    <td>${formatPipeMultilineHtml(m.drawing_no || '/')}</td>
-                    <td class="col-center">${imgTag}</td>
-                    <td class="col-center">${manTag}</td>
-                `;
-                fragment.appendChild(tr);
-            });
-            tbody.appendChild(fragment);
-
-            applyColumnWidths('masterTable');
-            updateMasterToolbarState();
+            appendChunk();
+            if (allMasterMaterials.length > CHUNK_SIZE) {
+                applyColumnWidths('masterTable');
+                updateMasterToolbarState();
+            }
         }
 
         // --- Row Click & Selection Helpers ---
@@ -256,6 +296,49 @@
                 return;
             }
             toggleMasterRowSelect(matNo);
+        }
+
+        function openMasterRowContextMenu(event, matNo) {
+            if (!selectedMasterMatNos.has(matNo)) {
+                selectedMasterMatNos.clear();
+                selectedMasterMatNos.add(matNo);
+                renderMasterMaterialsTable();
+            }
+            const count = selectedMasterMatNos.size;
+            const singleOnly = count === 1;
+            const canInsertBom = (typeof currentSubsystemId !== 'undefined' && !!currentSubsystemId);
+
+            if (typeof openUiContextMenu === 'function') {
+                openUiContextMenu(event, [
+                    {
+                        label: '编辑物料详情',
+                        disabled: !singleOnly,
+                        onClick: () => openEditMasterModal(matNo)
+                    },
+                    {
+                        label: '维护总成结构',
+                        disabled: !singleOnly,
+                        onClick: () => openMasterHierarchyModal(matNo)
+                    },
+                    {
+                        label: '查看引用追溯',
+                        disabled: !singleOnly,
+                        onClick: () => openMasterUsageModal(matNo)
+                    },
+                    { divider: true },
+                    {
+                        label: count > 1 ? `引用选中 ${count} 项至当前 BOM` : '引用至当前 BOM',
+                        disabled: !canInsertBom,
+                        onClick: () => handleMasterToolbarInsertBom()
+                    },
+                    { divider: true },
+                    {
+                        label: count > 1 ? `删除选中 ${count} 项物料` : '删除该物料',
+                        danger: true,
+                        onClick: () => handleMasterToolbarDelete()
+                    }
+                ]);
+            }
         }
 
         function toggleMasterSelectAll(checked) {

@@ -127,7 +127,7 @@ function renderProjectManagerCategoryOptions(categories) {
     if (!sel) return;
 
     const curVal = sel.value || 'all';
-    let opts = '<option value="all">全部分类 (全部)</option>';
+    let opts = '<option value="all">全部分类</option>';
     (categories || []).forEach(cat => {
         const cnt = cat.project_count !== undefined ? ` (${cat.project_count})` : '';
         opts += `<option value="${escapeHtml(cat.code)}" ${curVal === cat.code ? 'selected' : ''}>${escapeHtml(cat.name)}${cnt}</option>`;
@@ -147,7 +147,7 @@ function renderProjectManagerPlatformOptions(projects) {
     });
 
     const sorted = Array.from(platforms).sort();
-    let opts = '<option value="all">全部机型平台</option>';
+    let opts = '<option value="all">全部平台</option>';
     sorted.forEach(plat => {
         opts += `<option value="${escapeHtml(plat)}" ${curVal === plat ? 'selected' : ''}>${escapeHtml(plat)}</option>`;
     });
@@ -177,7 +177,7 @@ function renderProjectManagerCodeOptions(projects, selectedPlatform = 'all') {
     });
 
     const sorted = Array.from(codes).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN', { numeric: true }));
-    let opts = '<option value="all">全部机型代号</option>';
+    let opts = '<option value="all">全部机型</option>';
     sorted.forEach(code => {
         opts += `<option value="${escapeHtml(code)}" ${curVal === code ? 'selected' : ''}>${escapeHtml(code)}</option>`;
     });
@@ -268,6 +268,18 @@ function filterAndRenderProjectManagerTable() {
     });
 
     renderProjectManagerTable(list);
+    if (typeof updateSearchBoxMeta === 'function') {
+        updateSearchBoxMeta('pmSearchInput', 'pmSearchClearBtn', 'pmSearchCountBadge', list.length, (allProjectsData || []).length);
+    }
+}
+
+function clearPmSearch() {
+    const inp = document.getElementById('pmSearchInput');
+    if (inp) {
+        inp.value = '';
+        filterAndRenderProjectManagerTable();
+        inp.focus();
+    }
 }
 
 // 表格 DOM 渲染
@@ -464,7 +476,7 @@ function updatePmBatchButtons() {
             const p = allProjectsData.find(item => item.id == firstId);
             const lockBtn = document.getElementById('pmBtnToggleLock');
             if (lockBtn && p) {
-                lockBtn.innerHTML = p.is_locked == 1 ? '🔓 解锁' : '🔒 锁定';
+                lockBtn.textContent = p.is_locked == 1 ? '解锁' : '锁定';
                 lockBtn.title = p.is_locked == 1 ? '点击解锁编辑' : '点击锁定保护';
             }
         } else {
@@ -522,6 +534,9 @@ function toggleLockSelectedProjectFromManager() {
 // --- 快捷操作函数 ---
 // 1. 进入工程
 function openProjectFromManager(projectId) {
+    if (typeof confirmDiscardProjectChanges === 'function' && !confirmDiscardProjectChanges()) {
+        return;
+    }
     closeProjectManagerModal();
     if (typeof loadProject === 'function') {
         loadProject(projectId);

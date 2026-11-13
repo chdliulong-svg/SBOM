@@ -8,6 +8,49 @@ let allMainCategoriesCache = [
     { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统', icon: '' },
     { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' }
 ];
+let isProjectMetadataDirty = false;
+
+function setProjectDirty(dirty) {
+    isProjectMetadataDirty = !!dirty && !!(currentProjectData && currentProjectData.is_locked != 1);
+    const dot = document.getElementById('projectUnsavedDot');
+    const btn = document.getElementById('btnProjectSave');
+    if (dot) dot.style.display = isProjectMetadataDirty ? 'inline-block' : 'none';
+    if (btn) btn.classList.toggle('is-dirty', isProjectMetadataDirty);
+}
+
+function confirmDiscardProjectChanges() {
+    if (!isProjectMetadataDirty) return true;
+    return confirm('当前工程的封面或签字页存在未保存修改，确定放弃修改并切换/关闭吗？');
+}
+
+function handleMainProjectSelectChange(val) {
+    if (!confirmDiscardProjectChanges()) {
+        const sel = document.getElementById('projectSelect');
+        if (sel) sel.value = currentProjectId ? String(currentProjectId) : '';
+        return;
+    }
+    loadProject(val);
+}
+
+function initProjectDirtyListeners() {
+    const coverFormIds = ['cov-code', 'cov-platform', 'cov-supplier', 'cov-model', 'cov-name', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-form', 'cov-company'];
+    const sigIds = [
+        'sig-author-name', 'sig-author-date',
+        'sig-reviewer-name', 'sig-reviewer-date',
+        'sig-checker-name', 'sig-checker-date',
+        'sig-countersign-name', 'sig-countersign-date',
+        'sig-standard-name', 'sig-standard-date',
+        'sig-approver-name', 'sig-approver-date'
+    ];
+    [...coverFormIds, ...sigIds].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.dataset.dirtyBound !== 'true') {
+            el.dataset.dirtyBound = 'true';
+            el.addEventListener('input', () => setProjectDirty(true));
+            el.addEventListener('change', () => setProjectDirty(true));
+        }
+    });
+}
 
 function getMainFilteredProjects() {
     let list = allMainProjectsCache || [];
@@ -184,10 +227,20 @@ function renderMainPlatformOptions() {
 }
 
 function handlePlatformFilterChange(plat) {
-    currentMainPlatform = (plat || 'all').trim();
-    
+    const prevPlat = currentMainPlatform;
+    const nextPlat = (plat || 'all').trim();
+    if (nextPlat === prevPlat) return;
+
+    currentMainPlatform = nextPlat;
     const filtered = getMainFilteredProjects();
     const currentInFiltered = filtered.some(p => p.id == currentProjectId);
+
+    if (!currentInFiltered && !confirmDiscardProjectChanges()) {
+        currentMainPlatform = prevPlat;
+        const pSel = document.getElementById('platformSelect');
+        if (pSel) pSel.value = prevPlat;
+        return;
+    }
 
     if (currentInFiltered) {
         renderProjectSelectOptions(filtered, currentProjectId);
@@ -197,7 +250,7 @@ function handlePlatformFilterChange(plat) {
             loadProject(filtered[0].id);
         } else {
             renderProjectSelectOptions([], null);
-            closeCurrentProject();
+            closeCurrentProject(true);
             const ph = document.getElementById('noProjectPlaceholder');
             if (ph) {
                 const h3 = ph.querySelector('h3');
@@ -208,13 +261,26 @@ function handlePlatformFilterChange(plat) {
 }
 
 async function switchMainCategory(catCode) {
-    currentMainCategory = (catCode || 'all').toLowerCase();
-    renderMainCategoryNav();
+    const prevCat = currentMainCategory;
+    const nextCat = (catCode || 'all').toLowerCase();
+    currentMainCategory = nextCat;
 
     if (!allMainProjectsCache || allMainProjectsCache.length === 0) {
+        renderMainCategoryNav();
         await loadProjects();
         return;
     }
+
+    const catFiltered = (currentMainCategory === 'all')
+        ? allMainProjectsCache
+        : allMainProjectsCache.filter(p => (p.category || 'pitch').toLowerCase() === currentMainCategory);
+    const currentInCat = catFiltered.some(p => p.id == currentProjectId);
+    if (!currentInCat && !confirmDiscardProjectChanges()) {
+        currentMainCategory = prevCat;
+        return;
+    }
+
+    renderMainCategoryNav();
 
     // 重新渲染平台选项列表（分类变动会导致所属平台集合联动变动）
     renderMainPlatformOptions();
@@ -231,7 +297,7 @@ async function switchMainCategory(catCode) {
             loadProject(filtered[0].id);
         } else {
             renderProjectSelectOptions([], null);
-            closeCurrentProject();
+            closeCurrentProject(true);
             const ph = document.getElementById('noProjectPlaceholder');
             if (ph) {
                 const targetCat = (allMainCategoriesCache || []).find(c => c.code === currentMainCategory);
@@ -366,6 +432,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
 
                     // Apply project lock state to UI
                     applyProjectLockUI(data.is_locked == 1);
+                    setProjectDirty(false);
                     renderRevisionPage();
 
                     // Render Subsystem Tabs
@@ -402,7 +469,11 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 });
         }
 
-        function closeCurrentProject() {
+        function closeCurrentProject(forceClose = false) {
+            if (!forceClose && !confirmDiscardProjectChanges()) {
+                return;
+            }
+            setProjectDirty(false);
             clearRowSelection();
             currentProjectId = null;
             currentProjectData = null;
@@ -450,15 +521,15 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     btn.style.background = '#fef2f2';
                     btn.style.color = '#dc2626';
                     btn.style.border = '1px solid #fca5a5';
-                    btn.innerHTML = '🔒 已锁定 (点击解锁)';
+                    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span>已锁定 (点击解锁)</span>`;
                     btn.title = '当前工程处于锁定保护状态（只读）。点击可解锁并开启编辑';
                 } else {
                     btn.className = 'btn btn-sm';
                     btn.style.background = '#f0fdf4';
                     btn.style.color = '#166534';
                     btn.style.border = '1px solid #86efac';
-                    const byText = lockedBy ? `[${lockedBy}] ` : '';
-                    btn.innerHTML = `🟢 ${byText}编辑中 (点击锁定)`;
+                    const byText = lockedBy ? `[${escapeHtml(lockedBy)}] ` : '';
+                    btn.innerHTML = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#16a34a;"></span><span>${byText}编辑中 (点击锁定)</span>`;
                     btn.title = `当前工程处于编辑状态（占用人：${lockedBy || '当前用户'}）。点击可立即锁定保护防误改`;
                 }
             }
@@ -571,10 +642,18 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     return;
                 }
                 try {
-                    await safeFetchJson(`/api/project/${currentProjectId}/heartbeat`, {
+                    const res = await safeFetchJson(`/api/project/${currentProjectId}/heartbeat`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' }
                     });
+                    if (res && res.taken_over) {
+                        stopProjectHeartbeat();
+                        currentProjectData.is_locked = 1;
+                        currentProjectData.locked_by = res.locked_by || '';
+                        applyProjectLockUI(true);
+                        refreshProjectSelectOnly(currentProjectId);
+                        showToast(`当前工程编辑权已被 [${res.locked_by || '其他终端'}] 接管，已自动切换为只读保护状态！`, 'warning');
+                    }
                 } catch (e) {
                     // 心跳异常静默重试
                 }
@@ -588,8 +667,15 @@ async function refreshProjectSelectOnly(selectedId = null) {
             }
         }
 
-        // 窗口关闭时尝试通过 beacon 自动释放锁，避免离线后死锁
-        window.addEventListener('beforeunload', () => {
+        // 未保存修改离开提示 & 实际离开页面时释放锁
+        window.addEventListener('beforeunload', (e) => {
+            if (isProjectMetadataDirty) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        window.addEventListener('pagehide', () => {
             if (currentProjectId && currentProjectData && currentProjectData.is_locked == 0) {
                 stopProjectHeartbeat();
                 try {
@@ -754,19 +840,18 @@ async function refreshProjectSelectOnly(selectedId = null) {
 
                 const payload = {
                     id: currentProjectId,
-                    code: (codeEl && codeEl.value.trim()) ? codeEl.value.trim() : (currentProjectData.code || ''),
-                    platform: (platformEl && platformEl.value.trim()) ? platformEl.value.trim() : (currentProjectData.platform || ''),
-                    supplier: (supplierEl && supplierEl.value.trim()) ? supplierEl.value.trim() : (currentProjectData.supplier || ''),
-                    model: (modelEl && modelEl.value.trim()) ? modelEl.value.trim() : (currentProjectData.model || ''),
-                    name: (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : (currentProjectData.name || '风力发电机组'),
-                    system_name: (systemEl && systemEl.value.trim()) ? systemEl.value.trim() : (currentProjectData.system_name || ''),
+                    code: codeEl ? codeEl.value.trim() : (currentProjectData.code || ''),
+                    platform: platformEl ? platformEl.value.trim() : (currentProjectData.platform || ''),
+                    supplier: supplierEl ? supplierEl.value.trim() : (currentProjectData.supplier || ''),
+                    model: modelEl ? modelEl.value.trim() : (currentProjectData.model || ''),
+                    name: (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : (nameEl ? '' : (currentProjectData.name || '风力发电机组')),
+                    system_name: systemEl ? systemEl.value.trim() : (currentProjectData.system_name || ''),
 
                     category: (currentProjectData.category || 'pitch'),
-                    category: (currentProjectData.category || 'pitch'),
-                    doc_no: (codeEl && docEl) ? docEl.value.trim() : (currentProjectData.doc_no || ''),
-                    ecn_no: (codeEl && ecnEl) ? ecnEl.value.trim() : (currentProjectData.ecn_no || ''),
-                    form_no: (formEl && formEl.value.trim()) ? formEl.value.trim() : (currentProjectData.form_no || 'FDJL-JS-037'),
-                    company: (companyEl && companyEl.value.trim()) ? companyEl.value.trim() : (currentProjectData.company || '上海电气风电集团股份有限公司')
+                    doc_no: docEl ? docEl.value.trim() : (currentProjectData.doc_no || ''),
+                    ecn_no: ecnEl ? ecnEl.value.trim() : (currentProjectData.ecn_no || ''),
+                    form_no: (formEl && formEl.value.trim()) ? formEl.value.trim() : (formEl ? '' : (currentProjectData.form_no || 'FDJL-JS-037')),
+                    company: (companyEl && companyEl.value.trim()) ? companyEl.value.trim() : (companyEl ? '' : (currentProjectData.company || '上海电气风电集团股份有限公司'))
                 };
 
                 const res = await safeFetchJson('/api/project/save', {
@@ -821,6 +906,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 updateCoverTitlePreview();
 
                 // 4. 成功提示
+                setProjectDirty(false);
                 showToast('项目所有修改已成功保存至数据库！', 'success');
             } catch (err) {
                 alert('保存项目失败: ' + (err.message || '网络连接异常'));
@@ -1185,17 +1271,20 @@ async function refreshProjectSelectOnly(selectedId = null) {
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
 
-            fetch('/api/import', { method: 'POST', body: formData })
-                .then(r => r.json())
+            safeFetchJson('/api/import', { method: 'POST', body: formData })
                 .then(res => {
                     document.getElementById('importProgress').style.display = 'none';
-                    if (res.success) {
+                    if (res && res.success) {
                         alert('Excel 模版解析并导入成功！');
                         closeModal('importModal');
                         loadProjects();
                     } else {
-                        alert(res.error || '导入失败');
+                        alert((res && res.error) || '导入失败');
                     }
+                })
+                .catch(err => {
+                    document.getElementById('importProgress').style.display = 'none';
+                    alert(err.message || '导入失败');
                 });
         }
 

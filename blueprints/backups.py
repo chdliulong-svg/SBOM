@@ -15,7 +15,8 @@ from services.backup_manager import (
     delete_backup_snapshot,
     get_backup_path
 )
-from services.logging_setup import get_logger
+from services.database import get_db, record_operation_log
+from services.logging_setup import get_logger, new_error_id
 
 logger = get_logger('sbom.backups')
 
@@ -100,14 +101,16 @@ def api_restore_backup():
         return jsonify({'success': False, 'error': '未指定快照文件名'}), 400
     try:
         restore_backup_snapshot(filename)
+        record_operation_log('restore_backup', 'backup', filename, {'filename': filename})
         return jsonify({'success': True, 'message': f'成功恢复至快照: {filename}（系统已自动创建恢复前安全防护存档）'})
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except FileNotFoundError as e:
         return jsonify({'success': False, 'error': str(e)}), 404
-    except Exception as e:
-        logger.exception("恢复快照失败: %s", filename)
-        return jsonify({'success': False, 'error': '恢复快照失败，请查看服务日志'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 恢复快照失败: %s", err_id, filename)
+        return jsonify({'success': False, 'error': f'恢复快照失败，请查看服务日志（错误码 {err_id}）'}), 500
 
 
 @backups_bp.route('/api/backup/delete', methods=['POST'])
@@ -118,10 +121,12 @@ def api_delete_backup():
         return jsonify({'success': False, 'error': '未指定快照文件名'}), 400
     try:
         delete_backup_snapshot(filename)
+        record_operation_log('delete_backup', 'backup', filename, {'filename': filename})
         return jsonify({'success': True, 'message': '快照已成功删除'})
-    except Exception as e:
-        logger.exception("删除快照失败: %s", filename)
-        return jsonify({'success': False, 'error': '删除快照失败，请查看服务日志'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 删除快照失败: %s", err_id, filename)
+        return jsonify({'success': False, 'error': f'删除快照失败，请查看服务日志（错误码 {err_id}）'}), 500
 
 
 @backups_bp.route('/api/backup/download/<path:filename>', methods=['GET'])
@@ -136,3 +141,27 @@ def api_download_backup(filename):
         download_name=os.path.basename(path),
         mimetype=_MIME_BY_EXT.get(ext, 'application/octet-stream')
     )
+
+
+@backups_bp.route('/api/audit/logs', methods=['GET'])
+def api_list_audit_logs():
+    """查询系统关键操作审计日志"""
+    limit = min(max(request.args.get('limit', 50, type=int) or 50, 1), 200)
+    action = (request.args.get('action') or '').strip()
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        sql = 'SELECT id, action, target_type, target_id, detail, client_ip, created_at FROM operation_logs'
+        params = []
+        if action:
+            sql += ' WHERE action = ?'
+            params.append(action)
+        sql += ' ORDER BY id DESC LIMIT ?'
+        params.append(limit)
+        cursor.execute(sql, tuple(params))
+        logs = [dict(r) for r in cursor.fetchall()]
+        return jsonify({'success': True, 'logs': logs, 'count': len(logs)})
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 获取操作审计日志失败", err_id)
+        return jsonify({'success': False, 'error': f'获取操作审计日志失败（错误码 {err_id}）'}), 500

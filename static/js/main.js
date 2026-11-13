@@ -19,6 +19,8 @@
             initTableColumnResizing('masterTable');
             initModalImgDragAndDrop();
             if (typeof initMmAttachmentListeners === 'function') initMmAttachmentListeners();
+            if (typeof initBomDensityMode === 'function') initBomDensityMode();
+            if (typeof initProjectDirtyListeners === 'function') initProjectDirtyListeners();
 
             // Click outside fuzzy dropdown to close it
             document.addEventListener('click', (e) => {
@@ -36,9 +38,25 @@
                 }
             });
 
-            // Global Escape key listener to dismiss open modals
+            // Global Escape key listener: clear focused search box first, otherwise dismiss top open modal
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
+                    const active = document.activeElement;
+                    if (active && active.id === 'bomSearchInput' && active.value.trim()) {
+                        e.preventDefault();
+                        if (typeof clearBomSearch === 'function') clearBomSearch();
+                        return;
+                    }
+                    if (active && active.id === 'pmSearchInput' && active.value.trim()) {
+                        e.preventDefault();
+                        if (typeof clearPmSearch === 'function') clearPmSearch();
+                        return;
+                    }
+                    if (active && active.id === 'masterSearch' && active.value.trim()) {
+                        e.preventDefault();
+                        if (typeof clearMasterSearch === 'function') clearMasterSearch();
+                        return;
+                    }
                     const openModals = document.querySelectorAll('.modal-mask.show');
                     if (openModals.length > 0) {
                         const topModal = openModals[openModals.length - 1];
@@ -99,8 +117,68 @@
                     return;
                 }
 
+                // 1.5 Ctrl + F (or / when not typing): Focus active search input
+                if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') || (!isTyping && e.key === '/')) {
+                    const openModals = document.querySelectorAll('.modal-mask.show');
+                    const topModal = openModals.length > 0 ? openModals[openModals.length - 1] : null;
+                    let targetSearch = null;
+                    if (topModal && topModal.id === 'projectManagerModal') {
+                        targetSearch = document.getElementById('pmSearchInput');
+                    } else if (topModal && topModal.id === 'masterModal') {
+                        targetSearch = document.getElementById('masterSearch');
+                    } else if (!topModal) {
+                        const bomTab = document.getElementById('tabContent-bom');
+                        if (bomTab && bomTab.style.display !== 'none') {
+                            targetSearch = document.getElementById('bomSearchInput');
+                        }
+                    }
+                    if (targetSearch) {
+                        e.preventDefault();
+                        targetSearch.focus();
+                        targetSearch.select();
+                    }
+                    return;
+                }
+
                 // If currently typing in an input/textarea, do not intercept table row operations
                 if (isTyping) return;
+
+                // 1.8 F2: Edit selected BOM row
+                if (e.key === 'F2') {
+                    const openModal = document.querySelector('.modal-mask.show');
+                    if (!openModal && typeof editSelectedRow === 'function') {
+                        e.preventDefault();
+                        editSelectedRow();
+                    }
+                    return;
+                }
+
+                // 1.9 Ctrl + A: Select all visible BOM rows or Master materials
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+                    const openModals = document.querySelectorAll('.modal-mask.show');
+                    const topModal = openModals.length > 0 ? openModals[openModals.length - 1] : null;
+                    if (topModal && topModal.id === 'masterModal' && typeof toggleMasterSelectAll === 'function') {
+                        e.preventDefault();
+                        toggleMasterSelectAll(true);
+                        return;
+                    }
+                    const bomTab = document.getElementById('tabContent-bom');
+                    if (!topModal && bomTab && bomTab.style.display !== 'none' && typeof toggleSelectAllBom === 'function') {
+                        e.preventDefault();
+                        toggleSelectAllBom(true);
+                        return;
+                    }
+                }
+
+                // 1.95 Ctrl + Z: Undo last BOM row deletion
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                    const openModal = document.querySelector('.modal-mask.show');
+                    if (!openModal && typeof undoLastBomDelete === 'function' && typeof lastDeletedBomSnapshot !== 'undefined' && lastDeletedBomSnapshot) {
+                        e.preventDefault();
+                        undoLastBomDelete();
+                    }
+                    return;
+                }
 
                 // 2. Alt + ArrowUp: Move selected row up
                 if (e.altKey && e.key === 'ArrowUp') {

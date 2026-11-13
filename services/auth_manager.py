@@ -38,7 +38,9 @@ _state = {
     'plaintext': None,   # 仅首次自动生成时在控制台展示，不落盘
 }
 
-_fail_tracker = {}       # ip -> {'count': int, 'locked_until': float}
+_fail_lock = threading.Lock()
+_fail_tracker = {}       # ip -> {'count': int, 'locked_until': float, 'last_seen': float}
+_MAX_TRACKED_IPS = 2000
 
 
 def _read_auth_file():
@@ -165,42 +167,71 @@ def reset_password_file(new_password=None):
 # ----------------- 登录失败限流 -----------------
 def _client_ip():
     from flask import request
+    from services.config import config
     try:
-        return request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or (request.remote_addr or 'unknown')
+        if getattr(config, 'trust_proxy', False):
+            xff = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+            if xff:
+                return xff
+        return request.remote_addr or 'unknown'
     except Exception:
         return 'unknown'
 
 
+def _prune_fail_tracker(now):
+    """清理过期的失败记录并在超限时淘汰最早活跃条目，防止内存无限增长"""
+    expired = [
+        k for k, v in _fail_tracker.items()
+        if (v.get('locked_until', 0) and v['locked_until'] <= now)
+        or (now - v.get('last_seen', 0) > 3600)
+    ]
+    for k in expired:
+        _fail_tracker.pop(k, None)
+    if len(_fail_tracker) >= _MAX_TRACKED_IPS:
+        oldest = sorted(_fail_tracker.items(), key=lambda kv: kv[1].get('last_seen', 0))
+        for k, _ in oldest[:len(_fail_tracker) - _MAX_TRACKED_IPS + 100]:
+            _fail_tracker.pop(k, None)
+
+
 def is_locked(ip=None):
     ip = ip or _client_ip()
-    info = _fail_tracker.get(ip)
-    if not info:
+    now = time.time()
+    with _fail_lock:
+        info = _fail_tracker.get(ip)
+        if not info:
+            return False
+        if info.get('locked_until', 0) > now:
+            return True
+        if info.get('locked_until', 0) and info['locked_until'] <= now:
+            _fail_tracker.pop(ip, None)
         return False
-    if info.get('locked_until', 0) > time.time():
-        return True
-    if info.get('locked_until', 0) and info['locked_until'] <= time.time():
-        _fail_tracker.pop(ip, None)
-    return False
 
 
 def lock_remaining_seconds(ip=None):
     ip = ip or _client_ip()
-    info = _fail_tracker.get(ip) or {}
-    remain = info.get('locked_until', 0) - time.time()
-    return int(remain) if remain > 0 else 0
+    now = time.time()
+    with _fail_lock:
+        info = _fail_tracker.get(ip) or {}
+        remain = info.get('locked_until', 0) - now
+        return int(remain) if remain > 0 else 0
 
 
 def register_failure(ip=None):
     ip = ip or _client_ip()
-    info = _fail_tracker.setdefault(ip, {'count': 0, 'locked_until': 0})
-    info['count'] += 1
-    if info['count'] >= MAX_FAILS:
-        info['locked_until'] = time.time() + LOCK_SECONDS
-        info['count'] = 0
-        return True
-    return False
+    now = time.time()
+    with _fail_lock:
+        _prune_fail_tracker(now)
+        info = _fail_tracker.setdefault(ip, {'count': 0, 'locked_until': 0, 'last_seen': now})
+        info['last_seen'] = now
+        info['count'] += 1
+        if info['count'] >= MAX_FAILS:
+            info['locked_until'] = now + LOCK_SECONDS
+            info['count'] = 0
+            return True
+        return False
 
 
 def clear_failures(ip=None):
     ip = ip or _client_ip()
-    _fail_tracker.pop(ip, None)
+    with _fail_lock:
+        _fail_tracker.pop(ip, None)

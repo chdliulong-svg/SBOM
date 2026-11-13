@@ -6,7 +6,7 @@ Allows dynamic creation, modification, and inspection of categories for scalable
 
 from flask import Blueprint, request, jsonify
 from services import category_service
-from services.logging_setup import get_logger
+from services.logging_setup import get_logger, new_error_id
 
 logger = get_logger('sbom.categories_api')
 categories_bp = Blueprint('categories', __name__)
@@ -22,9 +22,10 @@ def get_categories():
             'categories': categories,
             'total': len(categories)
         })
-    except Exception as e:
-        logger.exception("获取分类列表失败: %s", str(e))
-        return jsonify({'success': False, 'error': f'获取分类列表失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 获取分类列表失败", err_id)
+        return jsonify({'success': False, 'error': f'获取分类列表失败（错误码 {err_id}）'}), 500
 
 
 @categories_bp.route('/api/categories/<string:code>', methods=['GET'])
@@ -34,8 +35,10 @@ def get_category_detail(code):
         if not cat:
             return jsonify({'success': False, 'error': '未找到该分类'}), 404
         return jsonify({'success': True, 'category': cat})
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'获取分类详情失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 获取分类详情失败: code=%s", err_id, code)
+        return jsonify({'success': False, 'error': f'获取分类详情失败（错误码 {err_id}）'}), 500
 
 
 @categories_bp.route('/api/categories', methods=['POST'])

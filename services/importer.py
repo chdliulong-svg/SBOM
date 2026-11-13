@@ -1,26 +1,47 @@
 import os
 import zipfile
-import xml.etree.ElementTree as ET
+from flask import has_request_context
 from .database import get_db, init_db, find_template_path
 from .config import config
-from .file_utils import sanitize_asset_name, safe_path_under, IMAGES_DIR, MANUALS_DIR
+from .file_utils import sanitize_asset_name, safe_path_under, parse_safe_xml, IMAGES_DIR, MANUALS_DIR
 from services.logging_setup import get_logger
 
 logger = get_logger('sbom.importer')
 
-def import_excel_sbom(excel_path):
+
+def _safe_sst(sst, raw_val):
+    if raw_val and raw_val.isdigit():
+        idx = int(raw_val)
+        if 0 <= idx < len(sst):
+            return sst[idx]
+    return raw_val or ''
+
+
+def import_excel_sbom(excel_path, category='pitch', platform=''):
     """
     Imports a complete SBOM Excel workbook into the database and extracts media assets.
     """
     init_db()
+    in_req = has_request_context()
     conn = get_db()
     cursor = conn.cursor()
 
+    try:
+        return _import_excel_sbom_inner(conn, cursor, excel_path, category=category, platform=platform)
+    finally:
+        if not in_req:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _import_excel_sbom_inner(conn, cursor, excel_path, category='pitch', platform=''):
     with zipfile.ZipFile(excel_path, 'r') as z:
         # Load shared strings
         sst = []
         if 'xl/sharedStrings.xml' in z.namelist():
-            ss_root = ET.fromstring(z.read('xl/sharedStrings.xml'))
+            ss_root = parse_safe_xml(z.read('xl/sharedStrings.xml'))
             ns = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
             for si in ss_root.findall('.//main:si', ns):
                 text = ''.join([t.text for t in si.findall('.//main:t', ns) if t.text])
@@ -29,11 +50,11 @@ def import_excel_sbom(excel_path):
         # Load workbook relationships
         wb_rels = {}
         if 'xl/_rels/workbook.xml.rels' in z.namelist():
-            for r in ET.fromstring(z.read('xl/_rels/workbook.xml.rels')):
+            for r in parse_safe_xml(z.read('xl/_rels/workbook.xml.rels')):
                 wb_rels[r.attrib['Id']] = r.attrib['Target']
 
         # Read sheet list from workbook.xml
-        wb_root = ET.fromstring(z.read('xl/workbook.xml'))
+        wb_root = parse_safe_xml(z.read('xl/workbook.xml'))
         ns_wb = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
         r_ns = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
         
@@ -47,9 +68,9 @@ def import_excel_sbom(excel_path):
                 sheet_info.append((s_name, sheet_xml_path))
 
         # 1. Parse 封面 (Cover Sheet)
-        project_code = 'EW6.25-220'
+        project_code = ''
         project_name = '风力发电机组'
-        system_name = 'EW6.25-220变桨轴承润滑系统SBOM'
+        system_name = ''
         doc_no = ''
         ecn_no = ''
         form_no = config.form_no_default
@@ -59,7 +80,7 @@ def import_excel_sbom(excel_path):
         if cover_sheets:
             c_name, c_path = cover_sheets[0]
             if c_path in z.namelist():
-                c_root = ET.fromstring(z.read(c_path))
+                c_root = parse_safe_xml(z.read(c_path))
                 ns_s = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
                 for r in c_root.findall('.//main:row', ns_s):
                     for c in r.findall('main:c', ns_s):
@@ -67,8 +88,8 @@ def import_excel_sbom(excel_path):
                         t = c.attrib.get('t')
                         v = c.find('main:v', ns_s)
                         val = v.text if v is not None else ''
-                        if t == 's' and val.isdigit():
-                            val = sst[int(val)]
+                        if t == 's':
+                            val = _safe_sst(sst, val)
                         val = val.strip()
                         # V2 封面字段解析
                         if coord == 'E3' and val and '举例' not in val:
@@ -94,11 +115,15 @@ def import_excel_sbom(excel_path):
                         elif coord == 'A11' and val:
                             form_no = val
 
+        if not system_name:
+            base_title = os.path.splitext(os.path.basename(excel_path))[0]
+            system_name = f"{project_code} 系统 SBOM" if project_code else f"{base_title} SBOM"
+
         # Insert project
         cursor.execute('''
-        INSERT INTO projects (code, name, system_name, doc_no, ecn_no, form_no, company, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (project_code, project_name, system_name, doc_no, ecn_no, form_no, company))
+        INSERT INTO projects (code, name, system_name, category, platform, doc_no, ecn_no, form_no, company, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (project_code, project_name, system_name, (category or 'pitch'), (platform or ''), doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 
         # 2. Parse 签字页与更改页 (Signatures & ECN Records for V2)
@@ -112,18 +137,18 @@ def import_excel_sbom(excel_path):
             # V2 独立《签字页》
             _, sig_path = sig_sheets[0]
             if sig_path in z.namelist():
-                sig_root = ET.fromstring(z.read(sig_path))
+                sig_root = parse_safe_xml(z.read(sig_path))
                 ns_s = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
                 for r in sig_root.findall('.//main:row', ns_s):
                     row_idx = int(r.attrib.get('r', 0))
                     cells = {}
                     for c in r.findall('main:c', ns_s):
-                        col = ''.join([ch for ch in c.attrib.get('r') if ch.isalpha()])
+                        col = ''.join([ch for ch in (c.attrib.get('r') or '') if ch.isalpha()])
                         t = c.attrib.get('t')
                         v = c.find('main:v', ns_s)
                         val = v.text if v is not None else ''
-                        if t == 's' and val.isdigit():
-                            val = sst[int(val)]
+                        if t == 's':
+                            val = _safe_sst(sst, val)
                         cells[col] = val.strip()
 
                     role_raw = cells.get('E', '').replace('：', '').replace(':', '').replace('\n', '').replace(' ', '')
@@ -137,19 +162,19 @@ def import_excel_sbom(excel_path):
             # V2 独立《更改页》
             _, chg_path = change_sheets[0]
             if chg_path in z.namelist():
-                chg_root = ET.fromstring(z.read(chg_path))
+                chg_root = parse_safe_xml(z.read(chg_path))
                 ns_s = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
                 for r in chg_root.findall('.//main:row', ns_s):
                     row_idx = int(r.attrib.get('r', 0))
                     if 8 <= row_idx <= 32:
                         cells = {}
                         for c in r.findall('main:c', ns_s):
-                            col = ''.join([ch for ch in c.attrib.get('r') if ch.isalpha()])
+                            col = ''.join([ch for ch in (c.attrib.get('r') or '') if ch.isalpha()])
                             t = c.attrib.get('t')
                             v = c.find('main:v', ns_s)
                             val = v.text if v is not None else ''
-                            if t == 's' and val.isdigit():
-                                val = sst[int(val)]
+                            if t == 's':
+                                val = _safe_sst(sst, val)
                             cells[col] = val.strip()
 
                         ecn_no = cells.get('B', '')
@@ -176,7 +201,7 @@ def import_excel_sbom(excel_path):
             vml_rel_target = None
 
             if ws_rels_path in z.namelist():
-                for r in ET.fromstring(z.read(ws_rels_path)):
+                for r in parse_safe_xml(z.read(ws_rels_path)):
                     r_id = r.attrib.get('Id')
                     r_type = r.attrib.get('Type', '')
                     target = r.attrib.get('Target', '')
@@ -192,11 +217,11 @@ def import_excel_sbom(excel_path):
                 dr_dir = os.path.dirname(drawing_rel_target)
                 dr_rels_path = f"{dr_dir}/_rels/{os.path.basename(drawing_rel_target)}.rels"
                 if dr_rels_path in z.namelist():
-                    for r in ET.fromstring(z.read(dr_rels_path)):
+                    for r in parse_safe_xml(z.read(dr_rels_path)):
                         dr_rels[r.attrib['Id']] = os.path.normpath(os.path.join(dr_dir, r.attrib['Target'])).replace('\\', '/')
 
             # Map OLE objects to row numbers
-            ws_root = ET.fromstring(z.read(ws_path))
+            ws_root = parse_safe_xml(z.read(ws_path))
             ns_s = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
             
             shape_to_ole_file = {}
@@ -226,7 +251,7 @@ def import_excel_sbom(excel_path):
             # Map drawings (images) to row numbers
             row_to_img = {}
             if drawing_rel_target and drawing_rel_target in z.namelist():
-                dr_root = ET.fromstring(z.read(drawing_rel_target))
+                dr_root = parse_safe_xml(z.read(drawing_rel_target))
                 ns_dr = {
                     'xdr': 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing',
                     'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -260,12 +285,12 @@ def import_excel_sbom(excel_path):
                 
                 cells = {}
                 for c in r.findall('main:c', ns_s):
-                    col = ''.join([ch for ch in c.attrib.get('r') if ch.isalpha()])
+                    col = ''.join([ch for ch in (c.attrib.get('r') or '') if ch.isalpha()])
                     t = c.attrib.get('t')
                     v = c.find('main:v', ns_s)
                     val = v.text if v is not None else ''
-                    if t == 's' and val.isdigit():
-                        val = sst[int(val)]
+                    if t == 's':
+                        val = _safe_sst(sst, val)
                     cells[col] = val.strip()
 
                 mat_no = cells.get('E', '')

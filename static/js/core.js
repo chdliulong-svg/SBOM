@@ -19,7 +19,7 @@
         let currentModalManualPath = '';
         let removeManualFlag = false;
 
-        function showToast(message, type = 'info') {
+        function showToast(message, type = 'info', actionOpt = null) {
             let container = document.getElementById('toastContainer');
             if (!container) {
                 container = document.createElement('div');
@@ -31,20 +31,36 @@
             let icon = '<span style="color: #2563eb; font-weight: 700; margin-right: 6px;">●</span>';
             if (type === 'success') icon = '<span style="color: #16a34a; font-weight: 700; margin-right: 6px;">●</span>';
             if (type === 'error') icon = '<span style="color: #dc2626; font-weight: 700; margin-right: 6px;">●</span>';
-            toast.innerHTML = `<span style="display: inline-flex; align-items: center;">${icon}</span><span>${message}</span>`;
+            if (type === 'warning') icon = '<span style="color: #d97706; font-weight: 700; margin-right: 6px;">●</span>';
+            toast.innerHTML = `<span style="display: inline-flex; align-items: center;">${icon}</span><span>${escapeHtml(String(message ?? ''))}</span>`;
+
+            if (actionOpt && typeof actionOpt.onClick === 'function' && actionOpt.label) {
+                const actBtn = document.createElement('button');
+                actBtn.type = 'button';
+                actBtn.className = 'toast-action-btn';
+                actBtn.textContent = actionOpt.label;
+                actBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    toast.remove();
+                    actionOpt.onClick();
+                };
+                toast.appendChild(actBtn);
+            }
+
             container.appendChild(toast);
+            const duration = (actionOpt && actionOpt.duration) ? actionOpt.duration : (actionOpt ? 6500 : 3500);
             setTimeout(() => {
+                if (!toast.isConnected) return;
                 toast.style.opacity = '0';
                 toast.style.transform = 'translateY(-10px)';
                 setTimeout(() => toast.remove(), 300);
-            }, 3500);
+            }, duration);
         }
 
         function showVersionDetails() {
-            fetch('/api/version')
-                .then(r => r.json())
+            safeFetchJson('/api/version')
                 .then(v => {
-                    const msg = `【变桨系统Service BOM 版本详情】\n\n` +
+                    const msg = `【风电机组 Service BOM 版本详情】\n\n` +
                                 `• 版本代号: ${v.version || 'v2.2.0'}\n` +
                                 `• Git Commit: ${v.commit_full || v.commit}\n` +
                                 `• 提交时间: ${v.date || '未知'}\n` +
@@ -364,6 +380,187 @@
 
         // Auto-check auth status on page load
         document.addEventListener('DOMContentLoaded', checkAuthStatus);
+
+        // ==========================================
+        // Shared UI Helpers: Dropdowns, Search Badges, Hover Preview & Context Menu
+        // ==========================================
+        function closeAllUiDropdowns(exceptEl = null) {
+            document.querySelectorAll('.ui-dropdown.open').forEach(dd => {
+                if (dd !== exceptEl) dd.classList.remove('open');
+            });
+        }
+
+        function toggleUiDropdown(btn, event) {
+            if (event) event.stopPropagation();
+            const wrap = btn ? btn.closest('.ui-dropdown') : null;
+            if (!wrap) return;
+            const willOpen = !wrap.classList.contains('open');
+            closeAllUiDropdowns(wrap);
+            if (willOpen) {
+                wrap.classList.add('open');
+            } else {
+                wrap.classList.remove('open');
+            }
+        }
+
+        function updateSearchBoxMeta(inputId, clearBtnId, badgeId, shownCount, totalCount) {
+            const inp = document.getElementById(inputId);
+            const clearBtn = document.getElementById(clearBtnId);
+            const badge = document.getElementById(badgeId);
+            const hasVal = !!(inp && inp.value && inp.value.trim().length > 0);
+
+            if (clearBtn) {
+                clearBtn.classList.toggle('visible', hasVal);
+            }
+            if (badge) {
+                if (typeof totalCount === 'number' && totalCount >= 0) {
+                    if (hasVal || (typeof shownCount === 'number' && shownCount !== totalCount)) {
+                        badge.textContent = `${shownCount}/${totalCount}`;
+                        badge.classList.add('is-filtered');
+                    } else {
+                        badge.textContent = `${totalCount} 条`;
+                        badge.classList.remove('is-filtered');
+                    }
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        }
+
+        // Hover Image Preview
+        let _hoverImgTimer = null;
+        function showHoverImgPreview(targetEl, src, caption = '') {
+            if (!src || !targetEl) return;
+            clearTimeout(_hoverImgTimer);
+            _hoverImgTimer = setTimeout(() => {
+                const box = document.getElementById('hoverImgPreviewBox');
+                const img = document.getElementById('hoverImgPreviewImg');
+                const cap = document.getElementById('hoverImgPreviewCaption');
+                if (!box || !img) return;
+                img.src = src;
+                if (cap) {
+                    cap.textContent = caption || '';
+                    cap.style.display = caption ? 'block' : 'none';
+                }
+                box.style.display = 'block';
+
+                const rect = targetEl.getBoundingClientRect();
+                const boxW = 260;
+                const boxH = 250;
+                let left = rect.right + 10;
+                if (left + boxW > window.innerWidth - 12) {
+                    left = Math.max(12, rect.left - boxW - 10);
+                }
+                let top = rect.top - 20;
+                if (top + boxH > window.innerHeight - 12) {
+                    top = Math.max(12, window.innerHeight - boxH - 12);
+                }
+                if (top < 12) top = 12;
+                box.style.left = `${left}px`;
+                box.style.top = `${top}px`;
+            }, 180);
+        }
+
+        function hideHoverImgPreview() {
+            clearTimeout(_hoverImgTimer);
+            const box = document.getElementById('hoverImgPreviewBox');
+            if (box) box.style.display = 'none';
+        }
+
+        // Global Right-Click Context Menu
+        function closeUiContextMenu() {
+            const menu = document.getElementById('uiContextMenu');
+            if (menu) {
+                menu.classList.remove('show');
+                menu.innerHTML = '';
+            }
+        }
+
+        function openUiContextMenu(event, items) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            closeAllUiDropdowns();
+            hideHoverImgPreview();
+
+            const menu = document.getElementById('uiContextMenu');
+            if (!menu || !Array.isArray(items) || items.length === 0) return;
+
+            menu.innerHTML = '';
+            items.forEach(item => {
+                if (item.divider) {
+                    const div = document.createElement('div');
+                    div.className = 'ctx-menu-divider';
+                    menu.appendChild(div);
+                    return;
+                }
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `ctx-menu-item${item.danger ? ' danger' : ''}`;
+                if (item.disabled) btn.disabled = true;
+
+                const labelSpan = document.createElement('span');
+                labelSpan.textContent = item.label || '';
+                btn.appendChild(labelSpan);
+
+                if (item.shortcut) {
+                    const scSpan = document.createElement('span');
+                    scSpan.className = 'ctx-menu-shortcut';
+                    scSpan.textContent = item.shortcut;
+                    btn.appendChild(scSpan);
+                }
+
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    closeUiContextMenu();
+                    if (!item.disabled && typeof item.onClick === 'function') {
+                        item.onClick();
+                    }
+                };
+                menu.appendChild(btn);
+            });
+
+            menu.classList.add('show');
+            const menuRect = menu.getBoundingClientRect();
+            let x = event.clientX;
+            let y = event.clientY;
+            if (x + menuRect.width > window.innerWidth - 10) {
+                x = Math.max(10, window.innerWidth - menuRect.width - 10);
+            }
+            if (y + menuRect.height > window.innerHeight - 10) {
+                y = Math.max(10, window.innerHeight - menuRect.height - 10);
+            }
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.ui-dropdown')) {
+                closeAllUiDropdowns();
+            } else if (e.target.closest('.ui-dropdown-item')) {
+                closeAllUiDropdowns();
+            }
+            if (!e.target.closest('#uiContextMenu')) {
+                closeUiContextMenu();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAllUiDropdowns();
+                closeUiContextMenu();
+                hideHoverImgPreview();
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            closeAllUiDropdowns();
+            closeUiContextMenu();
+            hideHoverImgPreview();
+        });
+
 
 
 

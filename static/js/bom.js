@@ -165,9 +165,50 @@
             }
 
             if (!items || items.length === 0) {
-                const emptyText = isFilterDuplicatesOnly ? '当前表中未发现相同物料行' : '暂无物料行，请点击上方“添加物料行”';
-                tbody.innerHTML = `<tr><td colspan="16" style="text-align: center; color: var(--text-muted); padding: 30px;">${emptyText}</td></tr>`;
+                const isLocked = currentProjectData && (currentProjectData.is_locked == 1);
+                const qVal = (document.getElementById('bomSearchInput')?.value || '').trim();
+                const hasCopied = typeof getCopiedBomRowsCount === 'function' && getCopiedBomRowsCount() > 0;
+                let emptyHtml = '';
+
+                if (isFilterDuplicatesOnly) {
+                    emptyHtml = `
+                        <div class="bom-empty-state">
+                            <div style="font-size: 14px; font-weight: 600; color: #475569;">当前表中未发现重复物料行</div>
+                            <div class="bom-empty-actions">
+                                <button type="button" class="btn btn-outline btn-sm" onclick="toggleFilterDuplicates()">显示全部物料行</button>
+                            </div>
+                        </div>`;
+                } else if (qVal) {
+                    emptyHtml = `
+                        <div class="bom-empty-state">
+                            <div style="font-size: 14px; font-weight: 600; color: #475569;">未找到与“${escapeHtml(qVal)}”匹配的物料</div>
+                            <div class="bom-empty-actions">
+                                <button type="button" class="btn btn-outline btn-sm" onclick="clearBomSearch()">清空搜索条件</button>
+                            </div>
+                        </div>`;
+                } else if (isLocked) {
+                    emptyHtml = `
+                        <div class="bom-empty-state">
+                            <div style="font-size: 14px; font-weight: 600; color: #64748b;">当前 Sheet 暂无物料数据（只读锁定保护中）</div>
+                            <div style="font-size: 12px; color: #94a3b8;">如需新增或调整物料明细，请先点击右上角“立即解锁编辑”。</div>
+                        </div>`;
+                } else {
+                    emptyHtml = `
+                        <div class="bom-empty-state">
+                            <div style="font-size: 14px; font-weight: 600; color: #475569;">当前 Sheet 暂无物料行</div>
+                            <div style="font-size: 12px; color: #94a3b8;">您可以直接添加单行、批量输入物料号${hasCopied ? '，或从剪贴板粘贴物料行' : ''}</div>
+                            <div class="bom-empty-actions">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="openAddBomModal()">+ 添加物料</button>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="openBatchAddBomModal()">批量添加</button>
+                                ${hasCopied ? '<button type="button" class="btn btn-outline btn-sm" onclick="pasteBomRows()">粘贴已复制行</button>' : ''}
+                            </div>
+                        </div>`;
+                }
+                tbody.innerHTML = `<tr><td colspan="16" style="padding: 0;">${emptyHtml}</td></tr>`;
                 clearRowSelection();
+                if (typeof updateSearchBoxMeta === 'function') {
+                    updateSearchBoxMeta('bomSearchInput', 'bomSearchClearBtn', 'bomSearchCountBadge', 0, (currentBomItems || []).length);
+                }
                 return;
             }
 
@@ -276,6 +317,9 @@
                 tr.ondblclick = () => {
                     openEditBomModal(it.id);
                 };
+                tr.oncontextmenu = (e) => {
+                    openBomRowContextMenu(e, idx, it.id);
+                };
 
                 // Drag & Drop event handlers
                 tr.ondragstart = (e) => {
@@ -359,34 +403,47 @@
                 // Image column
                 let imgHtml = `<span class="thumb-placeholder" onclick="event.stopPropagation(); triggerImgUpload('${it.material_no}')">上传图片</span>`;
                 if (it.image_path) {
-                    imgHtml = `<img src="/${it.image_path}" class="thumb-img" onclick="event.stopPropagation(); showImgPreview('/${it.image_path}')" title="点击放大图片">`;
+                    const safeImgSrc = `/${it.image_path}`;
+                    imgHtml = `<img src="${escapeHtml(safeImgSrc)}" class="thumb-img" onclick="event.stopPropagation(); showImgPreview('${escapeHtml(safeImgSrc)}')" onmouseenter="if (typeof showHoverImgPreview === 'function') showHoverImgPreview(this, '${escapeHtml(safeImgSrc)}', '${escapeHtml(it.material_no || '')}')" onmouseleave="if (typeof hideHoverImgPreview === 'function') hideHoverImgPreview()" title="悬停放大 · 点击弹窗查看大图">`;
                 }
+
+                const isLocked = currentProjectData && (currentProjectData.is_locked == 1);
+                const hasPipeOrNl = (v) => /[|｜\n]/.test(String(v || ''));
+                const canInlineLevel = !isLocked;
+                const canInlineQty = !isLocked && !hasPipeOrNl(it.qty);
+                const canInlineNotes = !isLocked && !hasPipeOrNl(it.notes);
 
                 tr.innerHTML = `
                     <td class="col-center" onclick="event.stopPropagation();" style="width: 38px; min-width: 38px; max-width: 38px;">
                         <input type="checkbox" class="bom-row-checkbox" data-id="${it.id}" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="toggleRowSelectionById(${it.id}, ${idx}, event)" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
                     </td>
                     <td class="col-center" style="white-space: nowrap;"><span class="row-drag-handle" title="按住拖拽排序" onmousedown="event.stopPropagation(); selectBomRow(${idx}, ${it.id});">⠿</span>${it.row_num}</td>
-                    <td class="col-center">${levelBadgeHtml}</td>
+                    <td class="col-center bom-inline-cell ${canInlineLevel ? 'is-inline-editable' : ''}" ${canInlineLevel ? `ondblclick="event.stopPropagation(); startInlineBomEdit(${it.id}, 'level_num', this)" title="双击原地调整 BOM 层级"` : ''}>${levelBadgeHtml}</td>
                     <td class="col-center">${formatPipeMultilineHtml(it.seq_num, true)}</td>
                     <td>${formatPipeMultilineMatNo(it.material_no, dupBadge)}</td>
                     <td>${nameHtml}</td>
                     <td>${descHtml}</td>
                     <td>${formatPipeMultilineHtml(it.m_model || '')}</td>
                     <td>${formatPipeMultilineHtml(it.m_mfr || '')}</td>
-                    <td class="col-center">${formatPipeMultilineHtml(it.qty, true)}</td>
+                    <td class="col-center bom-inline-cell ${canInlineQty ? 'is-inline-editable' : ''}" data-inline-field="qty" ${canInlineQty ? `ondblclick="event.stopPropagation(); startInlineBomEdit(${it.id}, 'qty', this)" title="双击原地快捷修改数量"` : ''}>${formatPipeMultilineHtml(it.qty, true)}</td>
                     <td class="col-center">${formatPipeMultilineHtml(it.unit || it.m_unit || 'PC', true)}</td>
                     <td class="col-center">${manualHtml}</td>
                     <td class="col-center">${imgHtml}</td>
                     <td>${formatPipeMultilineHtml((it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/'))}</td>
-                    <td>${formatPipeMultilineHtml(it.notes || '')}</td>
+                    <td class="bom-inline-cell ${canInlineNotes ? 'is-inline-editable' : ''}" ${canInlineNotes ? `ondblclick="event.stopPropagation(); startInlineBomEdit(${it.id}, 'notes', this)" title="双击原地快捷修改补充说明"` : ''}>${formatPipeMultilineHtml(it.notes || '')}</td>
                     <td>${formatPipeMultilineHtml(it.substitute || it.m_substitute || '')}</td>
                 `;
                 fragment.appendChild(tr);
             });
             tbody.appendChild(fragment);
 
-            // Update row action buttons & selection visuals
+            // Sync sticky columns, search badge & row action buttons
+            if (typeof applyStickyColumnsToBody === 'function') {
+                applyStickyColumnsToBody('bomTable');
+            }
+            if (typeof updateSearchBoxMeta === 'function') {
+                updateSearchBoxMeta('bomSearchInput', 'bomSearchClearBtn', 'bomSearchCountBadge', items.length, (currentBomItems || []).length);
+            }
             syncSelectionVisuals();
             updateRowActionButtons();
         }
@@ -648,7 +705,7 @@
                 }
                 if (btnPaste) {
                     btnPaste.disabled = true;
-                    btnPaste.innerHTML = copiedCount > 0 ? `📋 粘贴行 (${copiedCount})` : '📋 粘贴行';
+                    btnPaste.innerHTML = copiedCount > 0 ? `粘贴行 (${copiedCount})` : '粘贴行';
                     btnPaste.title = '当前工程已锁定，如需粘贴物料请先点击【解锁】';
                 }
                 if (btnEdit) {
@@ -699,11 +756,11 @@
             if (btnPaste) {
                 if (copiedCount > 0) {
                     btnPaste.disabled = false;
-                    btnPaste.innerHTML = `📋 粘贴行 (${copiedCount})`;
+                    btnPaste.innerHTML = `粘贴行 (${copiedCount})`;
                     btnPaste.title = `粘贴剪贴板中的 ${copiedCount} 行物料 (Ctrl+V，插入在选中行之后或末尾，支持跨Sheet与跨项目)`;
                 } else {
                     btnPaste.disabled = true;
-                    btnPaste.innerHTML = '📋 粘贴行';
+                    btnPaste.innerHTML = '粘贴行';
                     btnPaste.title = '剪贴板为空，请先在任意Sheet或项目中选中物料行并点击【复制行】(Ctrl+C)';
                 }
             }
@@ -782,6 +839,80 @@
             moveRow(singleId, dir);
         }
 
+        let lastDeletedBomSnapshot = null;
+
+        function buildUndoBlocksFromSelection(idsSet) {
+            if (!currentBomItems || !currentBomItems.length || !currentSubsystemId) return null;
+            const blocks = [];
+            let currentBlock = null;
+
+            currentBomItems.forEach((it, idx) => {
+                if (idsSet.has(it.id)) {
+                    const rowPayload = {
+                        material_no: it.material_no || '',
+                        name: it.m_name || '',
+                        description: it.m_desc || '',
+                        spec_model: it.m_model || '',
+                        manufacturer: it.m_mfr || '',
+                        level_str: it.level_str || '••',
+                        level_num: parseInt(it.level_num) || 2,
+                        parent_material_no: it.parent_material_no || '',
+                        drawing_no: (it.drawing_no && it.drawing_no !== '/') ? it.drawing_no : (it.m_drawing_no || '/'),
+                        qty: String(it.qty ?? '1'),
+                        unit: it.unit || it.m_unit || 'PC',
+                        notes: it.notes || '',
+                        substitute: it.substitute || it.m_substitute || ''
+                    };
+                    if (!currentBlock) {
+                        currentBlock = { insert_after_row: idx, items: [rowPayload] };
+                        blocks.push(currentBlock);
+                    } else {
+                        currentBlock.items.push(rowPayload);
+                    }
+                } else {
+                    currentBlock = null;
+                }
+            });
+
+            if (blocks.length === 0) return null;
+            return { subsystemId: currentSubsystemId, blocks, totalCount: idsSet.size };
+        }
+
+        async function undoLastBomDelete() {
+            if (!lastDeletedBomSnapshot) return;
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                showToast('当前工程已锁定，无法撤销删行', 'warning');
+                return;
+            }
+            const snap = lastDeletedBomSnapshot;
+            if (currentSubsystemId !== snap.subsystemId) {
+                showToast('请切换回原 Sheet 后再撤销删除', 'warning');
+                return;
+            }
+            lastDeletedBomSnapshot = null;
+            try {
+                for (const blk of snap.blocks) {
+                    const res = await safeFetchJson('/api/bom/paste', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            subsystem_id: snap.subsystemId,
+                            insert_after_row: blk.insert_after_row,
+                            items: blk.items
+                        })
+                    });
+                    if (!res || !res.success) {
+                        throw new Error((res && res.error) || '恢复失败');
+                    }
+                }
+                loadBomItems(currentSubsystemId);
+                if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
+                showToast(`已撤销删除并恢复 ${snap.totalCount} 行物料！`, 'success');
+            } catch (err) {
+                showToast('撤销删除失败: ' + err.message, 'error');
+            }
+        }
+
         function deleteSelectedRow() {
             if (currentProjectData && currentProjectData.is_locked == 1) {
                 alert('当前工程处于【锁定保护】状态，无法删除物料行！如需编辑请先点击【解锁编辑】。');
@@ -801,15 +932,21 @@
             }
 
             if (confirm(confirmMsg)) {
+                const undoSnap = buildUndoBlocksFromSelection(new Set(ids));
                 safeFetchJson('/api/bom/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ids: ids })
                 }).then(res => {
+                    lastDeletedBomSnapshot = undoSnap;
                     clearRowSelection();
                     loadBomItems(currentSubsystemId);
                     if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
-                    showToast(ids.length === 1 ? '物料行已删除，行号与层级序号已自动重排！' : `已成功批量删除 ${ids.length} 行物料！`, 'info');
+                    showToast(
+                        ids.length === 1 ? '物料行已删除，行号与序号已重排' : `已删除 ${ids.length} 行物料`,
+                        'info',
+                        undoSnap ? { label: '撤销 (Ctrl+Z)', onClick: undoLastBomDelete } : null
+                    );
                 }).catch(err => {
                     alert('删除失败: ' + err.message);
                 });
@@ -982,7 +1119,8 @@
 
         // --- Filter BOM Table ---
         function filterBomTable() {
-            const q = (document.getElementById('bomSearchInput').value || '').trim().toLowerCase();
+            const inp = document.getElementById('bomSearchInput');
+            const q = (inp ? inp.value : '').trim().toLowerCase();
             if (!q) {
                 renderBomTable(currentBomItems);
                 return;
@@ -993,6 +1131,247 @@
                 return terms.every(t => combined.includes(t));
             });
             renderBomTable(filtered);
+        }
+
+        function clearBomSearch() {
+            const inp = document.getElementById('bomSearchInput');
+            if (inp) {
+                inp.value = '';
+                filterBomTable();
+                inp.focus();
+            }
+        }
+
+        // --- Table Density Mode (Comfort vs Compact) ---
+        function applyBomTableDensity(isCompact) {
+            const table = document.getElementById('bomTable');
+            const btn = document.getElementById('btnBomDensityToggle');
+            if (table) table.classList.toggle('table-compact', !!isCompact);
+            if (btn) {
+                btn.textContent = isCompact ? '舒适视图' : '紧凑视图';
+                btn.style.background = isCompact ? '#eff6ff' : '';
+                btn.style.borderColor = isCompact ? '#93c5fd' : '';
+                btn.style.color = isCompact ? '#1d4ed8' : '#475569';
+            }
+        }
+
+        function initBomDensityMode() {
+            try {
+                const mode = localStorage.getItem('bom_table_density');
+                applyBomTableDensity(mode === 'compact');
+            } catch (e) {}
+        }
+
+        function toggleBomTableDensity() {
+            const table = document.getElementById('bomTable');
+            const nextCompact = !(table && table.classList.contains('table-compact'));
+            applyBomTableDensity(nextCompact);
+            try {
+                localStorage.setItem('bom_table_density', nextCompact ? 'compact' : 'comfort');
+            } catch (e) {}
+            showToast(nextCompact ? '已切换为紧凑行高视图，单屏可展示更多物料行' : '已切换为舒适标准行高视图', 'info');
+        }
+
+        // --- Inline Cell Editing (Level / Qty / Notes) ---
+        function startInlineBomEdit(itemId, field, tdEl) {
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                showToast('当前工程处于只读锁定状态，请先解锁', 'warning');
+                return;
+            }
+            const item = (currentBomItems || []).find(it => it.id === itemId);
+            if (!item || !tdEl) return;
+            if (tdEl.querySelector('.bom-inline-input, .bom-inline-select')) return;
+
+            const originalHtml = tdEl.innerHTML;
+            const origVal = field === 'level_num'
+                ? String(parseInt(item.level_num) || 2)
+                : String(item[field] ?? '');
+
+            let editor;
+            if (field === 'level_num') {
+                editor = document.createElement('select');
+                editor.className = 'bom-inline-select';
+                [
+                    { v: '1', label: '一级 (●)' },
+                    { v: '2', label: '二级 (••)' },
+                    { v: '3', label: '三级 (•••)' },
+                    { v: '4', label: '四级 (••••)' }
+                ].forEach(opt => {
+                    const o = document.createElement('option');
+                    o.value = opt.v;
+                    o.textContent = opt.label;
+                    if (opt.v === origVal) o.selected = true;
+                    editor.appendChild(o);
+                });
+            } else {
+                editor = document.createElement('input');
+                editor.type = 'text';
+                editor.className = 'bom-inline-input';
+                editor.value = origVal;
+            }
+
+            tdEl.innerHTML = '';
+            tdEl.appendChild(editor);
+            editor.focus();
+            if (typeof editor.select === 'function') editor.select();
+
+            let settled = false;
+            const cancel = () => {
+                if (settled) return;
+                settled = true;
+                tdEl.innerHTML = originalHtml;
+            };
+
+            const commit = async () => {
+                if (settled) return;
+                settled = true;
+                const nextVal = String(editor.value ?? '').trim();
+                if (field === 'qty' && !nextVal) {
+                    showToast('数量不能为空', 'warning');
+                    tdEl.innerHTML = originalHtml;
+                    return;
+                }
+                if (nextVal === origVal.trim()) {
+                    tdEl.innerHTML = originalHtml;
+                    return;
+                }
+
+                const levelNum = field === 'level_num' ? (parseInt(nextVal) || 2) : (parseInt(item.level_num) || 2);
+                const levelStrMap = { 1: '●', 2: '••', 3: '•••', 4: '••••' };
+                const levelStr = levelStrMap[levelNum] || '•'.repeat(Math.max(1, levelNum));
+
+                const payload = {
+                    id: item.id,
+                    subsystem_id: currentSubsystemId,
+                    material_no: (item.material_no || '').trim(),
+                    name: item.m_name || '',
+                    m_name: item.m_name || '',
+                    description: item.m_desc || '',
+                    m_desc: item.m_desc || '',
+                    spec_model: item.m_model || '',
+                    m_model: item.m_model || '',
+                    manufacturer: item.m_mfr || '',
+                    m_mfr: item.m_mfr || '',
+                    unit: item.unit || item.m_unit || 'PC',
+                    drawing_no: (item.drawing_no && item.drawing_no !== '/') ? item.drawing_no : (item.m_drawing_no || '/'),
+                    qty: field === 'qty' ? nextVal : String(item.qty ?? '1'),
+                    notes: field === 'notes' ? nextVal : (item.notes || ''),
+                    substitute: item.substitute || item.m_substitute || '',
+                    level_num: levelNum,
+                    level_str: levelStr
+                };
+
+                try {
+                    const res = await safeFetchJson('/api/bom/update', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (res && res.success) {
+                        loadBomItems(currentSubsystemId);
+                        if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
+                        const fLabel = field === 'qty' ? '数量' : (field === 'level_num' ? 'BOM层级' : '补充说明');
+                        showToast(`已更新 [${item.material_no}] 的${fLabel}`, 'success');
+                    } else {
+                        tdEl.innerHTML = originalHtml;
+                        showToast((res && res.error) || '行内保存失败', 'error');
+                    }
+                } catch (err) {
+                    tdEl.innerHTML = originalHtml;
+                    showToast('保存失败: ' + err.message, 'error');
+                }
+            };
+
+            editor.addEventListener('click', e => e.stopPropagation());
+            editor.addEventListener('dblclick', e => e.stopPropagation());
+            editor.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commit();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cancel();
+                }
+            });
+            editor.addEventListener('blur', () => {
+                setTimeout(() => commit(), 0);
+            });
+            if (editor.tagName === 'SELECT') {
+                editor.addEventListener('change', () => commit());
+            }
+        }
+
+        // --- Right-Click Context Menu for BOM Rows ---
+        function openBomRowContextMenu(event, idx, itemId) {
+            if (!selectedRowIds.has(itemId)) {
+                selectBomRow(idx, itemId, true);
+            }
+            const isLocked = !!(currentProjectData && currentProjectData.is_locked == 1);
+            const count = selectedRowIds.size;
+            const single = count === 1;
+            const copiedCount = typeof getCopiedBomRowsCount === 'function' ? getCopiedBomRowsCount() : 0;
+            const item = (currentBomItems || []).find(it => it.id === itemId);
+            const canInlineQty = !isLocked && single && item && !/[|｜\n]/.test(String(item.qty || ''));
+
+            if (typeof openUiContextMenu !== 'function') return;
+
+            openUiContextMenu(event, [
+                {
+                    label: isLocked ? '查看明细详情' : '编辑物料明细',
+                    shortcut: 'F2',
+                    disabled: !single,
+                    onClick: () => openEditBomModal(itemId)
+                },
+                {
+                    label: '行内快捷改数量',
+                    disabled: !canInlineQty,
+                    onClick: () => {
+                        const rowEl = document.querySelector(`#bomTableBody tr[data-item-id="${itemId}"]`);
+                        const qtyCell = rowEl ? rowEl.querySelector('td[data-inline-field="qty"]') : null;
+                        if (qtyCell) startInlineBomEdit(itemId, 'qty', qtyCell);
+                    }
+                },
+                { divider: true },
+                {
+                    label: '在下方插入新物料',
+                    shortcut: 'Insert',
+                    disabled: isLocked,
+                    onClick: () => openAddBomModal()
+                },
+                {
+                    label: count > 1 ? `复制选中的 ${count} 行` : '复制行',
+                    shortcut: 'Ctrl+C',
+                    onClick: () => copySelectedBomRows()
+                },
+                {
+                    label: copiedCount > 0 ? `粘贴到下方 (${copiedCount} 行)` : '粘贴到下方',
+                    shortcut: 'Ctrl+V',
+                    disabled: isLocked || copiedCount === 0,
+                    onClick: () => pasteBomRows()
+                },
+                { divider: true },
+                {
+                    label: '上移一行',
+                    shortcut: 'Alt+↑',
+                    disabled: isLocked || !single,
+                    onClick: () => moveSelectedRow('up')
+                },
+                {
+                    label: '下移一行',
+                    shortcut: 'Alt+↓',
+                    disabled: isLocked || !single,
+                    onClick: () => moveSelectedRow('down')
+                },
+                { divider: true },
+                {
+                    label: count > 1 ? `批量删除 (${count} 行)` : '删除该行',
+                    shortcut: 'Del',
+                    danger: true,
+                    disabled: isLocked,
+                    onClick: () => deleteSelectedRow()
+                }
+            ]);
         }
 
         // --- Move & Delete ---

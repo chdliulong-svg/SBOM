@@ -35,43 +35,38 @@
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); flex-wrap: wrap;">
                     <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                         <span style="display: inline-flex; align-items: center; gap: 5px; color: #475569;">
-                            <span style="font-size: 13px;">📁</span>
                             <span>工程总数:</span>
                             <b id="pmStatTotal" style="color: #2563eb; font-size: 13px; font-weight: 700;">0</b>
                         </span>
                         <span style="color: #e2e8f0;">|</span>
                         <span style="display: inline-flex; align-items: center; gap: 5px; color: #475569;">
-                            <span style="font-size: 13px;">🏷️</span>
                             <span>机型平台:</span>
                             <b id="pmStatPlatforms" style="color: #0d9488; font-size: 13px; font-weight: 700;">0</b>
                         </span>
                         <span style="color: #e2e8f0;">|</span>
                         <span style="display: inline-flex; align-items: center; gap: 5px; color: #475569;">
-                            <span style="font-size: 13px;">📑</span>
                             <span>分系统 Sheet:</span>
                             <b id="pmStatSheets" style="color: #7c3aed; font-size: 13px; font-weight: 700;">0</b>
                         </span>
                         <span style="color: #e2e8f0;">|</span>
                         <span style="display: inline-flex; align-items: center; gap: 5px; color: #475569;">
-                            <span style="font-size: 13px;">📦</span>
                             <span>BOM 物料总数:</span>
                             <b id="pmStatItems" style="color: #d97706; font-size: 13px; font-weight: 700;">0</b>
                         </span>
                         <span style="color: #e2e8f0;">|</span>
                         <span style="display: inline-flex; align-items: center; gap: 5px; color: #475569;">
-                            <span style="font-size: 13px;">🔒</span>
                             <span>只读保护:</span>
                             <b id="pmStatLocked" style="color: #e11d48; font-size: 13px; font-weight: 700;">0</b>
                         </span>
                     </div>
                     <div style="color: #94a3b8; font-size: 11px;">
-                        💡 双击表格任意行或点击文件名称即可进入工程
+                        提示: 双击表格任意行或点击文件名称即可进入工程
                     </div>
                 </div>
 
-                <!-- 2. Controls & Search Toolbar (重构布局：第一行操作与搜索，第二行整齐多维筛选) -->
+                <!-- 2. Controls & Search Toolbar (第一行操作与搜索，第二行多维筛选与排序齐整对齐) -->
                 <div style="display: flex; flex-direction: column; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px 14px; border-radius: 8px;">
-                    <!-- Row 1: Actions Left & Search Right (核心操作在左，快速检索置于右上角) -->
+                    <!-- Row 1: Actions Left & Search Right -->
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <!-- Actions Left Group -->
                         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -79,13 +74,10 @@
                                 + 新建工程
                             </button>
                             <button class="btn btn-outline btn-sm" onclick="closeProjectManagerModal(); openImportModal();" style="height: 32px;" title="通过标准 Excel 模版导入新工程">
-                                📥 导入 Excel
+                                导入 Excel
                             </button>
                             <button class="btn btn-outline btn-sm" onclick="closeProjectManagerModal(); triggerOpenProjectFile();" style="height: 32px;" title="导入已保存的 .sbom 工程归档包">
-                                📦 打开 .sbom
-                            </button>
-                            <button class="btn btn-outline btn-sm" onclick="openSystemCategoryModal()" style="height: 32px;" title="系统分类管理（预留与配置变桨、变流器、主控等各类系统字典）">
-                                ⚙️ 分类管理
+                                打开 .sbom
                             </button>
 
                             <!-- Selection Action Area (Visible when checked) -->
@@ -93,38 +85,44 @@
                                 <span id="pmSelectedCountText" style="font-size: 12px; font-weight: 600; color: #0369a1;">已选 0 项</span>
                                 <div id="pmSingleActionBtns" style="display: inline-flex; align-items: center; gap: 4px;">
                                     <button type="button" class="btn btn-primary btn-sm" onclick="openSelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 9px;" title="打开载入当前勾选的工程">
-                                        🚀 打开
+                                        打开
                                     </button>
                                     <button type="button" class="btn btn-outline btn-sm" onclick="exportSelectedSbomFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="导出 .sbom 工程包">
-                                        📦 导出.sbom
+                                        导出.sbom
                                     </button>
                                     <button type="button" class="btn btn-outline btn-sm" onclick="exportSelectedExcelFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="导出标准 Excel Service BOM">
-                                        📊 导出Excel
+                                        导出Excel
                                     </button>
                                     <button type="button" class="btn btn-outline btn-sm" onclick="copySelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="复制此工程为新版本">
-                                        📋 复制
+                                        复制
                                     </button>
                                     <button type="button" class="btn btn-outline btn-sm" onclick="renameSelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="重命名此工程">
-                                        ✏️ 改名
+                                        改名
                                     </button>
                                     <button type="button" class="btn btn-outline btn-sm" id="pmBtnToggleLock" onclick="toggleLockSelectedProjectFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff;" title="切换锁定保护状态">
-                                        🔒 锁定/解锁
+                                        锁定/解锁
                                     </button>
                                 </div>
                                 <button type="button" id="pmBatchExportBtn" class="btn btn-outline btn-sm" onclick="batchExportSbomFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px; background: #fff; display: none;" title="将选中的多个工程打包为 ZIP 批量下载">
-                                    📦 批量导出 (.sbom)
+                                    批量导出 (.sbom)
                                 </button>
                                 <button type="button" class="btn btn-danger btn-sm" onclick="batchDeleteProjectsFromManager()" style="height: 28px; font-size: 11px; padding: 0 8px;" title="永久删除选中的工程（自动跳过锁定保护项目）">
-                                    🗑️ 删除
+                                    删除
                                 </button>
                             </div>
                         </div>
 
-                        <!-- Search & Refresh Right Group (搜索条重置于右上角，符合主流中后台操作习惯) -->
+                        <!-- Search & Refresh Right Group -->
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <div style="position: relative; width: 280px;">
-                                <input type="text" id="pmSearchInput" class="form-input" style="width: 100%; padding-left: 32px; padding-right: 12px; height: 32px; font-size: 12px;" placeholder="实时搜索代号、名称、文件号、ECN..." oninput="filterAndRenderProjectManagerTable()">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" style="position: absolute; left: 10px; top: 9px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <div class="search-input-wrap" style="width: 300px;">
+                                <span class="search-icon">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                </span>
+                                <input type="text" id="pmSearchInput" class="form-input" style="height: 32px; font-size: 12px;" placeholder="搜索代号、名称、文件号、ECN..." title="搜索代号、名称、文件号、ECN (快捷键 Ctrl+F)" oninput="filterAndRenderProjectManagerTable()">
+                                <span class="search-right-meta">
+                                    <span id="pmSearchCountBadge" class="search-count-badge" style="display: none;"></span>
+                                    <button type="button" id="pmSearchClearBtn" class="search-clear-btn" onclick="clearPmSearch()" title="清空搜索 (Esc)">&times;</button>
+                                </span>
                             </div>
                             <button class="btn btn-outline btn-sm" onclick="loadProjectManagerData()" style="height: 32px; width: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center;" title="刷新工程数据">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
@@ -132,7 +130,7 @@
                         </div>
                     </div>
 
-                    <!-- Row 2: Multi-dimensional Filters Left & Sort Right (专门的多维筛选过滤与排序行) -->
+                    <!-- Row 2: Multi-dimensional Filters Left & Sort Right -->
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px dashed #e2e8f0;">
                         <!-- Filter Dropdowns Left -->
                         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -142,37 +140,37 @@
                             </span>
 
                             <!-- Category Select -->
-                            <select id="pmFilterCategory" class="form-select" style="height: 30px; font-size: 12px; min-width: 125px; font-weight: 600; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="按系统分类筛选">
-                                <option value="all">全部分类 (全部)</option>
+                            <select id="pmFilterCategory" class="form-select" style="height: 30px; font-size: 12px; min-width: 112px; font-weight: 600; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="按系统分类筛选">
+                                <option value="all">全部分类</option>
                             </select>
 
                             <!-- Platform Select -->
-                            <select id="pmFilterPlatform" class="form-select" style="height: 30px; font-size: 12px; min-width: 125px; padding: 2px 8px;" onchange="onPmPlatformFilterChange()" title="按机型平台筛选">
-                                <option value="all">全部机型平台</option>
+                            <select id="pmFilterPlatform" class="form-select" style="height: 30px; font-size: 12px; min-width: 105px; padding: 2px 8px;" onchange="onPmPlatformFilterChange()" title="按机型平台筛选">
+                                <option value="all">全部平台</option>
                             </select>
 
                             <!-- Code Select -->
-                            <select id="pmFilterCode" class="form-select" style="height: 30px; font-size: 12px; min-width: 125px; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="按机型代号筛选">
-                                <option value="all">全部机型代号</option>
+                            <select id="pmFilterCode" class="form-select" style="height: 30px; font-size: 12px; min-width: 110px; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="按机型代号筛选">
+                                <option value="all">全部机型</option>
                             </select>
 
                             <!-- Status Select -->
-                            <select id="pmFilterStatus" class="form-select" style="height: 30px; font-size: 12px; min-width: 110px; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="按只读/编辑状态筛选">
+                            <select id="pmFilterStatus" class="form-select" style="height: 30px; font-size: 12px; min-width: 100px; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="按只读/编辑状态筛选">
                                 <option value="all">全部状态</option>
-                                <option value="unlocked">🟢 可编辑</option>
-                                <option value="locked">🔒 锁定保护中</option>
+                                <option value="unlocked">可编辑</option>
+                                <option value="locked">只读保护</option>
                             </select>
                         </div>
 
                         <!-- Sort Select Right -->
                         <div style="display: flex; gap: 6px; align-items: center;">
                             <span style="font-size: 12px; color: #64748b;">排序:</span>
-                            <select id="pmSortBy" class="form-select" style="height: 30px; font-size: 12px; min-width: 155px; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="设置工程列表排序方式">
-                                <option value="updated_desc">🕒 修改时间 (新 → 旧)</option>
-                                <option value="updated_asc">🕒 修改时间 (旧 → 新)</option>
-                                <option value="created_desc">📅 创建时间 (新 → 旧)</option>
-                                <option value="code_asc">🔤 机型代号 (A → Z)</option>
-                                <option value="items_desc">📊 物料行数 (多 → 少)</option>
+                            <select id="pmSortBy" class="form-select" style="height: 30px; font-size: 12px; min-width: 145px; padding: 2px 8px;" onchange="filterAndRenderProjectManagerTable()" title="设置工程列表排序方式">
+                                <option value="updated_desc">修改时间 (新 → 旧)</option>
+                                <option value="updated_asc">修改时间 (旧 → 新)</option>
+                                <option value="created_desc">创建时间 (新 → 旧)</option>
+                                <option value="code_asc">机型代号 (A → Z)</option>
+                                <option value="items_desc">物料行数 (多 → 少)</option>
                             </select>
                         </div>
                     </div>

@@ -12,14 +12,14 @@ import io
 import zipfile
 import uuid
 from datetime import datetime
-from flask import Blueprint, request, jsonify, send_file
-from werkzeug.utils import secure_filename
-from services.database import get_db, find_template_path
+from flask import Blueprint, request, jsonify, send_file, after_this_request
+from services.database import get_db, find_template_path, write_transaction, record_operation_log
 from services.config import config
 from services.exporter import export_project_sbom, build_bom_file_title, build_cover_file_title
 from services.offline_packager import generate_offline_package
 from services.backup_manager import create_backup_snapshot
-from services.logging_setup import get_logger
+from services.logging_setup import get_logger, new_error_id
+from services.file_utils import safe_path_under, safe_upload_temp_name
 from services.project_bundle import (
     create_project_bundle_file,
     inspect_saved_project_file,
@@ -79,7 +79,6 @@ def get_projects():
         ORDER BY COALESCE(p.updated_at, p.created_at) DESC, p.id DESC
     ''', params)
     projects = [dict(row) for row in cursor.fetchall()]
-    conn.close()
     return jsonify(projects)
 
 
@@ -108,7 +107,6 @@ def get_project_detail(project_id):
     ''', (project_id,))
     project = cursor.fetchone()
     if not project:
-        conn.close()
         return jsonify({'error': 'Project not found'}), 404
 
     project_dict = dict(project)
@@ -125,7 +123,6 @@ def get_project_detail(project_id):
     cursor.execute('SELECT * FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
     project_dict['ecn_records'] = [dict(e) for e in cursor.fetchall()]
 
-    conn.close()
     return jsonify(project_dict)
 
 
@@ -160,25 +157,31 @@ def copy_subsystem_bom_items(cursor, src_sub_id, dst_sub_id):
 def heartbeat_project_api(project_id):
     """
     心跳续租接口：由持有锁的前端页面每 30 秒自动调用一次，
-    刷新 locked_at 时间戳以维持工程编辑租约。
+    仅当锁仍归当前客户端持有时才刷新 locked_at 时间戳，防止已被他人强制接管后误续租。
     """
     client_tag = get_client_identity()
     conn = get_db()
     cursor = conn.cursor()
-    try:
-        cursor.execute('SELECT id, is_locked, locked_by FROM projects WHERE id = ?', (project_id,))
-        p = cursor.fetchone()
-        if not p:
-            return jsonify({'success': False, 'error': '工程不存在'}), 404
+    cursor.execute('SELECT id, is_locked, locked_by, locked_at FROM projects WHERE id = ?', (project_id,))
+    p = cursor.fetchone()
+    if not p:
+        return jsonify({'success': False, 'error': '工程不存在'}), 404
 
-        if p['is_locked'] == 0:
-            # 刷新租约
-            cursor.execute("UPDATE projects SET locked_at = datetime('now', 'localtime') WHERE id = ?", (project_id,))
-            conn.commit()
-            return jsonify({'success': True, 'renewed': True, 'locked_by': p['locked_by']})
-        return jsonify({'success': True, 'renewed': False, 'is_locked': p['is_locked']})
-    finally:
-        conn.close()
+    curr_locked, curr_user = check_and_expire_lease(cursor, p)
+    if curr_locked == 0:
+        if curr_user and curr_user != client_tag:
+            return jsonify({
+                'success': False,
+                'renewed': False,
+                'taken_over': True,
+                'is_locked': 0,
+                'locked_by': curr_user,
+                'error': f'编辑权已被 [{curr_user}] 接管'
+            })
+        cursor.execute("UPDATE projects SET locked_at = datetime('now', 'localtime') WHERE id = ?", (project_id,))
+        conn.commit()
+        return jsonify({'success': True, 'renewed': True, 'taken_over': False, 'locked_by': curr_user or client_tag})
+    return jsonify({'success': True, 'renewed': False, 'taken_over': False, 'is_locked': curr_locked})
 
 
 @projects_bp.route('/api/project/<int:project_id>/unlock', methods=['POST'])
@@ -210,13 +213,14 @@ def unlock_project_api(project_id):
             }), 409
 
         # 解锁当前工程并登记占用人（独立项目锁：完全不影响其他工程状态！）
-        cursor.execute('''
-            UPDATE projects 
-            SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime')
-            WHERE id = ?
-        ''', (client_tag, project_id))
-        conn.commit()
+        with write_transaction(conn):
+            cursor.execute('''
+                UPDATE projects 
+                SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime')
+                WHERE id = ?
+            ''', (client_tag, project_id))
 
+        record_operation_log('unlock_project', 'project', project_id, {'force': force, 'by': client_tag})
         return jsonify({
             'success': True,
             'project_id': project_id,
@@ -224,17 +228,10 @@ def unlock_project_api(project_id):
             'locked_by': client_tag,
             'message': f'工程【{p_name}】已成功解锁并激活编辑状态！'
         })
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return jsonify({'success': False, 'error': f'解锁工程失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 解锁工程失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'解锁工程失败（错误码 {err_id}）'}), 500
 
 
 
@@ -251,6 +248,7 @@ def lock_project_api(project_id):
         # 锁定当前工程并清空占用人（完全不影响其他工程）
         cursor.execute("UPDATE projects SET is_locked = 1, locked_by = '', locked_at = NULL WHERE id = ?", (project_id,))
         conn.commit()
+        record_operation_log('lock_project', 'project', project_id, {})
 
         p_name = p['system_name'] or p['code'] or p['name']
         return jsonify({
@@ -260,17 +258,14 @@ def lock_project_api(project_id):
             'locked_by': '',
             'message': f'工程【{p_name}】已设置为锁定保护状态（只读）！'
         })
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({'success': False, 'error': f'锁定工程失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        err_id = new_error_id()
+        logger.exception("[%s] 锁定工程失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'锁定工程失败（错误码 {err_id}）'}), 500
 
 
 # ----------------- Project Save, Rename, Copy & Delete -----------------
@@ -284,13 +279,7 @@ def save_project():
     system_name = (data.get('system_name') or '').strip()
     supplier = (data.get('supplier') or '').strip()
     model = (data.get('model') or '').strip()
-    category = (data.get('category') or '').strip().lower()
-
-    if not category:
-        if '变流' in system_name or '变流' in name:
-            category = 'converter'
-        else:
-            category = 'pitch'
+    raw_category = (data.get('category') or '').strip().lower()
 
     if not code and not system_name and not name:
         return jsonify({'success': False, 'error': '项目名称不能为空'}), 400
@@ -308,40 +297,52 @@ def save_project():
             return jsonify({'success': False, 'error': err_msg}), 403
 
     conn = get_db()
-    cursor = conn.cursor()
     try:
-        if project_id:
-            platform = (data.get('platform') or '').strip()
-            cursor.execute('''
-            UPDATE projects SET
-                code=?, name=?, system_name=?, category=?, platform=?, supplier=?, model=?, doc_no=?, ecn_no=?, form_no=?, company=?,
-                updated_at=datetime('now', 'localtime')
-            WHERE id=?
-            ''', (code, name, system_name, category, platform, supplier, model,
-                  data.get('doc_no', ''), data.get('ecn_no', ''),
-                  data.get('form_no', config.form_no_default), data.get('company', config.company_default),
-                  project_id))
-        else:
-            client_tag = get_client_identity()
-            cursor.execute('''
-            INSERT INTO projects (code, name, system_name, category, platform, supplier, model, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
-            ''', (code, name, system_name, category, (data.get('platform') or '').strip(), supplier, model,
-                  data.get('doc_no', ''), data.get('ecn_no', ''),
-                  data.get('form_no', config.form_no_default), data.get('company', config.company_default),
-                  client_tag))
-            project_id = cursor.lastrowid
+        with write_transaction(conn):
+            cursor = conn.cursor()
+            if project_id:
+                category = raw_category
+                if not category:
+                    cursor.execute('SELECT category FROM projects WHERE id = ?', (project_id,))
+                    existing_proj = cursor.fetchone()
+                    category = (existing_proj['category'] if existing_proj and existing_proj['category'] else '') or 'pitch'
+                platform = (data.get('platform') or '').strip()
+                cursor.execute('''
+                UPDATE projects SET
+                    code=?, name=?, system_name=?, category=?, platform=?, supplier=?, model=?, doc_no=?, ecn_no=?, form_no=?, company=?,
+                    updated_at=datetime('now', 'localtime')
+                WHERE id=?
+                ''', (code, name, system_name, category, platform, supplier, model,
+                      data.get('doc_no', ''), data.get('ecn_no', ''),
+                      data.get('form_no', config.form_no_default), data.get('company', config.company_default),
+                      project_id))
+            else:
+                category = raw_category
+                if not category:
+                    if '变流' in system_name or '变流' in name:
+                        category = 'converter'
+                    else:
+                        category = 'pitch'
+                client_tag = get_client_identity()
+                cursor.execute('''
+                INSERT INTO projects (code, name, system_name, category, platform, supplier, model, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
+                ''', (code, name, system_name, category, (data.get('platform') or '').strip(), supplier, model,
+                      data.get('doc_no', ''), data.get('ecn_no', ''),
+                      data.get('form_no', config.form_no_default), data.get('company', config.company_default),
+                      client_tag))
+                project_id = cursor.lastrowid
 
-            # 新建项目时，默认只显示一个sheet，名称为SBOM
-            cursor.execute('INSERT INTO subsystems (project_id, name, sort_order) VALUES (?, ?, ?)',
-                           (project_id, 'SBOM', 0))
+                # 新建项目时，默认只显示一个sheet，名称为SBOM
+                cursor.execute('INSERT INTO subsystems (project_id, name, sort_order) VALUES (?, ?, ?)',
+                               (project_id, 'SBOM', 0))
 
-        cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
-        p_time = cursor.fetchone()
-        created_at_val = p_time['created_at'] if p_time else ''
-        updated_at_val = p_time['updated_at'] if p_time else ''
+            cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
+            p_time = cursor.fetchone()
+            created_at_val = p_time['created_at'] if p_time else ''
+            updated_at_val = p_time['updated_at'] if p_time else ''
 
-        conn.commit()
+        record_operation_log('save_project', 'project', project_id, {'code': code, 'system_name': system_name, 'category': category})
         return jsonify({
             'success': True,
             'id': project_id,
@@ -355,17 +356,10 @@ def save_project():
             'created_at': created_at_val,
             'updated_at': updated_at_val
         })
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return jsonify({'success': False, 'error': f'保存项目失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 保存项目失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'保存项目失败（错误码 {err_id}）'}), 500
 
 
 @projects_bp.route('/api/project/rename', methods=['POST'])
@@ -401,6 +395,7 @@ def rename_project():
         cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
         p_time = cursor.fetchone()
         conn.commit()
+        record_operation_log('rename_project', 'project', project_id, {'system_name': new_system_name, 'code': final_code})
         return jsonify({
             'success': True,
             'id': project_id,
@@ -410,17 +405,14 @@ def rename_project():
             'created_at': p_time['created_at'] if p_time else '',
             'updated_at': p_time['updated_at'] if p_time else ''
         })
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({'success': False, 'error': f'重命名项目失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        err_id = new_error_id()
+        logger.exception("[%s] 重命名项目失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'重命名项目失败（错误码 {err_id}）'}), 500
 
 
 @projects_bp.route('/api/project/copy', methods=['POST'])
@@ -506,17 +498,14 @@ def copy_project():
             'code': user_code,
             'message': f'项目已成功完整复制为【{user_system_name}】！'
         })
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({'success': False, 'error': f'复制项目失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        err_id = new_error_id()
+        logger.exception("[%s] 复制项目失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'复制项目失败（错误码 {err_id}）'}), 500
 
 
 @projects_bp.route('/api/project/delete', methods=['POST'])
@@ -544,15 +533,16 @@ def delete_project():
         try:
             create_backup_snapshot(reason='delete_project', note=f'删除项目 [{proj_code} - {proj_name}] 前自动备份')
         except Exception as e_snap:
-            print("Auto-backup before project delete warning:", e_snap)
+            logger.warning("Auto-backup before project delete warning: %s", e_snap)
 
-        cursor.execute('DELETE FROM bom_items WHERE subsystem_id IN (SELECT id FROM subsystems WHERE project_id = ?)', (project_id,))
-        cursor.execute('DELETE FROM subsystems WHERE project_id = ?', (project_id,))
-        cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
-        cursor.execute('DELETE FROM ecn_records WHERE project_id = ?', (project_id,))
-        cursor.execute('DELETE FROM projects WHERE id = ?', (project_id,))
+        with write_transaction(conn):
+            cursor.execute('DELETE FROM bom_items WHERE subsystem_id IN (SELECT id FROM subsystems WHERE project_id = ?)', (project_id,))
+            cursor.execute('DELETE FROM subsystems WHERE project_id = ?', (project_id,))
+            cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
+            cursor.execute('DELETE FROM ecn_records WHERE project_id = ?', (project_id,))
+            cursor.execute('DELETE FROM projects WHERE id = ?', (project_id,))
 
-        conn.commit()
+        record_operation_log('delete_project', 'project', project_id, {'code': proj_code, 'name': proj_name})
         return jsonify({
             'success': True,
             'deleted_id': project_id,
@@ -560,17 +550,10 @@ def delete_project():
             'deleted_code': proj_code,
             'message': f"项目【{proj_code} {proj_name}】已成功永久删除！"
         })
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return jsonify({'success': False, 'error': f'删除项目失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 删除项目失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'删除项目失败（错误码 {err_id}）'}), 500
 
 
 @projects_bp.route('/api/projects/batch_delete', methods=['POST'])
@@ -582,7 +565,6 @@ def batch_delete_projects():
 
     conn = get_db()
     cursor = conn.cursor()
-    deleted_ids = []
     skipped_locked = []
     try:
         placeholders = ','.join(['?'] * len(project_ids))
@@ -608,13 +590,14 @@ def batch_delete_projects():
             logger.warning("Auto-backup before batch project delete warning: %s", e_snap)
 
         del_ph = ','.join(['?'] * len(valid_ids_to_delete))
-        cursor.execute(f'DELETE FROM bom_items WHERE subsystem_id IN (SELECT id FROM subsystems WHERE project_id IN ({del_ph}))', valid_ids_to_delete)
-        cursor.execute(f'DELETE FROM subsystems WHERE project_id IN ({del_ph})', valid_ids_to_delete)
-        cursor.execute(f'DELETE FROM signatures WHERE project_id IN ({del_ph})', valid_ids_to_delete)
-        cursor.execute(f'DELETE FROM ecn_records WHERE project_id IN ({del_ph})', valid_ids_to_delete)
-        cursor.execute(f'DELETE FROM projects WHERE id IN ({del_ph})', valid_ids_to_delete)
+        with write_transaction(conn):
+            cursor.execute(f'DELETE FROM bom_items WHERE subsystem_id IN (SELECT id FROM subsystems WHERE project_id IN ({del_ph}))', valid_ids_to_delete)
+            cursor.execute(f'DELETE FROM subsystems WHERE project_id IN ({del_ph})', valid_ids_to_delete)
+            cursor.execute(f'DELETE FROM signatures WHERE project_id IN ({del_ph})', valid_ids_to_delete)
+            cursor.execute(f'DELETE FROM ecn_records WHERE project_id IN ({del_ph})', valid_ids_to_delete)
+            cursor.execute(f'DELETE FROM projects WHERE id IN ({del_ph})', valid_ids_to_delete)
 
-        conn.commit()
+        record_operation_log('batch_delete_projects', 'project', ','.join(str(x) for x in valid_ids_to_delete), {'deleted_count': len(valid_ids_to_delete)})
         msg = f"已成功永久删除 {len(valid_ids_to_delete)} 个工程项目！"
         if skipped_locked:
             msg += f"（另有 {len(skipped_locked)} 个处于锁定保护状态的工程已自动跳过：{', '.join(skipped_locked)}）"
@@ -627,17 +610,10 @@ def batch_delete_projects():
             'skipped_names': skipped_locked,
             'message': msg
         })
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return jsonify({'success': False, 'error': f'批量删除工程失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 批量删除工程失败: ids=%s", err_id, project_ids[:20])
+        return jsonify({'success': False, 'error': f'批量删除工程失败（错误码 {err_id}）'}), 500
 
 
 @projects_bp.route('/api/projects/batch_export_bundle', methods=['POST'])
@@ -652,7 +628,6 @@ def batch_export_bundle():
     placeholders = ','.join(['?'] * len(project_ids))
     cursor.execute(f'SELECT id, code, name, system_name FROM projects WHERE id IN ({placeholders})', project_ids)
     projects = cursor.fetchall()
-    conn.close()
 
     if not projects:
         return jsonify({'success': False, 'error': '未找到对应的工程数据'}), 404
@@ -685,7 +660,6 @@ def project_ecn_api(project_id):
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM ecn_records WHERE project_id = ? ORDER BY id', (project_id,))
         records = [dict(r) for r in cursor.fetchall()]
-        conn.close()
         return jsonify({'success': True, 'records': records})
 
     is_ok, err_msg = check_project_unlocked(project_id=project_id)
@@ -724,17 +698,14 @@ def project_ecn_api(project_id):
                 'change_date': change_date
             }
         })
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({'success': False, 'error': f'添加失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        err_id = new_error_id()
+        logger.exception("[%s] 新增 ECN 修改记录失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'添加失败（错误码 {err_id}）'}), 500
 
 
 @projects_bp.route('/api/project/<int:project_id>/ecn/<int:ecn_id>', methods=['PUT', 'DELETE'])
@@ -747,7 +718,6 @@ def project_ecn_item_api(project_id, ecn_id):
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM ecn_records WHERE id = ? AND project_id = ?', (ecn_id, project_id))
     if not cursor.fetchone():
-        conn.close()
         return jsonify({'success': False, 'error': '未找到该ECN记录'}), 404
 
     try:
@@ -770,17 +740,14 @@ def project_ecn_item_api(project_id, ecn_id):
         ''', (ecn_no, change_pos, change_desc, changer, change_date, ecn_id))
         conn.commit()
         return jsonify({'success': True, 'message': '修改记录已更新'})
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({'success': False, 'error': f'操作失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        err_id = new_error_id()
+        logger.exception("[%s] 操作 ECN 记录失败: ecn_id=%s", err_id, ecn_id)
+        return jsonify({'success': False, 'error': f'操作失败（错误码 {err_id}）'}), 500
 
 
 @projects_bp.route('/api/project/<int:project_id>/signatures/save', methods=['POST'])
@@ -795,29 +762,22 @@ def save_project_signatures(project_id):
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
-        for s in signatures:
-            role = (s.get('role') or '').strip()
-            sign_name = (s.get('sign_name') or '').strip()
-            sign_date = (s.get('sign_date') or '').strip()
-            if role:
-                cursor.execute('''
-                INSERT INTO signatures (project_id, role, sign_name, sign_date)
-                VALUES (?, ?, ?, ?)
-                ''', (project_id, role, sign_name, sign_date))
-        conn.commit()
+        with write_transaction(conn):
+            cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
+            for s in signatures:
+                role = (s.get('role') or '').strip()
+                sign_name = (s.get('sign_name') or '').strip()
+                sign_date = (s.get('sign_date') or '').strip()
+                if role:
+                    cursor.execute('''
+                    INSERT INTO signatures (project_id, role, sign_name, sign_date)
+                    VALUES (?, ?, ?, ?)
+                    ''', (project_id, role, sign_name, sign_date))
         return jsonify({'success': True, 'message': '签字信息保存成功'})
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return jsonify({'success': False, 'error': f'保存签字失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 保存签字信息失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'保存签字失败（错误码 {err_id}）'}), 500
 
 
 
@@ -835,7 +795,6 @@ def check_master_sync_api(project_id):
     cursor.execute('SELECT id, name, code, is_locked FROM projects WHERE id = ?', (project_id,))
     proj = cursor.fetchone()
     if not proj:
-        conn.close()
         return jsonify({'success': False, 'error': '项目不存在'}), 404
 
     cursor.execute('''
@@ -875,8 +834,6 @@ def check_master_sync_api(project_id):
         WHERE material_no IN ({placeholders})
         ''', mat_nos)
         master_map = {r['material_no']: dict(r) for r in cursor.fetchall()}
-
-    conn.close()
 
     items = []
     has_update_count = 0
@@ -1069,7 +1026,6 @@ def pull_from_master_api(project_id):
     cursor.execute('SELECT id, name, code FROM projects WHERE id = ?', (project_id,))
     proj = cursor.fetchone()
     if not proj:
-        conn.close()
         return jsonify({'success': False, 'error': '项目不存在'}), 404
 
     proj_title = (proj['code'] or '') + (' ' + proj['name'] if proj['name'] else '')
@@ -1146,7 +1102,6 @@ def pull_from_master_api(project_id):
             updated_mats.add(mno)
 
     conn.commit()
-    conn.close()
 
     summary_msg = f"成功从物料主库拉取 {len(updated_mats)} 种物料的标准数据，共更新了 {updated_rows_count} 处BOM明细行！"
     return jsonify({
@@ -1189,38 +1144,47 @@ def inspect_open_project_api():
     if ext not in ['.sbom', '.json', '.zip']:
         return jsonify({'error': '请选择 .sbom、.json 或 .zip 格式的已保存项目文件'}), 400
 
-    filename = secure_filename(file.filename) or 'saved_project.sbom'
-    temp_filename = f"temp_open_{int(time.time())}_{filename}"
-    save_path = os.path.join(UPLOAD_DIR, temp_filename)
+    temp_filename = safe_upload_temp_name('temp_open', file.filename, default_ext=ext)
+    save_path = safe_path_under(UPLOAD_DIR, temp_filename)
+    if not save_path:
+        return jsonify({'error': '非法的文件路径，已被安全策略拒绝'}), 400
     file.save(save_path)
 
     try:
         res = inspect_saved_project_file(save_path)
         res['temp_filename'] = temp_filename
-        res['original_filename'] = file.filename
+        res['original_filename'] = os.path.basename(file.filename)
         return jsonify(res)
     except Exception as e:
-        return jsonify({'error': f'解析项目文件失败: {str(e)}'}), 400
+        if os.path.exists(save_path):
+            try:
+                os.remove(save_path)
+            except Exception:
+                pass
+        logger.warning("解析项目文件失败: %s (%s)", temp_filename, e)
+        return jsonify({'error': '解析项目文件失败，请确认文件未损坏且格式正确'}), 400
 
 
 @projects_bp.route('/api/project/open/execute', methods=['POST'])
 def execute_open_project_api():
     data = request.json or {}
-    temp_filename = data.get('temp_filename', '').strip()
-    action = data.get('action', 'new').strip()
+    temp_filename = os.path.basename((data.get('temp_filename') or '').strip())
+    action = (data.get('action') or 'new').strip()
     target_project_id = data.get('target_project_id')
 
     if not temp_filename:
         return jsonify({'error': '缺少临时文件名'}), 400
 
-    save_path = os.path.join(UPLOAD_DIR, temp_filename)
+    save_path = safe_path_under(UPLOAD_DIR, temp_filename)
+    if not save_path:
+        return jsonify({'error': '非法的临时文件名，已被安全策略拒绝'}), 400
     if not os.path.exists(save_path):
         return jsonify({'error': '上传的工程文件已失效，请重新选择文件打开'}), 400
 
     try:
         create_backup_snapshot(reason='open_project_file', note=f'载入/恢复工程文件 [{temp_filename}] 前自动备份')
     except Exception as e_snap:
-        print("Auto-backup before open project file warning:", e_snap)
+        logger.warning("Auto-backup before open project file warning: %s", e_snap)
 
     try:
         res = import_project_from_file(save_path, action=action, target_project_id=target_project_id)
@@ -1231,6 +1195,7 @@ def execute_open_project_api():
             client_tag = get_client_identity()
             cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, opened_id))
             conn.commit()
+            record_operation_log('open_project_file', 'project', opened_id, {'action': action, 'file': temp_filename})
 
         # 成功导入后清理临时上传的 .sbom 文件，避免历史无用文件在磁盘堆积
         try:
@@ -1240,8 +1205,10 @@ def execute_open_project_api():
             pass
 
         return jsonify(res)
-    except Exception as e:
-        return jsonify({'error': f'载入项目失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 载入项目文件失败: %s", err_id, temp_filename)
+        return jsonify({'error': f'载入项目失败（错误码 {err_id}）'}), 500
 
 
 # ----------------- Subsystems Sheet Management -----------------
@@ -1267,7 +1234,6 @@ def add_subsystem():
     ''', (project_id, name, next_order))
     new_id = cursor.lastrowid
     conn.commit()
-    conn.close()
     return jsonify({'success': True, 'id': new_id, 'name': name})
 
 
@@ -1287,20 +1253,17 @@ def delete_subsystem():
     cursor.execute('SELECT project_id, name FROM subsystems WHERE id = ?', (subsystem_id,))
     sub = cursor.fetchone()
     if not sub:
-        conn.close()
         return jsonify({'error': 'Sheet不存在'}), 404
 
     project_id = sub[0]
     cursor.execute('SELECT count(*) FROM subsystems WHERE project_id = ?', (project_id,))
     count = cursor.fetchone()[0]
     if count <= 1:
-        conn.close()
         return jsonify({'error': '至少需要保留一个BOM Sheet，无法删除最后一个！'}), 400
 
-    cursor.execute('DELETE FROM bom_items WHERE subsystem_id = ?', (subsystem_id,))
-    cursor.execute('DELETE FROM subsystems WHERE id = ?', (subsystem_id,))
-    conn.commit()
-    conn.close()
+    with write_transaction(conn):
+        cursor.execute('DELETE FROM bom_items WHERE subsystem_id = ?', (subsystem_id,))
+        cursor.execute('DELETE FROM subsystems WHERE id = ?', (subsystem_id,))
     return jsonify({'success': True, 'project_id': project_id})
 
 
@@ -1320,7 +1283,6 @@ def rename_subsystem():
     cursor = conn.cursor()
     cursor.execute('UPDATE subsystems SET name = ? WHERE id = ?', (new_name, subsystem_id))
     conn.commit()
-    conn.close()
     return jsonify({'success': True})
 
 
@@ -1387,17 +1349,14 @@ def copy_subsystem():
             'item_count': len(items),
             'message': f'已成功复制 Sheet【{new_name}】，包含 {len(items)} 条物料记录！'
         })
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({'error': f'复制Sheet失败: {str(e)}'}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        err_id = new_error_id()
+        logger.exception("[%s] 复制 Sheet 失败: subsystem_id=%s", err_id, subsystem_id)
+        return jsonify({'error': f'复制Sheet失败（错误码 {err_id}）'}), 500
 
 
 # ----------------- Project Exports (Excel SBOM & Offline Field ZIP) -----------------
@@ -1445,6 +1404,16 @@ def export_excel(project_id):
             else:
                 return jsonify({'error': '导出失败: PDF 手册 OLE 嵌入功能依赖 Windows COM 与 Microsoft Excel。在 Linux/Ubuntu 生产环境下，请使用系统生成的【离线运维包 (.zip)】或标准 Excel 导出。'}), 400
 
+    def _send_and_remove_file(file_path, download_name, mimetype=None):
+        """将导出文件读入内存流发送并在 finally 中立即清理磁盘临时文件，兼容 Windows/Linux 零残留"""
+        with open(file_path, 'rb') as f:
+            buf = io.BytesIO(f.read())
+        buf.seek(0)
+        kwargs = {'as_attachment': True, 'download_name': download_name}
+        if mimetype:
+            kwargs['mimetype'] = mimetype
+        return send_file(buf, **kwargs)
+
     if is_embed:
         base_name = f"{safe_name}_文档嵌入版"
         download_filename = f"{base_name}.xlsx"
@@ -1452,9 +1421,17 @@ def export_excel(project_id):
         out_path = os.path.join(EXPORT_DIR, disk_filename)
         try:
             export_project_sbom(project_id, out_path, embed_manuals=True)
-            return send_file(out_path, as_attachment=True, download_name=download_filename)
-        except Exception as e:
-            return jsonify({'error': f'导出失败: {str(e)}'}), 500
+            return _send_and_remove_file(out_path, download_filename)
+        except Exception:
+            err_id = new_error_id()
+            logger.exception("[%s] 导出嵌入版 Excel 失败: project_id=%s", err_id, project_id)
+            return jsonify({'error': f'导出失败（错误码 {err_id}）'}), 500
+        finally:
+            if os.path.exists(out_path):
+                try:
+                    os.remove(out_path)
+                except Exception:
+                    pass
 
     # 超链接模式：查询当前项目中所有实际关联的技术手册 (PDF)
     cursor.execute('''
@@ -1478,8 +1455,20 @@ def export_excel(project_id):
     temp_excel_disk_name = f"{safe_name}_{unique_tag}.xlsx"
     out_excel_path = os.path.join(EXPORT_DIR, temp_excel_disk_name)
 
+    # 动态查询系统分类名称用于资料包说明文档
+    cat_code = (proj_dict.get('category') or 'pitch').strip()
+    cat_title = '风电机组系统'
+    try:
+        cursor.execute('SELECT name FROM system_categories WHERE code = ?', (cat_code,))
+        cat_row = cursor.fetchone()
+        if cat_row and cat_row['name']:
+            cat_title = cat_row['name']
+    except Exception:
+        pass
+
     # 如果该项目包含已上传的手册文件，则连同手册一起打包为 ZIP 压缩包，保证解压后超链接可无缝打开
     if manual_files and request.args.get('raw_excel') not in ['1', 'true']:
+        zip_path = None
         try:
             # 导出 Excel（第 M 列超链接使用标准相对路径 manuals/<文件名>.pdf）
             export_project_sbom(project_id, out_excel_path, embed_manuals=False, manual_relative_dir='manuals')
@@ -1490,7 +1479,7 @@ def export_excel(project_id):
 
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             readme_content = f"""========================================================================
-变桨系统 Service BOM 导出资料包（含技术手册）查阅说明
+{cat_title} Service BOM 导出资料包（含技术手册）查阅说明
 ========================================================================
 【机组工程信息】
 • 工程名称: {raw_name}
@@ -1520,16 +1509,33 @@ def export_excel(project_id):
                 for fname, src_p in manual_files.items():
                     zf.write(src_p, f"manuals/{fname}")
 
-            return send_file(zip_path, as_attachment=True, download_name=zip_download_name, mimetype='application/zip')
-        except Exception as e:
-            return jsonify({'error': f'导出失败: {str(e)}'}), 500
+            return _send_and_remove_file(zip_path, zip_download_name, mimetype='application/zip')
+        except Exception:
+            err_id = new_error_id()
+            logger.exception("[%s] 导出含手册资料包失败: project_id=%s", err_id, project_id)
+            return jsonify({'error': f'导出失败（错误码 {err_id}）'}), 500
+        finally:
+            for p in (out_excel_path, zip_path):
+                if p and os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
     else:
         # 无手册关联时，直接导出纯单文件 Excel
         try:
             export_project_sbom(project_id, out_excel_path, embed_manuals=False, manual_relative_dir='manuals')
-            return send_file(out_excel_path, as_attachment=True, download_name=excel_download_name)
-        except Exception as e:
-            return jsonify({'error': f'导出失败: {str(e)}'}), 500
+            return _send_and_remove_file(out_excel_path, excel_download_name)
+        except Exception:
+            err_id = new_error_id()
+            logger.exception("[%s] 导出 Excel 失败: project_id=%s", err_id, project_id)
+            return jsonify({'error': f'导出失败（错误码 {err_id}）'}), 500
+        finally:
+            if os.path.exists(out_excel_path):
+                try:
+                    os.remove(out_excel_path)
+                except Exception:
+                    pass
 
 
 @projects_bp.route('/api/project/<int:project_id>/export_offline_package', methods=['GET'])
@@ -1542,5 +1548,7 @@ def export_offline_package_api(project_id):
             download_name=zip_filename,
             mimetype='application/zip'
         )
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'生成现场离线运维资料包失败: {str(e)}'}), 500
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 生成现场离线运维资料包失败: project_id=%s", err_id, project_id)
+        return jsonify({'success': False, 'error': f'生成现场离线运维资料包失败（错误码 {err_id}）'}), 500

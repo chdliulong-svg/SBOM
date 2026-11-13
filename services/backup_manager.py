@@ -26,6 +26,7 @@ from .config import PROJECT_ROOT, config
 BACKUP_DIR = os.path.join(PROJECT_ROOT, 'backups')
 ASSETS_DIR = os.path.join(PROJECT_ROOT, 'assets')
 MANIFEST_PATH = os.path.join(BACKUP_DIR, 'manifest.json')
+_manifest_lock = threading.Lock()
 
 def _sync_to_remote_backup(local_path):
     """若配置了 remote_backup_dir，自动异步拷贝至局域网远端/NAS共享目录。"""
@@ -84,7 +85,7 @@ def load_manifest():
 
 def save_manifest(manifest):
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    tmp_path = MANIFEST_PATH + '.tmp'
+    tmp_path = f"{MANIFEST_PATH}.{os.getpid()}.{threading.get_ident()}.tmp"
     with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
     os.replace(tmp_path, MANIFEST_PATH)
@@ -131,12 +132,13 @@ def _prune(manifest, kind, max_keep):
 
 
 def _insert_record(record):
-    manifest = load_manifest()
-    manifest.insert(0, record)
-    manifest = _prune(manifest, 'db', MAX_KEEP_DB)
-    manifest = _prune(manifest, 'assets', MAX_KEEP_ASSETS)
-    manifest = _prune(manifest, 'full', MAX_KEEP_DB)
-    save_manifest(manifest)
+    with _manifest_lock:
+        manifest = load_manifest()
+        manifest.insert(0, record)
+        manifest = _prune(manifest, 'db', MAX_KEEP_DB)
+        manifest = _prune(manifest, 'assets', MAX_KEEP_ASSETS)
+        manifest = _prune(manifest, 'full', MAX_KEEP_ASSETS)
+        save_manifest(manifest)
 
     # 局域网远端容灾：自动将最新快照异步同步至 NAS/远端目录
     if record.get('filename'):
@@ -307,14 +309,38 @@ def ensure_daily_backup():
 
     try:
         today = datetime.datetime.now().strftime('%Y-%m-%d')
-        manifest = load_manifest()
-        for item in manifest:
-            if item.get('reason') == 'daily' and (item.get('created_at') or '').startswith(today):
+        with _manifest_lock:
+            manifest = load_manifest()
+            for item in manifest:
+                if item.get('reason') == 'daily' and (item.get('created_at') or '').startswith(today):
+                    return None
+
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        lock_file = os.path.join(BACKUP_DIR, f'.daily_{today}.lock')
+        try:
+            fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+        except FileExistsError:
+            try:
+                if (datetime.datetime.now().timestamp() - os.path.getmtime(lock_file)) < 180:
+                    return None
+                os.remove(lock_file)
+                fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.close(fd)
+            except Exception:
                 return None
-        return create_full_backup(
-            reason='daily',
-            note=f'{today} 每日自动备份（数据库 + 全部图片手册资产）'
-        )
+
+        try:
+            return create_full_backup(
+                reason='daily',
+                note=f'{today} 每日自动备份（数据库 + 全部图片手册资产）'
+            )
+        finally:
+            try:
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+            except Exception:
+                pass
     except Exception:
         return None
 
@@ -323,25 +349,26 @@ def list_backup_snapshots():
     """
     Returns list of existing backup snapshots, filtering out any missing files.
     """
-    manifest = load_manifest()
-    valid = []
-    has_changes = False
+    with _manifest_lock:
+        manifest = load_manifest()
+        valid = []
+        has_changes = False
 
-    for item in manifest:
-        item.setdefault('kind', 'db')
-        fpath = os.path.join(BACKUP_DIR, item['filename'])
-        if os.path.exists(fpath):
-            real_size = os.path.getsize(fpath)
-            if item.get('size_bytes') != real_size:
-                item['size_bytes'] = real_size
-                item['size_formatted'] = format_size(real_size)
+        for item in manifest:
+            item.setdefault('kind', 'db')
+            fpath = os.path.join(BACKUP_DIR, item['filename'])
+            if os.path.exists(fpath):
+                real_size = os.path.getsize(fpath)
+                if item.get('size_bytes') != real_size:
+                    item['size_bytes'] = real_size
+                    item['size_formatted'] = format_size(real_size)
+                    has_changes = True
+                valid.append(item)
+            else:
                 has_changes = True
-            valid.append(item)
-        else:
-            has_changes = True
 
-    if has_changes:
-        save_manifest(valid)
+        if has_changes:
+            save_manifest(valid)
 
     valid.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
     return valid
@@ -387,12 +414,13 @@ def delete_backup_snapshot(filename):
     """Deletes a specific snapshot file and updates the manifest."""
     clean_filename = os.path.basename(filename)
     fpath = os.path.join(BACKUP_DIR, clean_filename)
-    if os.path.exists(fpath):
-        os.remove(fpath)
+    with _manifest_lock:
+        if os.path.exists(fpath):
+            os.remove(fpath)
 
-    manifest = load_manifest()
-    manifest = [m for m in manifest if m.get('filename') != clean_filename]
-    save_manifest(manifest)
+        manifest = load_manifest()
+        manifest = [m for m in manifest if m.get('filename') != clean_filename]
+        save_manifest(manifest)
     return True
 
 

@@ -174,6 +174,7 @@
             });
 
             table.style.width = totalTableWidth + 'px';
+            updateStickyColumns(tableId);
         }
 
         function initTableColumnResizing(tableId = 'bomTable') {
@@ -254,6 +255,7 @@
                             total += (k && currentWidths[k]) ? currentWidths[k] : h.offsetWidth;
                         });
                         table.style.width = total + 'px';
+                        updateStickyColumns(tableId);
                     }
 
                     function onMouseUp(upEvent) {
@@ -265,6 +267,7 @@
                         document.body.classList.remove('table-resizing');
 
                         saveColumnWidths(currentWidths, tableId);
+                        updateStickyColumns(tableId);
                     }
 
                     window.addEventListener('mousemove', onMouseMove);
@@ -513,4 +516,95 @@
                 console.error("保存排序异常:", err);
             });
         }
+
+        // ==========================================
+        // Sticky Left Frozen Columns Helper (BOM & Master Tables)
+        // ==========================================
+        function getStickyColumnCount(tableId) {
+            if (window.innerWidth < 1024) return 0;
+            if (tableId === 'bomTable') return 5;    // select_check, row_num, level_num, seq_num, material_no
+            if (tableId === 'masterTable') return 3; // mm_select, mm_mat_no, mm_name
+            return 0;
+        }
+
+        function updateStickyColumns(tableId = 'bomTable') {
+            const table = document.getElementById(tableId);
+            if (!table) return;
+            const stickyCount = getStickyColumnCount(tableId);
+            const ths = Array.from(table.querySelectorAll('thead th'));
+            const cfg = getTableColConfig(tableId);
+            const widths = getSavedColumnWidths(tableId);
+
+            const leftOffsets = [];
+            let accLeft = 0;
+            ths.forEach((th, idx) => {
+                th.classList.remove('sticky-col', 'sticky-col-last');
+                if (idx < stickyCount) {
+                    const colKey = th.getAttribute('data-col');
+                    const w = (colKey && widths[colKey])
+                        ? (parseInt(widths[colKey]) || cfg.defaults[colKey] || 100)
+                        : (parseInt(th.style.width) || th.offsetWidth || 100);
+                    leftOffsets[idx] = accLeft;
+                    th.classList.add('sticky-col');
+                    if (idx === stickyCount - 1) th.classList.add('sticky-col-last');
+                    th.style.left = accLeft + 'px';
+                    accLeft += w;
+                } else {
+                    th.style.left = '';
+                }
+            });
+
+            applyStickyColumnsToBody(tableId, leftOffsets, stickyCount);
+        }
+
+        function applyStickyColumnsToBody(tableId = 'bomTable', precomputedOffsets = null, precomputedCount = null) {
+            const table = document.getElementById(tableId);
+            if (!table) return;
+            const stickyCount = (precomputedCount !== null) ? precomputedCount : getStickyColumnCount(tableId);
+
+            let leftOffsets = precomputedOffsets;
+            if (!leftOffsets) {
+                leftOffsets = [];
+                const ths = Array.from(table.querySelectorAll('thead th'));
+                const cfg = getTableColConfig(tableId);
+                const widths = getSavedColumnWidths(tableId);
+                let accLeft = 0;
+                ths.forEach((th, idx) => {
+                    if (idx < stickyCount) {
+                        const colKey = th.getAttribute('data-col');
+                        const w = (colKey && widths[colKey])
+                            ? (parseInt(widths[colKey]) || cfg.defaults[colKey] || 100)
+                            : (parseInt(th.style.width) || th.offsetWidth || 100);
+                        leftOffsets[idx] = accLeft;
+                        accLeft += w;
+                    }
+                });
+            }
+
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(tr => {
+                const cells = Array.from(tr.children);
+                if (cells.length === 1 && cells[0].colSpan > 1) return;
+                cells.forEach((td, idx) => {
+                    td.classList.remove('sticky-col', 'sticky-col-last');
+                    if (idx < stickyCount && typeof leftOffsets[idx] === 'number') {
+                        td.classList.add('sticky-col');
+                        if (idx === stickyCount - 1) td.classList.add('sticky-col-last');
+                        td.style.left = leftOffsets[idx] + 'px';
+                    } else {
+                        td.style.left = '';
+                    }
+                });
+            });
+        }
+
+        let _stickyResizeTimer = null;
+        window.addEventListener('resize', () => {
+            clearTimeout(_stickyResizeTimer);
+            _stickyResizeTimer = setTimeout(() => {
+                updateStickyColumns('bomTable');
+                updateStickyColumns('masterTable');
+            }, 120);
+        });
+
 

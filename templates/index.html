@@ -7,7 +7,7 @@
     <!-- Mozilla PDF.js Local Offline Engine (Zero Browser Plugin Dependency) -->
     <script src="/static/pdfjs/pdf.min.js"></script>
     <!-- Global Application Stylesheet -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20261112_fitviewport">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261113_uiopt2">
 </head>
 <body>
 
@@ -61,20 +61,33 @@
                 </svg>
                 <span>导出项目</span>
             </button>
-            <button class="btn btn-outline" id="btnHeaderOfflinePkg" onclick="exportOfflinePackage()" title="整机备件资料离线包一键导出 (包含SBOM、实物图库、技术PDF与现场免安装离线速查网页，适配海上风电及偏远风场无网运维)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                </svg>
-                <span>离线运维包 (.zip)</span>
-            </button>
-            <button class="btn btn-outline" id="btnHeaderBackup" onclick="openBackupModal()" title="系统快照、自动备份与一键数据恢复中心">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                </svg>
-                <span>数据安全</span>
-            </button>
+            <div class="ui-dropdown">
+                <button type="button" class="btn btn-outline ui-dropdown-toggle" onclick="toggleUiDropdown(this, event)" title="更多系统交付与维护工具">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="1"></circle>
+                        <circle cx="19" cy="12" r="1"></circle>
+                        <circle cx="5" cy="12" r="1"></circle>
+                    </svg>
+                    <span>更多工具</span>
+                    <svg class="ui-dropdown-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="ui-dropdown-menu">
+                    <button type="button" class="ui-dropdown-item" id="btnHeaderOfflinePkg" onclick="exportOfflinePackage()" title="整机备件资料离线包一键导出 (包含SBOM、实物图库、技术PDF与现场免安装离线速查网页，适配海上风电及偏远风场无网运维)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                        <span>离线运维包 (.zip)</span>
+                    </button>
+                    <button type="button" class="ui-dropdown-item" id="btnHeaderBackup" onclick="openBackupModal()" title="系统快照、自动备份与一键数据恢复中心">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                        <span>数据安全与备份</span>
+                    </button>
+                </div>
+            </div>
             <button class="btn btn-outline" id="btnHeaderLogout" onclick="handleUserLogout()" title="安全退出系统" style="display: none; color: #dc2626; border-color: #fca5a5;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -102,18 +115,18 @@
                         <span>系统分类:</span>
                     </div>
                     <div class="category-nav-pills" id="categoryNavPills">
-                        <!-- 内置静态兜底胶囊，杜绝首屏/缓存空白，JS加载后自动更新项目数量与扩展分类 -->
+                        <!-- 内置中性兜底胶囊，JS加载后自动更新真实项目数量与扩展分类 -->
                         <button type="button" class="cat-pill active" onclick="switchMainCategory('all')" title="显示所有分类下的全部工程项目">
                             <span>全部分类</span>
-                            <span class="cat-pill-count" id="catNavCount-all">7</span>
+                            <span class="cat-pill-count" id="catNavCount-all">-</span>
                         </button>
                         <button type="button" class="cat-pill" onclick="switchMainCategory('pitch')" title="快速切换至【变桨系统】分类工程视图">
                             <span>变桨系统</span>
-                            <span class="cat-pill-count" id="catNavCount-pitch">6</span>
+                            <span class="cat-pill-count" id="catNavCount-pitch">-</span>
                         </button>
                         <button type="button" class="cat-pill" onclick="switchMainCategory('converter')" title="快速切换至【变流器系统】分类工程视图">
                             <span>变流器系统</span>
-                            <span class="cat-pill-count" id="catNavCount-converter">1</span>
+                            <span class="cat-pill-count" id="catNavCount-converter">-</span>
                         </button>
                     </div>
                 </div>
@@ -132,14 +145,10 @@
             <div class="project-bar">
                 <div class="project-select-group" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span style="font-weight: 600; font-size: 13px; color: #1e293b;">当前项目:</span>
-                    <select id="platformSelect" class="form-select" style="font-weight: 600; min-width: 140px; max-width: 200px; font-size: 13px; background-color: #f8fafc;" onchange="handlePlatformFilterChange(this.value)" title="所属平台列表：按机型所属平台快速筛选联动工程">
+                    <select id="platformSelect" class="form-select" style="font-weight: 600; min-width: 135px; max-width: 190px; font-size: 13px; background-color: #f8fafc;" onchange="handlePlatformFilterChange(this.value)" title="所属平台列表：按机型所属平台快速筛选联动工程">
                         <option value="all">-- 全部平台 --</option>
-                        <option value="WL平台">WL平台</option>
-                        <option value="H3平台">H3平台</option>
-                        <option value="H4平台">H4平台</option>
-                        <option value="TEST_PLATFORM_V3">TEST_PLATFORM_V3</option>
                     </select>
-                    <select id="projectSelect" class="form-select" style="font-weight: bold; min-width: 380px; max-width: 580px;" onchange="loadProject(this.value)" title="项目名称列表：请选择具体工程项目">
+                    <select id="projectSelect" class="form-select" style="font-weight: bold; min-width: 280px; max-width: 500px;" onchange="handleMainProjectSelectChange(this.value)" title="项目名称列表：请选择具体工程项目">
                         <!-- Populated by JS -->
                     </select>
                     <div id="projectLockStatusGroup" style="display: inline-flex; align-items: center;">
@@ -148,21 +157,35 @@
                     <button class="btn btn-primary btn-sm" onclick="openNewProjectModal()" title="新建项目工程">
                         新建
                     </button>
-                    <button class="btn btn-outline btn-sm" id="btnProjectSave" onclick="saveCurrentProjectToDatabase()" title="将当前项目的所有修改保存到数据库">
-                        保存
+                    <button class="btn btn-outline btn-sm" id="btnProjectSave" onclick="saveCurrentProjectToDatabase()" title="将当前项目的所有修改保存到数据库 (Ctrl+S)">
+                        <span>保存</span>
+                        <span id="projectUnsavedDot" class="unsaved-dot" style="display: none;" title="封面或签字页有未保存修改"></span>
                     </button>
-                    <button class="btn btn-outline btn-sm" id="btnProjectCopy" onclick="openCopyProjectModal()" title="复制当前项目及其所有Sheet和BOM数据为新工程">
-                        复制
-                    </button>
-                    <button class="btn btn-outline btn-sm" id="btnProjectRename" onclick="openRenameProjectModal()" title="重命名当前项目的工程名称">
-                        重命名
-                    </button>
-                    <button class="btn btn-outline btn-sm" id="btnProjectClose" onclick="closeCurrentProject()" title="关闭当前工程，返回初始欢迎面板">
-                        关闭
-                    </button>
-                    <button class="btn btn-danger btn-sm" id="btnProjectDelete" onclick="deleteCurrentProject()" title="删除当前项目及其所有Sheet与BOM数据（物料主库完整保留）">
-                        删除
-                    </button>
+                    <div class="ui-dropdown">
+                        <button type="button" class="btn btn-outline btn-sm ui-dropdown-toggle" onclick="toggleUiDropdown(this, event)" title="更多工程管理操作">
+                            <span>工程操作</span>
+                            <svg class="ui-dropdown-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                        <div class="ui-dropdown-menu" style="left: 0; right: auto;">
+                            <button type="button" class="ui-dropdown-item" id="btnProjectCopy" onclick="openCopyProjectModal()" title="复制当前项目及其所有Sheet和BOM数据为新工程">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                <span>复制工程</span>
+                            </button>
+                            <button type="button" class="ui-dropdown-item" id="btnProjectRename" onclick="openRenameProjectModal()" title="重命名当前项目的工程名称">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                <span>重命名工程</span>
+                            </button>
+                            <button type="button" class="ui-dropdown-item" id="btnProjectClose" onclick="closeCurrentProject()" title="关闭当前工程，返回初始欢迎面板">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line></svg>
+                                <span>关闭工程</span>
+                            </button>
+                            <div class="ui-dropdown-divider"></div>
+                            <button type="button" class="ui-dropdown-item danger" id="btnProjectDelete" onclick="deleteCurrentProject()" title="删除当前项目及其所有Sheet与BOM数据（物料主库完整保留）">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                <span>删除工程</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div id="projectInfoSummary" style="font-size: 13px; color: var(--text-muted);">
                     <!-- Summary e.g. 文件号 / 表单号 -->
@@ -202,9 +225,9 @@
             <!-- Project Content Area (Tabs, Cover & BOM Tables) -->
             <div id="projectContentArea">
 
-            <!-- Tab Navigation (含右侧空白区紧凑嵌入式锁定提示) -->
+            <!-- Tab Navigation (左侧页签自适应横向滚动 + 右侧紧凑锁定提示) -->
             <div class="tab-nav" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap; min-height: 40px;">
-                <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                <div class="tab-nav-scroll">
                     <button class="tab-btn" id="tab-btn-cover" onclick="switchTab('cover')">
                         封面
                     </button>
@@ -220,16 +243,16 @@
 
                 <!-- Locked Notice Alert (右侧空白区域只读锁定提醒) -->
                 <div id="projectLockedAlert" style="display: none; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 3px 10px; border-radius: 6px; font-size: 12px; align-items: center; gap: 8px; margin: 0; white-space: nowrap; flex-shrink: 0;" title="所有 BOM 清单及属性仅供查阅、导出与比对。如需进行编辑修改，请先解锁。">
-                    <div style="display: flex; align-items: center; gap: 5px;">
-                        <span style="font-size: 13px;">🔒</span>
+                    <div style="display: flex; align-items: center; gap: 5px; min-width: 0;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.2" style="flex-shrink: 0;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         <span id="projectLockedAlertText">当前工程处于<b>只读锁定保护状态</b>，如需编辑请先解锁</span>
                     </div>
-                    <div style="display: flex; gap: 6px; align-items: center;">
+                    <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
                         <button type="button" class="btn btn-warning btn-sm" id="btnUnlockProjectBanner" onclick="unlockCurrentProject()" style="padding: 2px 10px; font-weight: 600; font-size: 12px; height: 26px; line-height: 20px;">
-                            🔓 立即解锁编辑
+                            立即解锁编辑
                         </button>
                         <button type="button" class="btn btn-danger btn-sm" id="btnForceTakeoverBanner" onclick="unlockCurrentProject(true)" style="padding: 2px 8px; font-weight: 600; font-size: 12px; height: 26px; line-height: 20px; display: none;" title="强制从占用人手中接管编辑权限">
-                            ⚡ 强制接管
+                            强制接管
                         </button>
                     </div>
                 </div>
@@ -316,7 +339,7 @@
                                 </span>
                             </h3>
                             <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-                                记录该变桨系统 BOM 的所有工程变更说明（ECN）与各级工程签字。导出标准 Excel 时将分别填入《更改页》（第8-32行）与《签字页》（第11-26行）。
+                                记录当前项目 BOM 的所有工程变更说明（ECN）与各级工程签字。导出标准 Excel 时将分别填入《更改页》（第8-32行）与《签字页》（第11-26行）。
                             </div>
                         </div>
                         <div style="display: flex; gap: 8px; align-items: center;">
@@ -467,7 +490,7 @@
 
             <!-- TAB 2: BOM Table -->
             <div id="tabContent-bom">
-                <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                     <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                         <!-- Unified Row Actions: select row first then operate -->
                         <button class="btn btn-primary btn-sm" id="btnRowAdd" onclick="openAddBomModal()" title="添加新的BOM物料行（若已选中行则默认插入在其后）">
@@ -477,21 +500,21 @@
                             批量添加
                         </button>
                         <button class="btn btn-outline btn-sm" id="btnRowCopy" onclick="copySelectedBomRows()" disabled title="复制选中的物料行（支持单选/多选，可跨Sheet与跨项目粘贴）">
-                            📋 复制行
+                            复制行
                         </button>
                         <button class="btn btn-outline btn-sm" id="btnRowPaste" onclick="pasteBomRows()" disabled title="粘贴已复制的物料行（跨Sheet/跨项目，插入在选中行之后或追加至末尾）">
-                            📋 粘贴行
+                            粘贴行
                         </button>
-                        <button class="btn btn-outline btn-sm" id="btnRowEdit" onclick="editSelectedRow()" disabled title="请先在下方表格中点击选中一行，再进行编辑">
+                        <button class="btn btn-outline btn-sm" id="btnRowEdit" onclick="editSelectedRow()" disabled title="请先在下方表格中点击选中一行，再进行编辑 (F2)">
                             编辑
                         </button>
-                        <button class="btn btn-outline btn-sm" id="btnRowMoveUp" onclick="moveSelectedRow('up')" disabled title="请先在下方表格中点击选中一行，再执行上移（总成整组跟随）">
+                        <button class="btn btn-outline btn-sm" id="btnRowMoveUp" onclick="moveSelectedRow('up')" disabled title="请先在下方表格中点击选中一行，再执行上移 (Alt+↑)">
                             上移
                         </button>
-                        <button class="btn btn-outline btn-sm" id="btnRowMoveDown" onclick="moveSelectedRow('down')" disabled title="请先在下方表格中点击选中一行，再执行下移（总成整组跟随）">
+                        <button class="btn btn-outline btn-sm" id="btnRowMoveDown" onclick="moveSelectedRow('down')" disabled title="请先在下方表格中点击选中一行，再执行下移 (Alt+↓)">
                             下移
                         </button>
-                        <button class="btn btn-danger btn-sm" id="btnRowDelete" onclick="deleteSelectedRow()" disabled title="请先在下方表格中点击选中一行，再执行删除">
+                        <button class="btn btn-danger btn-sm" id="btnRowDelete" onclick="deleteSelectedRow()" disabled title="请先在下方表格中点击选中一行，再执行删除 (Del)">
                             删除
                         </button>
 
@@ -505,40 +528,67 @@
                             </button>
                         </div>
 
+                        <!-- Density Toggle -->
+                        <button type="button" class="btn btn-outline btn-sm" id="btnBomDensityToggle" onclick="toggleBomTableDensity()" title="切换表格行高密度（舒适 / 紧凑）" style="padding: 3px 8px; font-size: 11px; color: #475569;">
+                            紧凑视图
+                        </button>
+
                         <!-- Keyboard Shortcut Guide Trigger -->
-                        <button type="button" class="btn btn-outline btn-sm" onclick="openModal('shortcutHelpModal')" title="查看高频键盘快捷键指南 (Ctrl+S, Alt+↑/↓, Ctrl+Enter, Del)" style="padding: 3px 8px; font-size: 11px; color: #475569; background: #f8fafc;">
-                            ⌨️ 快捷键
+                        <button type="button" class="btn btn-outline btn-sm" onclick="openModal('shortcutHelpModal')" title="查看高频键盘快捷键指南 (Ctrl+F, F2, Ctrl+S, Ctrl+Z, Del)" style="padding: 3px 8px; font-size: 11px; color: #475569; background: #f8fafc;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"></path></svg>
+                            <span>快捷键</span>
                         </button>
 
                         <!-- Selected row indicator badge -->
-                        <span id="selectedRowIndicator" style="display: none; align-items: center; gap: 6px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-left: 6px;">
+                        <span id="selectedRowIndicator" style="display: none; align-items: center; gap: 6px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-left: 4px;">
                             <span>已选第 <b id="selRowNumBadge">1</b> 行 (<span id="selRowMatBadge" style="font-family: monospace;"></span>)</span>
                             <a href="javascript:void(0)" onclick="clearRowSelection()" style="color: #64748b; margin-left: 4px; text-decoration: none; font-size: 14px;" title="取消选中">&times;</a>
                         </span>
                     </div>
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <span id="currentSortStatusSpan" style="font-size: 12px; font-weight: 600; color: #2563eb;"></span>
-                        <input type="text" id="bomSearchInput" class="form-input" style="width: 250px;" placeholder="搜索物料号/名称/规格..." oninput="filterBomTable()">
-
-                        <span style="color: #cbd5e1; margin: 0 2px;">|</span>
-
-                        <!-- Sheet Operations moved after search box -->
-                        <button class="btn btn-outline btn-sm" onclick="renameCurrentSubsystemSheet()" title="修改当前Sheet名称">
-                            重命名 Sheet
-                        </button>
-                        <button class="btn btn-outline btn-sm" id="btnCopySheet" onclick="copyCurrentSubsystemSheet()" style="color: #1d4ed8; border-color: #93c5fd; background: #eff6ff; font-weight: 500;" title="完整复制当前Sheet及其所有BOM物料明细行">
-                            复制 Sheet
-                        </button>
-                        <button class="btn btn-outline btn-sm" id="btnDeleteSheet" style="color: #dc2626; border-color: #fca5a5;" onclick="deleteCurrentSubsystemSheet()" title="删除当前Sheet及其所有物料">
-                            删除 Sheet
-                        </button>
-
                         <button class="btn btn-outline btn-sm" onclick="resetTableSort()" title="恢复默认排版顺序" id="resetSortBtn" style="display: none;">
                             恢复默认排序
                         </button>
-                        <button class="btn btn-outline btn-sm" onclick="resetAllColumnWidths('bomTable')" title="重置表格所有列为默认推荐宽度" id="resetColWidthsBtn">
-                            重置列宽
-                        </button>
+
+                        <div class="search-input-wrap" style="width: 270px;">
+                            <span class="search-icon">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            </span>
+                            <input type="text" id="bomSearchInput" class="form-input" placeholder="搜索物料号/名称/规格..." title="搜索物料号/名称/规格 (快捷键 Ctrl+F 或 /)" oninput="filterBomTable()">
+                            <span class="search-right-meta">
+                                <span id="bomSearchCountBadge" class="search-count-badge" style="display: none;"></span>
+                                <button type="button" id="bomSearchClearBtn" class="search-clear-btn" onclick="clearBomSearch()" title="清空搜索 (Esc)">&times;</button>
+                            </span>
+                        </div>
+
+                        <!-- Sheet & View Dropdown -->
+                        <div class="ui-dropdown">
+                            <button type="button" class="btn btn-outline btn-sm ui-dropdown-toggle" onclick="toggleUiDropdown(this, event)" title="Sheet 管理与列宽视图操作">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                <span>Sheet / 视图</span>
+                                <svg class="ui-dropdown-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                            <div class="ui-dropdown-menu">
+                                <button type="button" class="ui-dropdown-item" onclick="renameCurrentSubsystemSheet()" title="修改当前Sheet名称">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                    <span>重命名当前 Sheet</span>
+                                </button>
+                                <button type="button" class="ui-dropdown-item primary-item" id="btnCopySheet" onclick="copyCurrentSubsystemSheet()" title="完整复制当前Sheet及其所有BOM物料明细行">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                    <span>复制当前 Sheet</span>
+                                </button>
+                                <button type="button" class="ui-dropdown-item danger" id="btnDeleteSheet" onclick="deleteCurrentSubsystemSheet()" title="删除当前Sheet及其所有物料">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    <span>删除当前 Sheet</span>
+                                </button>
+                                <div class="ui-dropdown-divider"></div>
+                                <button type="button" class="ui-dropdown-item" onclick="resetAllColumnWidths('bomTable')" title="重置表格所有列为默认推荐宽度" id="resetColWidthsBtn">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                                    <span>重置表格列宽</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -589,6 +639,13 @@
         </div>
     </div>
 
+    <!-- Global Floating UI Overlays (Context Menu & Hover Image Preview) -->
+    <div id="uiContextMenu" role="menu" aria-hidden="true"></div>
+    <div id="hoverImgPreviewBox">
+        <img id="hoverImgPreviewImg" src="" alt="实物图预览">
+        <div id="hoverImgPreviewCaption"></div>
+    </div>
+
     <!-- Modular Modal Components (Jinja2 Partials) -->
     {% include 'components/modals_bom.html' %}
     {% include 'components/modals_project.html' %}
@@ -604,20 +661,20 @@
     <script src="/static/js/three_step_viewer.js?v=20261011_3"></script>
 
     <!-- Modular Application Scripts -->
-    <script src="/static/js/core.js?v=20261112_cleanhead"></script>
-    <script src="/static/js/table_utils.js?v=20261112_cleanhead"></script>
-    <script src="/static/js/project.js?v=20261112_fitviewport"></script>
+    <script src="/static/js/core.js?v=20261113_uiopt"></script>
+    <script src="/static/js/table_utils.js?v=20261113_uiopt"></script>
+    <script src="/static/js/project.js?v=20261113_uiopt"></script>
     <script>
         window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};
         window.IS_WINDOWS_SERVER = {{ 'true' if is_windows_server else 'false' }};
     </script>
-    <script src="/static/js/project_manager.js?v=20261112_cleanhead"></script>
-    <script src="/static/js/bom.js?v=20261112_fitviewport"></script>
-    <script src="/static/js/material.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/project_manager.js?v=20261113_uiopt"></script>
+    <script src="/static/js/bom.js?v=20261113_uiopt"></script>
+    <script src="/static/js/material.js?v=20261113_uiopt"></script>
     <script src="/static/js/compare.js?v=20261112_cleanhead"></script>
     <script src="/static/js/pdf_viewer.js?v=20261112_cleanhead"></script>
     <script src="/static/js/backup.js?v=20261112_cleanhead"></script>
     <script src="/static/js/audit.js?v=20261112_cleanhead"></script>
-    <script src="/static/js/main.js?v=20261112_cleanhead"></script>
+    <script src="/static/js/main.js?v=20261113_uiopt"></script>
 </body>
 </html>
