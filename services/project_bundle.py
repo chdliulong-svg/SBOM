@@ -43,6 +43,7 @@ def export_project_data(project_id):
         cursor.execute('''
         SELECT b.id, b.row_num, b.level_str, b.level_num, b.seq_num, b.material_no,
                b.parent_material_no, b.drawing_no, b.qty, b.unit, b.notes, b.substitute,
+               COALESCE(b.is_pos_locked, 0) as is_pos_locked,
                m.name as m_name, m.description as m_desc, m.spec_model as m_model,
                m.manufacturer as m_mfr, m.unit as m_unit, m.image_path, m.manual_path,
                m.substitute as m_substitute
@@ -442,8 +443,8 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
                 continue
             cursor.execute('''
             INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, seq_num, material_no,
-                                   parent_material_no, drawing_no, qty, unit, notes, substitute)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   parent_material_no, drawing_no, qty, unit, notes, substitute, is_pos_locked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 sub_id,
                 it.get('row_num', 1),
@@ -456,7 +457,8 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
                 it.get('qty', '1'),
                 'PC' if (it.get('unit') or '').upper() == 'PCS' else it.get('unit', 'PC'),
                 it.get('notes', ''),
-                it.get('substitute', '')
+                it.get('substitute', ''),
+                1 if it.get('is_pos_locked') else 0
             ))
             total_imported_items += 1
 

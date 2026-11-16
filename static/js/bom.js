@@ -230,6 +230,29 @@
                 hasChildrenMap[items[i].id] = (nextLvl > currLvl);
             }
 
+            // Compute subtree position-lock set against full currentBomItems
+            const subtreePosLockedIds = new Set();
+            const fullList = currentBomItems || items || [];
+            for (let i = 0; i < fullList.length; i++) {
+                const rootLvl = parseInt(fullList[i].level_num) || 2;
+                if (Number(fullList[i].is_pos_locked) === 1) {
+                    subtreePosLockedIds.add(fullList[i].id);
+                    continue;
+                }
+                for (let j = i + 1; j < fullList.length; j++) {
+                    const childLvl = parseInt(fullList[j].level_num) || 2;
+                    if (childLvl <= rootLvl) break;
+                    if (Number(fullList[j].is_pos_locked) === 1) {
+                        subtreePosLockedIds.add(fullList[i].id);
+                        break;
+                    }
+                }
+            }
+
+            const isLocked = currentProjectData && (currentProjectData.is_locked == 1);
+            const svgPosLocked = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
+            const svgPosUnlocked = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
+
             let hiddenAboveLevel = null;
             const fragment = document.createDocumentFragment();
 
@@ -240,6 +263,8 @@
                 const isDup = (dupMap[mNo] || 0) > 1;
                 const hasChildren = !!hasChildrenMap[it.id];
                 const isCollapsed = collapsedBomRowIds.has(it.id);
+                const isPosLocked = Number(it.is_pos_locked) === 1;
+                const isSubtreePosLocked = isPosLocked || subtreePosLockedIds.has(it.id);
 
                 // Tree folding visibility check
                 let isRowHidden = false;
@@ -300,6 +325,9 @@
                 if (isDup) {
                     rowClasses.push('tr-duplicate');
                 }
+                if (isPosLocked) {
+                    rowClasses.push('tr-pos-locked');
+                }
                 rowClasses.push(`tr-level-${lvl}`);
                 if (isSelected) {
                     rowClasses.push('row-selected');
@@ -307,8 +335,8 @@
                 tr.className = rowClasses.join(' ');
                 tr.setAttribute('data-item-id', it.id);
                 tr.setAttribute('data-item-idx', idx);
-                tr.setAttribute('draggable', isSelected ? 'true' : 'false');
-                tr.style.cursor = isSelected ? 'grab' : 'pointer';
+                tr.setAttribute('draggable', (isSelected && !isLocked && !isSubtreePosLocked) ? 'true' : 'false');
+                tr.style.cursor = (isSelected && !isLocked && !isSubtreePosLocked) ? 'grab' : 'pointer';
                 
                 tr.onclick = (e) => {
                     if (isRowDragging) return;
@@ -323,6 +351,16 @@
 
                 // Drag & Drop event handlers
                 tr.ondragstart = (e) => {
+                    if (isLocked) {
+                        showToast('当前工程处于只读锁定保护状态，禁止拖拽排序！', 'warning');
+                        e.preventDefault();
+                        return false;
+                    }
+                    if (isSubtreePosLocked) {
+                        showToast('该条目（或其下属子层级）已开启位置锁定，不参与任何位置排序或拖拽！', 'warning');
+                        e.preventDefault();
+                        return false;
+                    }
                     const q = (document.getElementById('bomSearchInput')?.value || '').trim();
                     if (q) {
                         showToast('请先清空搜索过滤框，再进行拖拽排序', 'warning');
@@ -407,17 +445,26 @@
                     imgHtml = `<img src="${escapeHtml(safeImgSrc)}" class="thumb-img" onclick="event.stopPropagation(); showImgPreview('${escapeHtml(safeImgSrc)}')" onmouseenter="if (typeof showHoverImgPreview === 'function') showHoverImgPreview(this, '${escapeHtml(safeImgSrc)}', '${escapeHtml(it.material_no || '')}')" onmouseleave="if (typeof hideHoverImgPreview === 'function') hideHoverImgPreview()" title="悬停放大 · 点击弹窗查看大图">`;
                 }
 
-                const isLocked = currentProjectData && (currentProjectData.is_locked == 1);
                 const hasPipeOrNl = (v) => /[|｜\n]/.test(String(v || ''));
                 const canInlineLevel = !isLocked;
                 const canInlineQty = !isLocked && !hasPipeOrNl(it.qty);
                 const canInlineNotes = !isLocked && !hasPipeOrNl(it.notes);
 
+                let rowNumCellHtml = '';
+                if (isPosLocked) {
+                    rowNumCellHtml = `<button type="button" class="pos-lock-btn is-locked${isLocked ? ' is-readonly' : ''}" onclick="event.stopPropagation(); toggleBomRowPosLock(${it.id})" title="${isLocked ? '该条目已开启位置锁定' : '已开启位置锁定：不参与任何位置排序或移动（点击解除位置锁定）'}">${svgPosLocked}</button><span style="font-weight: 700; color: #b45309;">${it.row_num}</span>`;
+                } else {
+                    const unlockBtnHtml = isLocked
+                        ? ''
+                        : `<button type="button" class="pos-lock-btn" onclick="event.stopPropagation(); toggleBomRowPosLock(${it.id})" title="锁定此条目位置（锁定后不参与任何排序或移动）">${svgPosUnlocked}</button>`;
+                    rowNumCellHtml = `<span class="row-drag-handle" title="按住拖拽排序" onmousedown="event.stopPropagation(); selectBomRow(${idx}, ${it.id});">⠿</span>${it.row_num}${unlockBtnHtml}`;
+                }
+
                 tr.innerHTML = `
                     <td class="col-center" onclick="event.stopPropagation();" style="width: 38px; min-width: 38px; max-width: 38px;">
                         <input type="checkbox" class="bom-row-checkbox" data-id="${it.id}" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="toggleRowSelectionById(${it.id}, ${idx}, event)" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
                     </td>
-                    <td class="col-center" style="white-space: nowrap;"><span class="row-drag-handle" title="按住拖拽排序" onmousedown="event.stopPropagation(); selectBomRow(${idx}, ${it.id});">⠿</span>${it.row_num}</td>
+                    <td class="col-center" style="white-space: nowrap;">${rowNumCellHtml}</td>
                     <td class="col-center bom-inline-cell ${canInlineLevel ? 'is-inline-editable' : ''}" ${canInlineLevel ? `ondblclick="event.stopPropagation(); startInlineBomEdit(${it.id}, 'level_num', this)" title="双击原地调整 BOM 层级"` : ''}>${levelBadgeHtml}</td>
                     <td class="col-center">${formatPipeMultilineHtml(it.seq_num, true)}</td>
                     <td>${formatPipeMultilineMatNo(it.material_no, dupBadge)}</td>
@@ -550,10 +597,25 @@
             updateRowActionButtons();
         }
 
+        function isBomItemOrSubtreePosLocked(itemId) {
+            if (!currentBomItems || currentBomItems.length === 0) return false;
+            const idx = currentBomItems.findIndex(it => it.id === itemId);
+            if (idx === -1) return false;
+            if (Number(currentBomItems[idx].is_pos_locked) === 1) return true;
+            const rootLvl = parseInt(currentBomItems[idx].level_num) || 2;
+            for (let j = idx + 1; j < currentBomItems.length; j++) {
+                const lvl = parseInt(currentBomItems[j].level_num) || 2;
+                if (lvl <= rootLvl) break;
+                if (Number(currentBomItems[j].is_pos_locked) === 1) return true;
+            }
+            return false;
+        }
+
         function syncSelectionVisuals() {
             const tbody = document.getElementById('bomTableBody');
             if (!tbody) return;
 
+            const projLocked = Boolean(currentProjectData && currentProjectData.is_locked == 1);
             let checkedCount = 0;
             const rows = tbody.querySelectorAll('tr[data-item-id]');
             rows.forEach(tr => {
@@ -563,9 +625,11 @@
                 if (cb) cb.checked = isSelected;
 
                 if (isSelected) {
+                    const rowPosLocked = isBomItemOrSubtreePosLocked(id);
+                    const canDrag = !projLocked && !rowPosLocked;
                     tr.classList.add('row-selected');
-                    tr.setAttribute('draggable', 'true');
-                    tr.style.cursor = 'grab';
+                    tr.setAttribute('draggable', canDrag ? 'true' : 'false');
+                    tr.style.cursor = canDrag ? 'grab' : 'pointer';
                     checkedCount++;
                 } else {
                     tr.classList.remove('row-selected');
@@ -634,6 +698,10 @@
             
             // Extract the dragged block
             const draggedBlock = currentBomItems.slice(srcIndex, srcEnd);
+            if (draggedBlock.some(it => Number(it.is_pos_locked) === 1)) {
+                showToast('该条目（或其下属子层级）已开启位置锁定，不参与任何排序或拖拽！', 'warning');
+                return;
+            }
             
             // Remaining items after removing dragged block
             const remaining = currentBomItems.filter((_, i) => i < srcIndex || i >= srcEnd);
@@ -658,7 +726,17 @@
             // Insert draggedBlock into remaining at insertIndex
             remaining.splice(insertIndex, 0, ...draggedBlock);
             
-            const newIds = remaining.map(it => it.id);
+            const rankMap = new Map();
+            remaining.forEach((it, pos) => rankMap.set(it.id, pos));
+            const finalOrder = (typeof reorderBomTreeByRankPreservingLocks === 'function')
+                ? reorderBomTreeByRankPreservingLocks(currentBomItems, rankMap)
+                : remaining;
+            const prevIds = currentBomItems.map(it => it.id);
+            const newIds = finalOrder.map(it => it.id);
+            if (prevIds.length === newIds.length && prevIds.every((id, i) => id === newIds[i])) {
+                showToast('由于位置锁定条目固定不变，本次拖拽未产生位置变动', 'info');
+                return;
+            }
             
             // Send to backend /api/bom/reorder
             safeFetchJson('/api/bom/reorder', {
@@ -687,6 +765,7 @@
             const btnEdit = document.getElementById('btnRowEdit');
             const btnMoveUp = document.getElementById('btnRowMoveUp');
             const btnMoveDown = document.getElementById('btnRowMoveDown');
+            const btnPosLock = document.getElementById('btnRowPosLock');
             const btnDelete = document.getElementById('btnRowDelete');
             const btnCopy = document.getElementById('btnRowCopy');
             const btnPaste = document.getElementById('btnRowPaste');
@@ -715,6 +794,12 @@
                 }
                 if (btnMoveUp) { btnMoveUp.disabled = true; btnMoveUp.title = '当前工程已锁定，如需移动物料请先点击【解锁】'; }
                 if (btnMoveDown) { btnMoveDown.disabled = true; btnMoveDown.title = '当前工程已锁定，如需移动物料请先点击【解锁】'; }
+                if (btnPosLock) {
+                    btnPosLock.disabled = true;
+                    btnPosLock.innerHTML = '锁定位置';
+                    btnPosLock.classList.remove('is-locked-active');
+                    btnPosLock.title = '当前工程已锁定，如需修改条目位置锁定请先点击【解锁】';
+                }
                 if (btnDelete) {
                     btnDelete.disabled = true;
                     btnDelete.innerHTML = '删除';
@@ -769,6 +854,12 @@
                 if (btnEdit) { btnEdit.disabled = true; btnEdit.title = '请先在下方表格中勾选或点击选中一行，再进行编辑'; }
                 if (btnMoveUp) { btnMoveUp.disabled = true; btnMoveUp.title = '请先在下方表格中勾选或点击选中一行，再执行上移'; }
                 if (btnMoveDown) { btnMoveDown.disabled = true; btnMoveDown.title = '请先在下方表格中勾选或点击选中一行，再执行下移'; }
+                if (btnPosLock) {
+                    btnPosLock.disabled = true;
+                    btnPosLock.innerHTML = '锁定位置';
+                    btnPosLock.classList.remove('is-locked-active');
+                    btnPosLock.title = '请先在下方表格中点击或勾选物料行，再锁定/解锁其位置';
+                }
                 if (btnDelete) {
                     btnDelete.disabled = true;
                     btnDelete.innerHTML = '删除';
@@ -778,9 +869,29 @@
             } else if (count === 1) {
                 const singleId = selectedRowIds.values().next().value;
                 const item = (currentBomItems || []).find(it => it.id === singleId);
+                const itemPosLocked = Boolean(item && Number(item.is_pos_locked) === 1);
+                const subtreeLocked = isBomItemOrSubtreePosLocked(singleId);
                 if (btnEdit) { btnEdit.disabled = false; btnEdit.title = '编辑当前选中的物料行'; }
-                if (btnMoveUp) { btnMoveUp.disabled = false; btnMoveUp.title = '上移当前选中的物料行（子层级自动整组跟随）'; }
-                if (btnMoveDown) { btnMoveDown.disabled = false; btnMoveDown.title = '下移当前选中的物料行（子层级自动整组跟随）'; }
+                if (btnMoveUp) {
+                    btnMoveUp.disabled = subtreeLocked;
+                    btnMoveUp.title = subtreeLocked ? '当前条目（或下属子件）已位置锁定，禁止上移' : '上移当前选中的物料行（子层级自动整组跟随）';
+                }
+                if (btnMoveDown) {
+                    btnMoveDown.disabled = subtreeLocked;
+                    btnMoveDown.title = subtreeLocked ? '当前条目（或下属子件）已位置锁定，禁止下移' : '下移当前选中的物料行（子层级自动整组跟随）';
+                }
+                if (btnPosLock) {
+                    btnPosLock.disabled = false;
+                    if (itemPosLocked) {
+                        btnPosLock.innerHTML = '解锁位置';
+                        btnPosLock.classList.add('is-locked-active');
+                        btnPosLock.title = '当前条目已位置锁定，不参与任何排序与移动（点击解除位置锁定）';
+                    } else {
+                        btnPosLock.innerHTML = '锁定位置';
+                        btnPosLock.classList.remove('is-locked-active');
+                        btnPosLock.title = '锁定此条目位置（锁定后不参与任何排序、上移、下移或拖拽）';
+                    }
+                }
                 if (btnDelete) {
                     btnDelete.disabled = false;
                     btnDelete.innerHTML = '删除';
@@ -793,9 +904,23 @@
                 }
             } else {
                 // Multi-selection mode (count > 1)
+                const selectedItems = (currentBomItems || []).filter(it => selectedRowIds.has(it.id));
+                const allSelLocked = selectedItems.length > 0 && selectedItems.every(it => Number(it.is_pos_locked) === 1);
                 if (btnEdit) { btnEdit.disabled = true; btnEdit.title = '多选模式下不支持单行编辑，请仅选中 1 行'; }
                 if (btnMoveUp) { btnMoveUp.disabled = true; btnMoveUp.title = '多选模式下不支持批量移动，请仅选中 1 行'; }
                 if (btnMoveDown) { btnMoveDown.disabled = true; btnMoveDown.title = '多选模式下不支持批量移动，请仅选中 1 行'; }
+                if (btnPosLock) {
+                    btnPosLock.disabled = false;
+                    if (allSelLocked) {
+                        btnPosLock.innerHTML = `解锁位置 (${count})`;
+                        btnPosLock.classList.add('is-locked-active');
+                        btnPosLock.title = `批量解除所选 ${count} 行条目的位置锁定`;
+                    } else {
+                        btnPosLock.innerHTML = `锁定位置 (${count})`;
+                        btnPosLock.classList.remove('is-locked-active');
+                        btnPosLock.title = `批量锁定所选 ${count} 行条目的位置（锁定后不参与任何排序或移动）`;
+                    }
+                }
                 if (btnDelete) {
                     btnDelete.disabled = false;
                     btnDelete.innerHTML = `批量删除 (${count})`;
@@ -836,7 +961,84 @@
                 return;
             }
             const singleId = selectedRowIds.values().next().value;
+            if (isBomItemOrSubtreePosLocked(singleId)) {
+                showToast('该条目（或其下属子层级）已开启位置锁定，不参与任何排序或移动！', 'warning');
+                return;
+            }
             moveRow(singleId, dir);
+        }
+
+        function _applyPosLockStateLocally(targetIds, lockedVal) {
+            const idSet = new Set(targetIds);
+            (currentBomItems || []).forEach(it => {
+                if (idSet.has(it.id)) it.is_pos_locked = lockedVal;
+            });
+            (defaultBomItemsOrder || []).forEach(it => {
+                if (idSet.has(it.id)) it.is_pos_locked = lockedVal;
+            });
+            if (typeof isFilterDuplicatesOnly !== 'undefined' && isFilterDuplicatesOnly) {
+                const dupMap = getSubsystemDuplicateCounts();
+                const filtered = (currentBomItems || []).filter(it => (dupMap[(it.material_no || '').trim()] || 0) > 1);
+                renderBomTable(filtered, false);
+            } else {
+                const q = (document.getElementById('bomSearchInput')?.value || '').trim();
+                if (q) {
+                    filterBomTable();
+                } else {
+                    renderBomTable(currentBomItems, false);
+                }
+            }
+        }
+
+        function toggleBomRowPosLock(itemId, explicitLocked = null) {
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                showToast('当前工程处于只读锁定保护状态，请先解锁工程！', 'warning');
+                return;
+            }
+            const payload = { id: itemId };
+            if (explicitLocked !== null) payload.locked = Boolean(explicitLocked);
+            safeFetchJson('/api/bom/toggle_pos_lock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(res => {
+                if (res && res.success) {
+                    _applyPosLockStateLocally(res.updated_ids || [itemId], res.is_pos_locked ? 1 : 0);
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
+                    showToast(res.message || '已更新位置锁定状态', res.is_pos_locked ? 'warning' : 'success');
+                } else {
+                    showToast((res && res.error) || '切换位置锁定失败', 'error');
+                }
+            }).catch(err => {
+                showToast('切换位置锁定失败: ' + err.message, 'error');
+            });
+        }
+
+        function toggleSelectedRowPosLock() {
+            if (currentProjectData && currentProjectData.is_locked == 1) {
+                showToast('当前工程处于只读锁定保护状态，请先解锁工程！', 'warning');
+                return;
+            }
+            if (!selectedRowIds || selectedRowIds.size === 0) {
+                showToast('请先在表格中点击或勾选要锁定/解锁的物料行！', 'warning');
+                return;
+            }
+            const ids = Array.from(selectedRowIds);
+            safeFetchJson('/api/bom/toggle_pos_lock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            }).then(res => {
+                if (res && res.success) {
+                    _applyPosLockStateLocally(res.updated_ids || ids, res.is_pos_locked ? 1 : 0);
+                    if (typeof refreshCurrentProjectUpdatedAt === 'function') refreshCurrentProjectUpdatedAt();
+                    showToast(res.message || '已更新位置锁定状态', res.is_pos_locked ? 'warning' : 'success');
+                } else {
+                    showToast((res && res.error) || '切换位置锁定失败', 'error');
+                }
+            }).catch(err => {
+                showToast('切换位置锁定失败: ' + err.message, 'error');
+            });
         }
 
         let lastDeletedBomSnapshot = null;
@@ -861,7 +1063,8 @@
                         qty: String(it.qty ?? '1'),
                         unit: it.unit || it.m_unit || 'PC',
                         notes: it.notes || '',
-                        substitute: it.substitute || it.m_substitute || ''
+                        substitute: it.substitute || it.m_substitute || '',
+                        is_pos_locked: Number(it.is_pos_locked) === 1 ? 1 : 0
                     };
                     if (!currentBlock) {
                         currentBlock = { insert_after_row: idx, items: [rowPayload] };
@@ -1313,6 +1516,10 @@
             const copiedCount = typeof getCopiedBomRowsCount === 'function' ? getCopiedBomRowsCount() : 0;
             const item = (currentBomItems || []).find(it => it.id === itemId);
             const canInlineQty = !isLocked && single && item && !/[|｜\n]/.test(String(item.qty || ''));
+            const itemPosLocked = Boolean(item && Number(item.is_pos_locked) === 1);
+            const subtreePosLocked = single && isBomItemOrSubtreePosLocked(itemId);
+            const selectedItems = (currentBomItems || []).filter(it => selectedRowIds.has(it.id));
+            const allSelPosLocked = selectedItems.length > 0 && selectedItems.every(it => Number(it.is_pos_locked) === 1);
 
             if (typeof openUiContextMenu !== 'function') return;
 
@@ -1352,15 +1559,22 @@
                 },
                 { divider: true },
                 {
+                    label: count > 1
+                        ? (allSelPosLocked ? `批量解除位置锁定 (${count} 行)` : `批量锁定条目位置 (${count} 行)`)
+                        : (itemPosLocked ? '解除位置锁定' : '锁定条目位置'),
+                    disabled: isLocked,
+                    onClick: () => toggleSelectedRowPosLock()
+                },
+                {
                     label: '上移一行',
                     shortcut: 'Alt+↑',
-                    disabled: isLocked || !single,
+                    disabled: isLocked || !single || subtreePosLocked,
                     onClick: () => moveSelectedRow('up')
                 },
                 {
                     label: '下移一行',
                     shortcut: 'Alt+↓',
-                    disabled: isLocked || !single,
+                    disabled: isLocked || !single || subtreePosLocked,
                     onClick: () => moveSelectedRow('down')
                 },
                 { divider: true },
@@ -1378,6 +1592,10 @@
         function moveRow(id, dir) {
             if (currentProjectData && currentProjectData.is_locked == 1) {
                 showToast('当前工程处于【锁定保护】状态，无法移动物料行！', 'error');
+                return;
+            }
+            if (isBomItemOrSubtreePosLocked(id)) {
+                showToast('该条目（或其下属子层级）已开启位置锁定，不参与任何排序或移动！', 'warning');
                 return;
             }
             safeFetchJson('/api/bom/move', {
@@ -2293,6 +2511,11 @@
             document.getElementById('bm-drawing').value = '/';
             document.getElementById('bm-substitute').value = '';
             document.getElementById('bm-notes').value = '';
+            const posLockCb = document.getElementById('bm-pos-locked');
+            if (posLockCb) {
+                posLockCb.checked = false;
+                posLockCb.disabled = false;
+            }
 
             pendingModalImgFile = null;
             currentModalImgPath = '';
@@ -2388,6 +2611,11 @@
             document.getElementById('bm-substitute').value = it.substitute || it.m_substitute || '';
             document.getElementById('bm-notes').value = it.notes || '';
             document.getElementById('bm-level').value = `${it.level_str}|${it.level_num}`;
+            const posLockCb = document.getElementById('bm-pos-locked');
+            if (posLockCb) {
+                posLockCb.checked = Number(it.is_pos_locked) === 1;
+                posLockCb.disabled = Boolean(isLocked);
+            }
 
             pendingModalImgFile = null;
             currentModalImgPath = it.image_path || '';
@@ -2475,6 +2703,7 @@
                 substitute: document.getElementById('bm-substitute').value.trim(),
                 level_str: lvlStr,
                 level_num: lvlNum,
+                is_pos_locked: document.getElementById('bm-pos-locked')?.checked ? 1 : 0,
                 remove_image: removeImageFlag,
                 remove_manual: removeManualFlag,
                 import_children: importChildren

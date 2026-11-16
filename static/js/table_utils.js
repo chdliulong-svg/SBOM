@@ -7,7 +7,7 @@
         // ==========================================
         const DEFAULT_COLUMN_WIDTHS = {
             select_check: 38,
-            row_num: 55,
+            row_num: 68,
             level_num: 95,
             seq_num: 68,
             material_no: 140,
@@ -25,7 +25,7 @@
 
         const MIN_COLUMN_WIDTHS = {
             select_check: 38,
-            row_num: 45,
+            row_num: 54,
             level_num: 80,
             seq_num: 50,
             material_no: 90,
@@ -329,11 +329,86 @@
             if (resetBtn) resetBtn.style.display = 'none';
         }
 
+        function buildBomTreeNodes(flatItems) {
+            const roots = [];
+            const stack = [];
+            (flatItems || []).forEach((item, origPos) => {
+                const lvl = parseInt(item.level_num) || 2;
+                const node = { item, level: lvl, origPos, children: [] };
+                while (stack.length > 0 && stack[stack.length - 1].level >= lvl) {
+                    stack.pop();
+                }
+                if (stack.length === 0) {
+                    roots.push(node);
+                } else {
+                    stack[stack.length - 1].children.push(node);
+                }
+                stack.push(node);
+            });
+            return roots;
+        }
+
+        function flattenBomTreeNodes(nodes) {
+            const list = [];
+            function traverse(nodeList) {
+                (nodeList || []).forEach(n => {
+                    list.push(n.item);
+                    if (n.children && n.children.length > 0) {
+                        traverse(n.children);
+                    }
+                });
+            }
+            traverse(nodes);
+            return list;
+        }
+
+        function reorderBomTreeByRankPreservingLocks(flatItems, rankMap) {
+            if (!flatItems || flatItems.length === 0) return [];
+            const tree = buildBomTreeNodes(flatItems);
+            const fallbackRank = flatItems.length + 1000;
+
+            function reorderNodes(nodes) {
+                if (!nodes || nodes.length === 0) return;
+                if (nodes.length > 1) {
+                    const lockedFlags = nodes.map(n => Number(n.item && n.item.is_pos_locked) === 1);
+                    const unlocked = nodes.filter((_, idx) => !lockedFlags[idx]);
+                    unlocked.sort((a, b) => {
+                        const rA = rankMap.has(a.item.id) ? rankMap.get(a.item.id) : fallbackRank;
+                        const rB = rankMap.has(b.item.id) ? rankMap.get(b.item.id) : fallbackRank;
+                        if (rA !== rB) return rA - rB;
+                        return a.origPos - b.origPos;
+                    });
+                    let uIdx = 0;
+                    for (let i = 0; i < nodes.length; i++) {
+                        if (!lockedFlags[i]) {
+                            nodes[i] = unlocked[uIdx++];
+                        }
+                    }
+                }
+                nodes.forEach(n => {
+                    if (n.children && n.children.length > 0) {
+                        reorderNodes(n.children);
+                    }
+                });
+            }
+
+            reorderNodes(tree);
+            return flattenBomTreeNodes(tree);
+        }
+
         function resetTableSort() {
             resetSortIconsOnly();
 
             if (defaultBomItemsOrder && defaultBomItemsOrder.length > 0) {
-                currentBomItems = JSON.parse(JSON.stringify(defaultBomItemsOrder));
+                const defaultRankMap = new Map();
+                defaultBomItemsOrder.forEach((it, idx) => defaultRankMap.set(it.id, idx));
+                const baseItems = (currentBomItems && currentBomItems.length > 0)
+                    ? currentBomItems
+                    : JSON.parse(JSON.stringify(defaultBomItemsOrder));
+                const restored = reorderBomTreeByRankPreservingLocks(baseItems, defaultRankMap);
+                const lockedCount = restored.filter(it => Number(it.is_pos_locked) === 1).length;
+
+                currentBomItems = restored;
                 computeBomHierarchyNumbers(currentBomItems, 'step10');
                 renderBomTable(currentBomItems);
 
@@ -348,7 +423,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ subsystem_id: currentSubsystemId, item_ids: itemIds })
                 }).then(() => {
-                    showToast('已恢复默认排版顺序并保存', 'info');
+                    showToast(
+                        lockedCount > 0
+                            ? `已恢复默认排版顺序并保存（${lockedCount} 项位置锁定条目保持固定）`
+                            : '已恢复默认排版顺序并保存',
+                        'info'
+                    );
                 }).catch(err => {
                     console.error("恢复默认排版异常:", err);
                 });
@@ -393,78 +473,68 @@
                 icon.classList.add('active');
             }
 
+            const lockedCount = currentBomItems.filter(it => Number(it.is_pos_locked) === 1).length;
             const isLocked = Boolean(currentProjectData && currentProjectData.is_locked == 1);
             const statusSpan = document.getElementById('currentSortStatusSpan');
             const label = sortFieldLabels[field] || field;
             if (statusSpan) {
-                statusSpan.textContent = `[按 ${label} ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'}（树状层级整组协同）${isLocked ? ' - 只读预览' : ''}]`;
+                const lockedHint = lockedCount > 0 ? ` · 已固定 ${lockedCount} 项位置` : '';
+                statusSpan.textContent = `[按 ${label} ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'}（树状层级整组协同）${lockedHint}${isLocked ? ' - 只读预览' : ''}]`;
             }
             const resetBtn = document.getElementById('resetSortBtn');
             if (resetBtn) resetBtn.style.display = 'inline-flex';
 
-            // Hierarchical Tree Sort
-            function buildBomTree(flatItems) {
-                const roots = [];
-                const stack = []; // [{ node, level }]
+            function compareBomNodes(a, b, fieldName, dir) {
+                let valA = a.item[fieldName];
+                let valB = b.item[fieldName];
+                if (valA === undefined || valA === null) valA = '';
+                if (valB === undefined || valB === null) valB = '';
 
-                flatItems.forEach(item => {
-                    const lvl = parseInt(item.level_num) || 2;
-                    const node = { item, level: lvl, children: [] };
-
-                    while (stack.length > 0 && stack[stack.length - 1].level >= lvl) {
-                        stack.pop();
-                    }
-
-                    if (stack.length === 0) {
-                        roots.push(node);
+                let res = 0;
+                if (fieldName === 'seq_num') {
+                    res = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
+                } else if (fieldName === 'qty' || fieldName === 'row_num') {
+                    const numA = parseFloat(valA);
+                    const numB = parseFloat(valB);
+                    if (!isNaN(numA) && !isNaN(numB)) {
+                        res = numA - numB;
                     } else {
-                        stack[stack.length - 1].node.children.push(node);
+                        res = String(valA).localeCompare(String(valB), 'zh-CN', { numeric: true, sensitivity: 'base' });
                     }
-
-                    stack.push({ node, level: lvl });
-                });
-
-                return roots;
+                } else if (fieldName === 'manual_path' || fieldName === 'image_path') {
+                    const hasA = valA ? 1 : 0;
+                    const hasB = valB ? 1 : 0;
+                    res = hasB - hasA; // 有附件排前
+                } else if (fieldName === 'drawing_no') {
+                    const dwgA = (a.item.drawing_no && a.item.drawing_no !== '/') ? a.item.drawing_no : (a.item.m_drawing_no || '');
+                    const dwgB = (b.item.drawing_no && b.item.drawing_no !== '/') ? b.item.drawing_no : (b.item.m_drawing_no || '');
+                    res = String(dwgA).localeCompare(String(dwgB), 'zh-CN', { numeric: true, sensitivity: 'base' });
+                } else if (fieldName === 'unit') {
+                    const uA = a.item.unit || a.item.m_unit || '';
+                    const uB = b.item.unit || b.item.m_unit || '';
+                    res = String(uA).localeCompare(String(uB), 'zh-CN', { numeric: true, sensitivity: 'base' });
+                } else {
+                    res = String(valA).localeCompare(String(valB), 'zh-CN', { numeric: true, sensitivity: 'base' });
+                }
+                return dir === 'asc' ? res : -res;
             }
 
+            // Hierarchical Tree Sort (position-locked items stay fixed in their slots)
             function sortNodeTree(nodes, fieldName, dir) {
                 if (!nodes || nodes.length === 0) return;
 
                 if (nodes.length > 1) {
-                    nodes.sort((a, b) => {
-                        let valA = a.item[fieldName];
-                        let valB = b.item[fieldName];
-                        if (valA === undefined || valA === null) valA = '';
-                        if (valB === undefined || valB === null) valB = '';
-
-                        let res = 0;
-                        if (fieldName === 'seq_num') {
-                            res = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
-                        } else if (fieldName === 'qty' || fieldName === 'row_num') {
-                            const numA = parseFloat(valA);
-                            const numB = parseFloat(valB);
-                            if (!isNaN(numA) && !isNaN(numB)) {
-                                res = numA - numB;
-                            } else {
-                                res = String(valA).localeCompare(String(valB), 'zh-CN', { numeric: true, sensitivity: 'base' });
-                            }
-                        } else if (fieldName === 'manual_path' || fieldName === 'image_path') {
-                            const hasA = valA ? 1 : 0;
-                            const hasB = valB ? 1 : 0;
-                            res = hasB - hasA; // 有附件排前
-                        } else if (fieldName === 'drawing_no') {
-                            const dwgA = (a.item.drawing_no && a.item.drawing_no !== '/') ? a.item.drawing_no : (a.item.m_drawing_no || '');
-                            const dwgB = (b.item.drawing_no && b.item.drawing_no !== '/') ? b.item.drawing_no : (b.item.m_drawing_no || '');
-                            res = String(dwgA).localeCompare(String(dwgB), 'zh-CN', { numeric: true, sensitivity: 'base' });
-                        } else if (fieldName === 'unit') {
-                            const uA = a.item.unit || a.item.m_unit || '';
-                            const uB = b.item.unit || b.item.m_unit || '';
-                            res = String(uA).localeCompare(String(uB), 'zh-CN', { numeric: true, sensitivity: 'base' });
-                        } else {
-                            res = String(valA).localeCompare(String(valB), 'zh-CN', { numeric: true, sensitivity: 'base' });
+                    const lockedFlags = nodes.map(n => Number(n.item && n.item.is_pos_locked) === 1);
+                    const unlocked = nodes.filter((_, idx) => !lockedFlags[idx]);
+                    if (unlocked.length > 1) {
+                        unlocked.sort((a, b) => compareBomNodes(a, b, fieldName, dir));
+                    }
+                    let uIdx = 0;
+                    for (let i = 0; i < nodes.length; i++) {
+                        if (!lockedFlags[i]) {
+                            nodes[i] = unlocked[uIdx++];
                         }
-                        return dir === 'asc' ? res : -res;
-                    });
+                    }
                 }
 
                 nodes.forEach(n => {
@@ -474,23 +544,9 @@
                 });
             }
 
-            function flattenBomTree(nodes) {
-                const list = [];
-                function traverse(nodeList) {
-                    nodeList.forEach(n => {
-                        list.push(n.item);
-                        if (n.children && n.children.length > 0) {
-                            traverse(n.children);
-                        }
-                    });
-                }
-                traverse(nodes);
-                return list;
-            }
-
-            const tree = buildBomTree(currentBomItems);
+            const tree = buildBomTreeNodes(currentBomItems);
             sortNodeTree(tree, field, currentSortDir);
-            const sortedItems = flattenBomTree(tree);
+            const sortedItems = flattenBomTreeNodes(tree);
 
             computeBomHierarchyNumbers(sortedItems, 'step10');
 
@@ -499,7 +555,12 @@
 
             // Persist order to database (if unlocked)
             if (isLocked) {
-                showToast(`已按 [${label}] 视图排列（当前工程已锁定，排序仅供临时预览，未修改工程数据库）`, 'info');
+                showToast(
+                    lockedCount > 0
+                        ? `已按 [${label}] 视图排列（${lockedCount} 项位置锁定条目已原位固定；当前工程只读未落库）`
+                        : `已按 [${label}] 视图排列（当前工程已锁定，排序仅供临时预览，未修改工程数据库）`,
+                    'info'
+                );
                 return;
             }
 
@@ -510,7 +571,10 @@
                 body: JSON.stringify({ subsystem_id: currentSubsystemId, item_ids: itemIds })
             }).then(res => {
                 if (res.success) {
-                    showToast(`已按 [${label}] ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'} 重新排列，顺序已自动保存至数据库！`, 'success');
+                    const msg = lockedCount > 0
+                        ? `已按 [${label}] ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'} 重排（${lockedCount} 项位置锁定条目未参与排序，保持原位）`
+                        : `已按 [${label}] ${currentSortDir === 'asc' ? '正向升序 ▲' : '负向降序 ▼'} 重新排列，顺序已自动保存至数据库！`;
+                    showToast(msg, 'success');
                 }
             }).catch(err => {
                 console.error("保存排序异常:", err);

@@ -7,7 +7,7 @@
     <!-- Mozilla PDF.js Local Offline Engine (Zero Browser Plugin Dependency) -->
     <script src="/static/pdfjs/pdf.min.js"></script>
     <!-- Global Application Stylesheet -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20261113_uiopt2">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261116_poslock">
 </head>
 <body>
 
@@ -514,6 +514,9 @@
                         <button class="btn btn-outline btn-sm" id="btnRowMoveDown" onclick="moveSelectedRow('down')" disabled title="请先在下方表格中点击选中一行，再执行下移 (Alt+↓)">
                             下移
                         </button>
+                        <button class="btn btn-outline btn-sm" id="btnRowPosLock" onclick="toggleSelectedRowPosLock()" disabled title="锁定/解锁选中行的位置（锁定后不参与任何排序、上移、下移或拖拽）">
+                            锁定位置
+                        </button>
                         <button class="btn btn-danger btn-sm" id="btnRowDelete" onclick="deleteSelectedRow()" disabled title="请先在下方表格中点击选中一行，再执行删除 (Del)">
                             删除
                         </button>
@@ -611,7 +614,7 @@
                                 <th style="width: 38px; min-width: 38px; max-width: 38px;" class="col-center" data-col="select_check">
                                     <input type="checkbox" id="selectAllBomCheckbox" onchange="toggleSelectAllBom(this.checked)" title="全选 / 取消全选" style="cursor: pointer; width: 14px; height: 14px; margin: 0; vertical-align: middle;">
                                 </th>
-                                <th data-col="row_num" style="width: 55px;" class="col-center sortable-th" onclick="handleTableSort('row_num')" title="行号：按全局行顺序递增编号 (1, 2, 3...)">行号 <span class="sort-icon" id="sort-icon-row_num">⇅</span></th>
+                                <th data-col="row_num" style="width: 68px;" class="col-center sortable-th" onclick="handleTableSort('row_num')" title="行号：按全局行顺序递增编号 (1, 2, 3...)，支持点击行左侧锁图标锁定位置">行号 <span class="sort-icon" id="sort-icon-row_num">⇅</span></th>
                                 <th data-col="level_num" style="width: 95px;" class="col-center">BOM层级</th>
                                 <th data-col="seq_num" style="width: 68px;" class="col-center sortable-th" onclick="handleTableSort('seq_num')" title="序号：各层级自 10 起按 10 步进编号 (10, 20, 30...)">序号 <span class="sort-icon" id="sort-icon-seq_num">⇅</span></th>
                                 <th data-col="material_no" style="width: 140px;" class="sortable-th" onclick="handleTableSort('material_no')" title="点击正/负向排序（子层级自动整组跟随）">物料号 <span class="sort-icon" id="sort-icon-material_no">⇅</span></th>
@@ -662,14 +665,14 @@
 
     <!-- Modular Application Scripts -->
     <script src="/static/js/core.js?v=20261113_uiopt"></script>
-    <script src="/static/js/table_utils.js?v=20261113_uiopt"></script>
-    <script src="/static/js/project.js?v=20261113_uiopt"></script>
+    <script src="/static/js/table_utils.js?v=20261116_poslock"></script>
+    <script src="/static/js/project.js?v=20261116_poslock"></script>
     <script>
         window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};
         window.IS_WINDOWS_SERVER = {{ 'true' if is_windows_server else 'false' }};
     </script>
     <script src="/static/js/project_manager.js?v=20261113_uiopt"></script>
-    <script src="/static/js/bom.js?v=20261113_uiopt"></script>
+    <script src="/static/js/bom.js?v=20261116_poslock"></script>
     <script src="/static/js/material.js?v=20261113_uiopt"></script>
     <script src="/static/js/compare.js?v=20261112_cleanhead"></script>
     <script src="/static/js/pdf_viewer.js?v=20261112_cleanhead"></script>

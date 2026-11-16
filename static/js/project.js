@@ -620,8 +620,11 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 btnDeleteSheet.title = isLocked ? '当前工程已锁定，需先解锁方可删除Sheet' : '删除当前Sheet及其所有物料';
             }
 
-            // Update row action buttons
+            // Update row action buttons and lock/inline indicators cleanly
             updateRowActionButtons();
+            if (typeof currentSubsystemId !== 'undefined' && currentSubsystemId && typeof filterBomTable === 'function' && Array.isArray(currentBomItems) && currentBomItems.length > 0 && document.querySelector('#bomTableBody tr[data-item-id]')) {
+                filterBomTable();
+            }
 
             if (isLocked) {
                 stopProjectHeartbeat();

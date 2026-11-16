@@ -395,6 +395,77 @@ class IsolatedAppTestCase(unittest.TestCase):
         self.assertEqual(proj_js.count("category: (currentProjectData.category || 'pitch'),"), 1)
         self.assertIn('res.taken_over', proj_js)
 
+    def test_11_bom_position_lock_prevents_sorting_and_moving(self):
+        r_proj = self.client.post('/api/project/save', json={'code': 'POSLOCK-01', 'system_name': 'Pos Lock Test'})
+        self.assertEqual(r_proj.status_code, 200)
+        pid = r_proj.get_json()['id']
+        proj = self.client.get(f'/api/project/{pid}').get_json()
+        sub_id = proj['subsystems'][0]['id']
+
+        # Build 1 assembly (Level 1) + 4 parts (Level 2)
+        self.client.post('/api/bom/add', json={'subsystem_id': sub_id, 'material_no': 'ASM-0', 'name': 'Assembly', 'level_str': '•', 'level_num': 1})
+        for mat in ['PART-Z', 'PART-B', 'PART-A', 'PART-M']:
+            self.client.post('/api/bom/add', json={'subsystem_id': sub_id, 'material_no': mat, 'name': mat, 'level_str': '••', 'level_num': 2})
+
+        items = self.client.get(f'/api/subsystem/{sub_id}/items').get_json()
+        id_map = {it['material_no']: it['id'] for it in items}
+        self.assertEqual([it['material_no'] for it in items], ['ASM-0', 'PART-Z', 'PART-B', 'PART-A', 'PART-M'])
+
+        # Lock ASM-0 (index 0) and PART-B (child slot 1, global index 2)
+        r_lck = self.client.post('/api/bom/toggle_pos_lock', json={'ids': [id_map['ASM-0'], id_map['PART-B']], 'locked': True})
+        self.assertEqual(r_lck.status_code, 200)
+        self.assertEqual(r_lck.get_json()['is_pos_locked'], 1)
+
+        # Direct move of locked item or parent containing locked child must be rejected
+        r_mv_locked = self.client.post('/api/bom/move', json={'id': id_map['PART-B'], 'direction': 'up'})
+        self.assertEqual(r_mv_locked.status_code, 400)
+        r_mv_parent = self.client.post('/api/bom/move', json={'id': id_map['ASM-0'], 'direction': 'down'})
+        self.assertEqual(r_mv_parent.status_code, 400)
+
+        # Moving unlocked PART-A up skips over locked PART-B while keeping PART-B at its exact slot!
+        r_mv_a = self.client.post('/api/bom/move', json={'id': id_map['PART-A'], 'direction': 'up'})
+        self.assertEqual(r_mv_a.status_code, 200)
+        after_mv = self.client.get(f'/api/subsystem/{sub_id}/items').get_json()
+        self.assertEqual([it['material_no'] for it in after_mv], ['ASM-0', 'PART-A', 'PART-B', 'PART-Z', 'PART-M'])
+        self.assertEqual(after_mv[2]['row_num'], 3)
+
+        # Reorder (simulating column sort descending or arbitrary drag) MUST NOT move locked ASM-0 or PART-B!
+        # Request deliberately tries to put PART-B first and move ASM-0 down
+        bad_order = [id_map['PART-B'], id_map['PART-Z'], id_map['ASM-0'], id_map['PART-M'], id_map['PART-A']]
+        r_re = self.client.post('/api/bom/reorder', json={'subsystem_id': sub_id, 'item_ids': bad_order})
+        self.assertEqual(r_re.status_code, 200)
+        after_re = self.client.get(f'/api/subsystem/{sub_id}/items').get_json()
+        # ASM-0 stays at index 0; PART-B stays at child slot 1 (global index 2); unlocked [PART-Z, PART-M, PART-A] fill slots 1, 3, 4
+        self.assertEqual([it['material_no'] for it in after_re], ['ASM-0', 'PART-Z', 'PART-B', 'PART-M', 'PART-A'])
+        self.assertEqual(after_re[0]['is_pos_locked'], 1)
+        self.assertEqual(after_re[2]['is_pos_locked'], 1)
+
+        # Updating a field without passing is_pos_locked must preserve existing position lock
+        r_upd = self.client.post('/api/bom/update', json={
+            'id': id_map['PART-B'], 'material_no': 'PART-B', 'qty': '5', 'level_str': '••', 'level_num': 2
+        })
+        self.assertEqual(r_upd.status_code, 200)
+        after_upd = self.client.get(f'/api/subsystem/{sub_id}/items').get_json()
+        pb = next(it for it in after_upd if it['material_no'] == 'PART-B')
+        self.assertEqual(pb['is_pos_locked'], 1)
+        self.assertEqual(pb['qty'], '5')
+
+        # Project copy & export preserve is_pos_locked
+        r_cp = self.client.post('/api/project/copy', json={'id': pid, 'system_name': 'Pos Lock Copy'})
+        self.assertEqual(r_cp.status_code, 200)
+        cp_proj = self.client.get(f"/api/project/{r_cp.get_json()['id']}").get_json()
+        cp_items = self.client.get(f"/api/subsystem/{cp_proj['subsystems'][0]['id']}/items").get_json()
+        self.assertEqual([it['is_pos_locked'] for it in cp_items], [1, 0, 1, 0, 0])
+
+        # Unlock PART-B and confirm it can now move freely
+        r_unlck = self.client.post('/api/bom/toggle_pos_lock', json={'id': id_map['PART-B'], 'locked': False})
+        self.assertEqual(r_unlck.status_code, 200)
+        self.assertEqual(r_unlck.get_json()['is_pos_locked'], 0)
+        r_mv_b = self.client.post('/api/bom/move', json={'id': id_map['PART-B'], 'direction': 'up'})
+        self.assertEqual(r_mv_b.status_code, 200)
+        after_unlck = self.client.get(f'/api/subsystem/{sub_id}/items').get_json()
+        self.assertEqual([it['material_no'] for it in after_unlck], ['ASM-0', 'PART-B', 'PART-Z', 'PART-M', 'PART-A'])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -133,7 +133,7 @@ def copy_subsystem_bom_items(cursor, src_sub_id, dst_sub_id):
     严格保留层级结构、排序以及 parent_material_no 关联关系（修复 P0 复制丢字段隐患）。
     """
     cursor.execute('''
-        SELECT row_num, level_str, level_num, seq_num, material_no, parent_material_no, drawing_no, qty, unit, notes, substitute
+        SELECT row_num, level_str, level_num, seq_num, material_no, parent_material_no, drawing_no, qty, unit, notes, substitute, COALESCE(is_pos_locked, 0) as is_pos_locked
         FROM bom_items
         WHERE subsystem_id = ?
         ORDER BY row_num, id
@@ -141,13 +141,13 @@ def copy_subsystem_bom_items(cursor, src_sub_id, dst_sub_id):
     items = cursor.fetchall()
     insert_data = [
         (dst_sub_id, it['row_num'], it['level_str'], it['level_num'], it['seq_num'],
-         it['material_no'], it['parent_material_no'], it['drawing_no'], it['qty'], it['unit'], it['notes'], it['substitute'])
+         it['material_no'], it['parent_material_no'], it['drawing_no'], it['qty'], it['unit'], it['notes'], it['substitute'], int(it['is_pos_locked'] or 0))
         for it in items
     ]
     if insert_data:
         cursor.executemany('''
-            INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, seq_num, material_no, parent_material_no, drawing_no, qty, unit, notes, substitute)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, seq_num, material_no, parent_material_no, drawing_no, qty, unit, notes, substitute, is_pos_locked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', insert_data)
     return len(items)
 

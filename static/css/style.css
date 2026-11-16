@@ -1472,5 +1472,67 @@
             }
         }
 
+        /* BOM Row Position Lock UI */
+        .pos-lock-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            padding: 0;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            background: transparent;
+            color: #94a3b8;
+            cursor: pointer;
+            vertical-align: middle;
+            transition: all 0.15s ease;
+            opacity: 0;
+            margin-left: 2px;
+        }
+        #bomTable tbody tr:hover .pos-lock-btn,
+        #bomTable tbody tr.row-selected .pos-lock-btn,
+        .pos-lock-btn:focus-visible {
+            opacity: 0.9;
+        }
+        .pos-lock-btn:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+            color: #475569;
+            opacity: 1 !important;
+        }
+        .pos-lock-btn.is-locked {
+            opacity: 1 !important;
+            background: #fef3c7;
+            border-color: #fcd34d;
+            color: #b45309;
+            margin-left: 0;
+            margin-right: 4px;
+        }
+        .pos-lock-btn.is-locked:hover {
+            background: #fde68a;
+            border-color: #f59e0b;
+            color: #92400e;
+        }
+        .pos-lock-btn.is-readonly {
+            cursor: default;
+            pointer-events: none;
+        }
+        #bomTable tbody tr.tr-pos-locked td.sticky-col {
+            background-color: #fffdf5;
+        }
+        #bomTable tbody tr.tr-pos-locked.tr-level-1 td.sticky-col {
+            background-color: #fefce8;
+        }
+        #bomTable tbody tr.tr-pos-locked td {
+            background-image: linear-gradient(to bottom, rgba(254, 243, 199, 0.28), rgba(254, 243, 199, 0.28));
+        }
+        #btnRowPosLock.is-locked-active {
+            background: #fffbeb;
+            border-color: #f59e0b;
+            color: #b45309;
+            font-weight: 600;
+        }
+
 
 

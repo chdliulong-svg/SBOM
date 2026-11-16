@@ -10,7 +10,8 @@ from blueprints.common import (
     check_project_unlocked,
     renumber_subsystem,
     upsert_material,
-    get_subtree_block_indices
+    get_subtree_block_indices,
+    reorder_bom_items_preserving_locks
 )
 
 logger = get_logger('sbom.bom')
@@ -104,15 +105,16 @@ def add_bom_item():
 
             parent_level_str = data.get('level_str', '•' if len(children_to_import) > 0 else '••')
             parent_level_num = int(data.get('level_num', 1 if len(children_to_import) > 0 else 2))
+            is_pos_locked = 1 if data.get('is_pos_locked') else 0
 
             # 1. Insert parent row
             cursor.execute('''
-            INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, parent_material_no, seq_num, material_no, drawing_no, qty, unit, notes, substitute)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, parent_material_no, seq_num, material_no, drawing_no, qty, unit, notes, substitute, is_pos_locked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (subsystem_id, target_row, parent_level_str, parent_level_num, '',
                   target_row, material_no, drawing_no,
                   str(data.get('qty', '1')), unit,
-                  notes, substitute))
+                  notes, substitute, is_pos_locked))
 
             # 2. Insert all child rows in hierarchical sequence
             for c_offset, child in enumerate(children_to_import, 1):
@@ -350,10 +352,10 @@ def paste_bom_items():
                         cursor.execute('UPDATE materials SET drawing_no = ? WHERE material_no = ?', (drawing_no, mat_no))
 
                 cursor.execute('''
-                INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, parent_material_no, seq_num, material_no, drawing_no, qty, unit, notes, substitute)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO bom_items (subsystem_id, row_num, level_str, level_num, parent_material_no, seq_num, material_no, drawing_no, qty, unit, notes, substitute, is_pos_locked)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (subsystem_id, c_row, level_str, level_num, parent_material_no,
-                      c_row, mat_no, drawing_no, qty, unit, notes, substitute))
+                      c_row, mat_no, drawing_no, qty, unit, notes, substitute, 1 if it.get('is_pos_locked') else 0))
                 inserted_item_ids.append(cursor.lastrowid)
 
             renumber_subsystem(cursor, subsystem_id)
@@ -413,15 +415,27 @@ def update_bom_item():
 
             upsert_material(cursor, material_no, name, description, spec_model, manufacturer, unit, drawing_no, notes, substitute, remove_image=remove_image, remove_manual=remove_manual)
 
-            cursor.execute('''
-            UPDATE bom_items SET
-                level_str=?, level_num=?, material_no=?, drawing_no=?, qty=?, unit=?, notes=?, substitute=?
-            WHERE id=?
-            ''', (data.get('level_str', '••'), int(data.get('level_num', 2)),
-                  material_no, drawing_no,
-                  str(data.get('qty', '1')), unit,
-                  notes, substitute,
-                  item_id))
+            if 'is_pos_locked' in data:
+                cursor.execute('''
+                UPDATE bom_items SET
+                    level_str=?, level_num=?, material_no=?, drawing_no=?, qty=?, unit=?, notes=?, substitute=?, is_pos_locked=?
+                WHERE id=?
+                ''', (data.get('level_str', '••'), int(data.get('level_num', 2)),
+                      material_no, drawing_no,
+                      str(data.get('qty', '1')), unit,
+                      notes, substitute,
+                      1 if data.get('is_pos_locked') else 0,
+                      item_id))
+            else:
+                cursor.execute('''
+                UPDATE bom_items SET
+                    level_str=?, level_num=?, material_no=?, drawing_no=?, qty=?, unit=?, notes=?, substitute=?
+                WHERE id=?
+                ''', (data.get('level_str', '••'), int(data.get('level_num', 2)),
+                      material_no, drawing_no,
+                      str(data.get('qty', '1')), unit,
+                      notes, substitute,
+                      item_id))
 
             cursor.execute('SELECT subsystem_id FROM bom_items WHERE id = ?', (item_id,))
             sub_row = cursor.fetchone()
@@ -484,10 +498,92 @@ def delete_bom_item():
         return jsonify({'error': f'删除 BOM 行失败（错误码 {err_id}）'}), 500
 
 
+@bom_bp.route('/api/bom/toggle_pos_lock', methods=['POST'])
+def toggle_bom_pos_lock():
+    """
+    切换或批量设置 BOM 条目位置锁定状态（is_pos_locked: 1=已锁定，不参与任何位置排序）。
+    """
+    data = request.get_json(silent=True) or {}
+    item_id = data.get('id')
+    item_ids = data.get('ids')
+    target_ids = []
+    if item_ids and isinstance(item_ids, list):
+        for x in item_ids:
+            try:
+                target_ids.append(int(x))
+            except (ValueError, TypeError):
+                pass
+    elif item_id is not None:
+        try:
+            target_ids = [int(item_id)]
+        except (ValueError, TypeError):
+            pass
+
+    if not target_ids:
+        return jsonify({'success': False, 'error': '缺少有效条目 ID'}), 400
+
+    is_ok, err_msg = check_project_unlocked(bom_item_id=target_ids[0])
+    if not is_ok:
+        return jsonify({'success': False, 'error': err_msg}), 403
+
+    conn = get_db()
+    try:
+        with write_transaction(conn):
+            cursor = conn.cursor()
+            placeholders = ','.join('?' for _ in target_ids)
+            cursor.execute(
+                f'SELECT id, subsystem_id, COALESCE(is_pos_locked, 0) as is_pos_locked FROM bom_items WHERE id IN ({placeholders})',
+                tuple(target_ids)
+            )
+            rows = cursor.fetchall()
+            if not rows:
+                return jsonify({'success': False, 'error': '未找到指定的 BOM 条目'}), 404
+
+            sub_ids = {r['subsystem_id'] for r in rows}
+            if len(sub_ids) > 1:
+                return jsonify({'success': False, 'error': '不支持跨子系统批量操作'}), 400
+
+            if 'locked' in data and data.get('locked') is not None:
+                new_state = 1 if data.get('locked') else 0
+            else:
+                all_locked = all(int(r['is_pos_locked'] or 0) == 1 for r in rows)
+                new_state = 0 if all_locked else 1
+
+            found_ids = [r['id'] for r in rows]
+            upd_ph = ','.join('?' for _ in found_ids)
+            cursor.execute(f'UPDATE bom_items SET is_pos_locked = ? WHERE id IN ({upd_ph})', tuple([new_state] + found_ids))
+
+        record_operation_log(
+            'toggle_bom_pos_lock',
+            'bom_item',
+            ','.join(str(i) for i in found_ids[:10]),
+            {'locked': bool(new_state), 'count': len(found_ids)}
+        )
+        msg = (
+            f"已锁定 {len(found_ids)} 项条目位置（不参与任何排序与移动）"
+            if new_state == 1
+            else f"已解除 {len(found_ids)} 项条目的位置锁定"
+        )
+        return jsonify({
+            'success': True,
+            'is_pos_locked': new_state,
+            'updated_ids': found_ids,
+            'updated_count': len(found_ids),
+            'message': msg
+        })
+    except Exception:
+        err_id = new_error_id()
+        logger.exception("[%s] 切换 BOM 位置锁定状态失败: ids=%s", err_id, target_ids[:10])
+        return jsonify({'success': False, 'error': f'切换位置锁定失败（错误码 {err_id}）'}), 500
+
+
 @bom_bp.route('/api/bom/move', methods=['POST'])
 def move_bom_item():
-    data = request.json
-    item_id = data.get('id')
+    data = request.json or {}
+    try:
+        item_id = int(data.get('id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': '无效的参数'}), 400
     direction = data.get('direction')
     if not item_id or direction not in ['up', 'down']:
         return jsonify({'error': '无效的参数'}), 400
@@ -501,15 +597,17 @@ def move_bom_item():
         with write_transaction(conn):
             cursor = conn.cursor()
 
-            cursor.execute('SELECT subsystem_id, level_num, row_num FROM bom_items WHERE id = ?', (item_id,))
+            cursor.execute('SELECT subsystem_id, level_num, row_num, COALESCE(is_pos_locked, 0) as is_pos_locked FROM bom_items WHERE id = ?', (item_id,))
             item = cursor.fetchone()
             if not item:
                 return jsonify({'error': 'Item not found'}), 404
+            if int(item['is_pos_locked'] or 0) == 1:
+                return jsonify({'error': '该 BOM 条目已开启位置锁定，不参与任何位置排序或移动！'}), 400
 
             subsystem_id = item['subsystem_id']
 
             # Load all items for this subsystem in current order
-            cursor.execute('SELECT id, level_num, row_num FROM bom_items WHERE subsystem_id = ? ORDER BY row_num, id', (subsystem_id,))
+            cursor.execute('SELECT id, level_num, row_num, COALESCE(is_pos_locked, 0) as is_pos_locked FROM bom_items WHERE subsystem_id = ? ORDER BY row_num, id', (subsystem_id,))
             items = [dict(r) for r in cursor.fetchall()]
 
             idx = next((i for i, it in enumerate(items) if it['id'] == item_id), None)
@@ -520,29 +618,71 @@ def move_bom_item():
             start_idx, end_idx = get_subtree_block_indices(items, idx)
             curr_block = items[start_idx:end_idx]
 
-            new_items = items
-            if direction == 'up':
-                if start_idx > 0:
-                    prev_idx = start_idx - 1
-                    if not (L > 1 and (items[prev_idx]['level_num'] or 2) < L):
-                        while prev_idx >= 0 and (items[prev_idx]['level_num'] or 2) > L:
-                            prev_idx -= 1
-                        if prev_idx >= 0 and (items[prev_idx]['level_num'] or 2) == L:
-                            prev_start = prev_idx
-                            prev_block = items[prev_start:start_idx]
-                            new_items = items[:prev_start] + curr_block + prev_block + items[end_idx:]
-                        elif L == 1 and start_idx > 0:
-                            prev_start = 0
-                            prev_block = items[prev_start:start_idx]
-                            new_items = items[:prev_start] + curr_block + prev_block + items[end_idx:]
+            if any(int(x.get('is_pos_locked') or 0) == 1 for x in curr_block):
+                return jsonify({'error': '该条目下属子层级中包含已位置锁定的物料，禁止整体移动！'}), 400
 
-            elif direction == 'down':
-                if end_idx < len(items):
-                    next_start = end_idx
-                    if (items[next_start]['level_num'] or 2) >= L or L == 1:
-                        _, next_end = get_subtree_block_indices(items, next_start)
-                        next_block = items[next_start:next_end]
-                        new_items = items[:start_idx] + next_block + curr_block + items[next_end:]
+            # Find enclosing parent sibling scope
+            scope_start = start_idx
+            while scope_start > 0:
+                prev_lvl = items[scope_start - 1]['level_num'] or 2
+                if L > 1 and prev_lvl < L:
+                    break
+                scope_start -= 1
+
+            scope_end = end_idx
+            while scope_end < len(items):
+                next_lvl = items[scope_end]['level_num'] or 2
+                if L > 1 and next_lvl < L:
+                    break
+                scope_end += 1
+
+            # Partition [scope_start, scope_end) into sibling blocks
+            blocks = []
+            curr_block_idx = -1
+            k = scope_start
+            while k < scope_end:
+                if k == start_idx:
+                    curr_block_idx = len(blocks)
+                    blocks.append(items[start_idx:end_idx])
+                    k = end_idx
+                elif (items[k]['level_num'] or 2) > L:
+                    # Orphan deeper block before first sibling at level L
+                    b_end = k + 1
+                    while b_end < scope_end and b_end != start_idx and (items[b_end]['level_num'] or 2) > L:
+                        b_end += 1
+                    blocks.append(items[k:b_end])
+                    k = b_end
+                else:
+                    _, b_end = get_subtree_block_indices(items, k)
+                    b_end = min(b_end, scope_end)
+                    blocks.append(items[k:b_end])
+                    k = b_end
+
+            block_locked = [any(int(x.get('is_pos_locked') or 0) == 1 for x in blk) for blk in blocks]
+            step = -1 if direction == 'up' else 1
+            scan = curr_block_idx + step
+            swap_idx = None
+            saw_locked_neighbor = False
+            while 0 <= scan < len(blocks):
+                if not block_locked[scan]:
+                    swap_idx = scan
+                    break
+                saw_locked_neighbor = True
+                scan += step
+
+            if swap_idx is None:
+                if saw_locked_neighbor:
+                    dir_text = '上方' if direction == 'up' else '下方'
+                    return jsonify({'error': f'无法继续移动：{dir_text}均为已位置锁定条目！'}), 400
+                new_items = items
+            else:
+                lo, hi = min(curr_block_idx, swap_idx), max(curr_block_idx, swap_idx)
+                crossed_locked = any(block_locked[pos] for pos in range(lo + 1, hi))
+                if crossed_locked and len(blocks[swap_idx]) != len(blocks[curr_block_idx]):
+                    return jsonify({'error': '因跨越不同子层级大小会改变中间已位置锁定条目的行号，已阻止此次移动！'}), 400
+                blocks[curr_block_idx], blocks[swap_idx] = blocks[swap_idx], blocks[curr_block_idx]
+                moved_slice = [it for blk in blocks for it in blk]
+                new_items = items[:scope_start] + moved_slice + items[scope_end:]
 
             update_data = [(num, it['id']) for num, it in enumerate(new_items, 1)]
             cursor.executemany('UPDATE bom_items SET row_num = ? WHERE id = ?', update_data)
@@ -557,7 +697,7 @@ def move_bom_item():
 
 @bom_bp.route('/api/bom/reorder', methods=['POST'])
 def reorder_bom_items():
-    data = request.json
+    data = request.json or {}
     subsystem_id = data.get('subsystem_id')
     item_ids = data.get('item_ids', [])
     if not subsystem_id or not item_ids:
@@ -571,10 +711,29 @@ def reorder_bom_items():
     try:
         with write_transaction(conn):
             cursor = conn.cursor()
-            update_data = [(idx + 1, item_id, subsystem_id) for idx, item_id in enumerate(item_ids)]
+            cursor.execute('''
+                SELECT id, level_num, row_num, COALESCE(is_pos_locked, 0) as is_pos_locked
+                FROM bom_items
+                WHERE subsystem_id = ?
+                ORDER BY row_num, id
+            ''', (subsystem_id,))
+            existing_items = [dict(r) for r in cursor.fetchall()]
+
+            rank_map = {}
+            for pos, raw_id in enumerate(item_ids):
+                try:
+                    iid = int(raw_id)
+                    if iid not in rank_map:
+                        rank_map[iid] = pos
+                except (TypeError, ValueError):
+                    pass
+
+            ordered_items = reorder_bom_items_preserving_locks(existing_items, rank_map)
+            update_data = [(idx + 1, it['id'], subsystem_id) for idx, it in enumerate(ordered_items)]
             cursor.executemany('UPDATE bom_items SET row_num = ? WHERE id = ? AND subsystem_id = ?', update_data)
             renumber_subsystem(cursor, subsystem_id)
-        return jsonify({'success': True})
+            locked_count = sum(1 for it in existing_items if int(it.get('is_pos_locked') or 0) == 1)
+        return jsonify({'success': True, 'locked_preserved': locked_count})
     except Exception:
         err_id = new_error_id()
         logger.exception("[%s] 重排 BOM 失败: subsystem_id=%s", err_id, subsystem_id)

@@ -240,3 +240,54 @@ def get_subtree_block_indices(items, start_idx):
     while end_idx < len(items) and (items[end_idx]['level_num'] or 2) > root_lvl:
         end_idx += 1
     return start_idx, end_idx
+
+
+def reorder_bom_items_preserving_locks(existing_items, rank_map):
+    """
+    按目标排名映射 rank_map 对 existing_items 进行层级树协同重排：
+    凡 is_pos_locked == 1 的条目在其所属同级节点序列中原位固定，不参与任何排序或重排；
+    仅未锁定节点按 rank_map 重新排序并依次填充未锁定槽位，保证父子层级不被拆散。
+    """
+    if not existing_items:
+        return []
+
+    roots = []
+    stack = []
+    for pos, it in enumerate(existing_items):
+        lvl = int(it.get('level_num') or 2)
+        node = {'item': it, 'level': lvl, 'orig_pos': pos, 'children': []}
+        while stack and stack[-1]['level'] >= lvl:
+            stack.pop()
+        if not stack:
+            roots.append(node)
+        else:
+            stack[-1]['children'].append(node)
+        stack.append(node)
+
+    fallback_rank = len(existing_items) + len(rank_map) + 1
+
+    def _reorder_nodes(nodes):
+        if len(nodes) > 1:
+            locked_flags = [bool(n['item'].get('is_pos_locked')) for n in nodes]
+            unlocked = [n for n, is_lck in zip(nodes, locked_flags) if not is_lck]
+            unlocked.sort(key=lambda n: (rank_map.get(n['item']['id'], fallback_rank), n['orig_pos']))
+            u_iter = iter(unlocked)
+            for idx, is_lck in enumerate(locked_flags):
+                if not is_lck:
+                    nodes[idx] = next(u_iter)
+        for n in nodes:
+            if n['children']:
+                _reorder_nodes(n['children'])
+
+    _reorder_nodes(roots)
+
+    flattened = []
+
+    def _flatten(nodes):
+        for n in nodes:
+            flattened.append(n['item'])
+            if n['children']:
+                _flatten(n['children'])
+
+    _flatten(roots)
+    return flattened

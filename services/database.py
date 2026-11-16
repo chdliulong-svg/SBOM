@@ -243,6 +243,7 @@ def init_db():
         unit TEXT DEFAULT 'PC',
         notes TEXT DEFAULT '',
         substitute TEXT DEFAULT '',
+        is_pos_locked INTEGER DEFAULT 0,
         FOREIGN KEY (subsystem_id) REFERENCES subsystems(id) ON DELETE CASCADE,
         FOREIGN KEY (material_no) REFERENCES materials(material_no)
     )
@@ -487,7 +488,7 @@ def init_db():
         )
         ''')
 
-    # Migration for bom_items: add parent_material_no column if not present
+    # Migration for bom_items: add parent_material_no / is_pos_locked column if not present
     cursor.execute("PRAGMA table_info(bom_items)")
     raw_cols = cursor.fetchall()
     cols = {r['name']: (r['type'] or '').upper() for r in raw_cols}
@@ -495,6 +496,9 @@ def init_db():
         cursor.execute("ALTER TABLE bom_items ADD COLUMN parent_material_no TEXT DEFAULT ''")
         conn.commit()
         sync_material_structures(conn)
+    if 'is_pos_locked' not in cols:
+        cursor.execute("ALTER TABLE bom_items ADD COLUMN is_pos_locked INTEGER DEFAULT 0")
+        conn.commit()
 
     # Migration for bom_items: ensure seq_num has TEXT affinity
     if cols.get('seq_num') and 'INT' in cols.get('seq_num', ''):
@@ -515,13 +519,14 @@ def init_db():
                 notes TEXT DEFAULT '',
                 substitute TEXT DEFAULT '',
                 parent_material_no TEXT DEFAULT '',
+                is_pos_locked INTEGER DEFAULT 0,
                 FOREIGN KEY (subsystem_id) REFERENCES subsystems(id) ON DELETE CASCADE,
                 FOREIGN KEY (material_no) REFERENCES materials(material_no)
             )
             ''')
             cursor.execute('''
-            INSERT INTO bom_items_migrated (id, subsystem_id, row_num, level_str, level_num, seq_num, material_no, drawing_no, qty, unit, notes, substitute, parent_material_no)
-            SELECT id, subsystem_id, row_num, level_str, level_num, CAST(seq_num AS TEXT), material_no, drawing_no, qty, unit, notes, substitute, parent_material_no
+            INSERT INTO bom_items_migrated (id, subsystem_id, row_num, level_str, level_num, seq_num, material_no, drawing_no, qty, unit, notes, substitute, parent_material_no, is_pos_locked)
+            SELECT id, subsystem_id, row_num, level_str, level_num, CAST(seq_num AS TEXT), material_no, drawing_no, qty, unit, notes, substitute, parent_material_no, 0
             FROM bom_items
             ''')
             cursor.execute('DROP TABLE bom_items')
