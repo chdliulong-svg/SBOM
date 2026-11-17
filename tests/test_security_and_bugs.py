@@ -591,6 +591,112 @@ class IsolatedAppTestCase(unittest.TestCase):
         self.assertEqual(detail['is_locked'], 0)
         self.assertEqual(beijing_now_str()[:10], expected_bj.strftime('%Y-%m-%d'))
 
+    def test_15_compare_projects_material_no_centric(self):
+        from services.database import get_db, write_transaction
+
+        # Create Project A & Project B
+        ra = self.client.post('/api/project/save', json={
+            'code': 'CMP-A',
+            'system_name': '变桨系统',
+            'category': 'pitch',
+            'model': 'M-A'
+        })
+        rb = self.client.post('/api/project/save', json={
+            'code': 'CMP-B',
+            'system_name': '变桨系统',
+            'category': 'pitch',
+            'model': 'M-B'
+        })
+        self.assertEqual(ra.status_code, 200)
+        self.assertEqual(rb.status_code, 200)
+        pa_id = ra.get_json()['id']
+        pb_id = rb.get_json()['id']
+
+        detail_a = self.client.get(f'/api/project/{pa_id}').get_json()
+        detail_b = self.client.get(f'/api/project/{pb_id}').get_json()
+        sub_a_id = detail_a['subsystems'][0]['id']
+        sub_b_id = detail_b['subsystems'][0]['id']
+
+        # Give A and B different Sheet names + levels/notes/drawings to simulate cross-project formatting variance
+        conn = get_db()
+        with write_transaction(conn):
+            conn.execute("UPDATE subsystems SET name = ? WHERE id = ?", ('变桨SBOM_A', sub_a_id))
+            conn.execute("UPDATE subsystems SET name = ? WHERE id = ?", ('变桨SBOM_B', sub_b_id))
+
+        # Project A items:
+        # - MAT-1001 across 2 rows (qty 2 + 1 = 3, unit PCS)
+        # - MAT-1002 qty 1 (will be qty 4 in B)
+        # - MAT-ONLY-A qty 1 (removed in B)
+        for payload in [
+            {'subsystem_id': sub_a_id, 'material_no': 'MAT-1001', 'name': '伺服电机', 'qty': '2', 'unit': 'PCS', 'level_num': 2, 'level_str': '••', 'drawing_no': 'DWG-01', 'notes': '旧备注'},
+            {'subsystem_id': sub_a_id, 'material_no': ' mat-1001 ', 'name': '伺服电机', 'qty': '1', 'unit': 'PC', 'level_num': 3, 'level_str': '•••', 'drawing_no': 'DWG-01', 'notes': '旧备注'},
+            {'subsystem_id': sub_a_id, 'material_no': 'MAT-1002', 'name': '编码器', 'qty': '1', 'unit': 'PC'},
+            {'subsystem_id': sub_a_id, 'material_no': 'MAT-ONLY-A', 'name': '旧限位开关', 'qty': '1', 'unit': 'PC'},
+        ]:
+            self.assertEqual(self.client.post('/api/bom/add', json=payload).status_code, 200)
+
+        # Project B items:
+        # - MAT-1001 lowercase + space, 1 row qty 3, unit PC, different level/drawing/notes/sheet -> STILL SAME in material mode!
+        # - MAT-1002 qty 4 -> modified (+3)
+        # - MAT-ONLY-B qty 2 -> added
+        for payload in [
+            {'subsystem_id': sub_b_id, 'material_no': 'mat-1001', 'name': '伺服电机', 'qty': '3', 'unit': 'PC', 'level_num': 1, 'level_str': '•', 'drawing_no': 'DWG-NEW', 'notes': '新备注'},
+            {'subsystem_id': sub_b_id, 'material_no': 'MAT-1002', 'name': '编码器', 'qty': '4', 'unit': 'PC'},
+            {'subsystem_id': sub_b_id, 'material_no': 'MAT-ONLY-B', 'name': '新接近开关', 'qty': '2', 'unit': 'PC'},
+        ]:
+            self.assertEqual(self.client.post('/api/bom/add', json=payload).status_code, 200)
+
+        # 1. Default material-centric comparison
+        r_mat = self.client.get(f'/api/projects/compare?source_id={pa_id}&target_id={pb_id}')
+        self.assertEqual(r_mat.status_code, 200)
+        d_mat = r_mat.get_json()
+        self.assertTrue(d_mat['success'])
+        self.assertEqual(d_mat['compare_mode'], 'material')
+        self.assertEqual(d_mat['project_a']['display_name'], 'CMP-A变桨系统SBOM_M-A')
+        self.assertEqual(d_mat['project_b']['display_name'], 'CMP-B变桨系统SBOM_M-B')
+        self.assertEqual(d_mat['summary']['added'], 1)
+        self.assertEqual(d_mat['summary']['removed'], 1)
+        self.assertEqual(d_mat['summary']['modified'], 1)
+        self.assertEqual(d_mat['summary']['same'], 1)
+        self.assertEqual(d_mat['summary']['common_materials'], 2)
+        self.assertEqual(d_mat['summary']['overlap_rate'], 50.0)
+
+        by_mat = {it['material_no'].upper(): it for it in d_mat['items']}
+        it_1001 = by_mat['MAT-1001']
+        self.assertEqual(it_1001['status'], 'same')
+        self.assertEqual(it_1001['status_label'], '物料一致')
+        self.assertEqual(it_1001['a']['occurrences_count'], 2)
+        self.assertEqual(it_1001['a']['total_qty'], 3.0)
+        self.assertEqual(len(it_1001['a']['row_refs']), 2)
+        self.assertTrue(len(it_1001['minor_changes']) >= 1)  # sheet/level/drawing differences preserved softly
+
+        it_1002 = by_mat['MAT-1002']
+        self.assertEqual(it_1002['status'], 'modified')
+        self.assertEqual(it_1002['qty_diff'], 3.0)
+
+        # 2. Strict comparison mode flags sheet/level/drawing differences on MAT-1001 as modified
+        r_strict = self.client.get(f'/api/projects/compare?source_id={pa_id}&target_id={pb_id}&mode=strict')
+        self.assertEqual(r_strict.status_code, 200)
+        d_strict = r_strict.get_json()
+        self.assertEqual(d_strict['compare_mode'], 'strict')
+        self.assertEqual(d_strict['summary']['modified'], 2)
+        self.assertEqual(d_strict['summary']['same'], 0)
+
+        # 3. Export Excel & ECN endpoints accept mode and succeed
+        r_exp = self.client.get(f'/api/projects/compare/export?source_id={pa_id}&target_id={pb_id}&mode=material')
+        self.assertEqual(r_exp.status_code, 200)
+        self.assertGreater(len(r_exp.data), 1000)
+
+        r_proc = self.client.get(f'/api/projects/compare/export_procurement?source_id={pa_id}&target_id={pb_id}&mode=material')
+        self.assertEqual(r_proc.status_code, 200)
+
+        r_ecn = self.client.get(f'/api/projects/compare/generate_ecn?source_id={pa_id}&target_id={pb_id}&mode=material')
+        self.assertEqual(r_ecn.status_code, 200)
+        ecn_json = r_ecn.get_json()
+        self.assertTrue(ecn_json['success'])
+        self.assertIn('以物料号与单机用量为主', ecn_json['ecn_markdown'])
+        self.assertIn('50.0%', ecn_json['ecn_markdown'])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

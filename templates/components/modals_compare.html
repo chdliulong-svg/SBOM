@@ -65,6 +65,15 @@
                                 <option value="all">全部子系统 (整机汇总)</option>
                             </select>
                         </div>
+
+                        <!-- Compare Mode Selector -->
+                        <div style="min-width: 195px;">
+                            <label class="form-label" style="font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 5px;">比对依据模式:</label>
+                            <select id="compareModeSelect" class="form-select" style="font-size: 12px; width: 100%; height: 36px; border-color: #cbd5e1;" onchange="executeProjectCompare()">
+                                <option value="material" selected>以物料号与数量为主（推荐）</option>
+                                <option value="strict">严格比对（含Sheet/层级/图号）</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Action buttons -->
@@ -114,16 +123,16 @@
 
                     <!-- Card: Modified -->
                     <div class="compare-stat-card" style="border-left: 4px solid #d97706; background: #fffbeb;">
-                        <div class="compare-stat-label" style="color: #92400e;">🟡 属性/数量差异 (≠)</div>
+                        <div class="compare-stat-label" id="compareStatModifiedTitle" style="color: #92400e;">🟡 数量/单位差异 (≠)</div>
                         <div class="compare-stat-val" id="compareStat_modified" style="color: #b45309;">0</div>
-                        <div style="font-size: 11px; color: #92400e; margin-top: 3px;">数量/层级/图号变化</div>
+                        <div id="compareStatModifiedSub" style="font-size: 11px; color: #92400e; margin-top: 3px;">同物料号用量或单位变化</div>
                     </div>
 
                     <!-- Card: Same -->
                     <div class="compare-stat-card" style="border-left: 4px solid #64748b; background: #f8fafc;">
-                        <div class="compare-stat-label" style="color: #475569;">⚪ 完全一致 (=)</div>
+                        <div class="compare-stat-label" id="compareStatSameTitle" style="color: #475569;">⚪ 物料一致 (=)</div>
                         <div class="compare-stat-val" id="compareStat_same" style="color: #334155;">0</div>
-                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">无任何变化物料</div>
+                        <div id="compareStatSameSub" style="font-size: 11px; color: #64748b; margin-top: 3px;">物料号与数量一致</div>
                     </div>
                 </div>
 
@@ -143,11 +152,11 @@
                             <span id="pillCount_removed" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
                         </button>
                         <button type="button" class="compare-filter-pill" data-filter="modified" onclick="setCompareFilter('modified')">
-                            <span>🟡 属性差异</span>
+                            <span id="pillLabel_modified">🟡 数量/单位差异</span>
                             <span id="pillCount_modified" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
                         </button>
                         <button type="button" class="compare-filter-pill" data-filter="same" onclick="setCompareFilter('same')">
-                            <span>⚪ 完全一致</span>
+                            <span id="pillLabel_same">⚪ 物料一致</span>
                             <span id="pillCount_same" style="background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 10px; font-size: 11px;">0</span>
                         </button>
                         <button type="button" class="compare-filter-pill" data-filter="all" onclick="setCompareFilter('all')">
@@ -157,7 +166,7 @@
                     </div>
 
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <input id="compareSearchInput" type="text" class="form-input" placeholder="实时过滤物料号 / 名称 / 型号..." style="width: 250px; font-size: 12px; padding: 5px 10px;" oninput="onCompareFilterChanged()">
+                        <input id="compareSearchInput" type="text" class="form-input" placeholder="过滤物料号 / 名称 / 型号 (支持多物料号逗号或空格分隔)" style="width: 310px; font-size: 12px; padding: 5px 10px;" oninput="onCompareFilterChanged()">
                     </div>
                 </div>
 
@@ -172,9 +181,9 @@
                         <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 2;">
                             <tr style="border-bottom: 1px solid var(--border);">
                                 <th rowspan="2" style="width: 40px; text-align: center; color: #64748b; font-weight: 600; border-right: 1px solid #e2e8f0;">#</th>
-                                <th rowspan="2" style="width: 100px; text-align: center; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">差异状态</th>
-                                <th rowspan="2" style="width: 130px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">物料号</th>
-                                <th rowspan="2" style="width: 150px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">元器件名称</th>
+                                <th rowspan="2" onclick="sortCompareTable('status')" title="点击按差异状态排序" style="width: 105px; text-align: center; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0; cursor: pointer; user-select: none;">差异状态 <span id="cmpSort_status" class="cmp-sort-ind"></span></th>
+                                <th rowspan="2" onclick="sortCompareTable('material_no')" title="点击按物料号排序" style="width: 140px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0; cursor: pointer; user-select: none;">物料号 <span id="cmpSort_material_no" class="cmp-sort-ind"></span></th>
+                                <th rowspan="2" onclick="sortCompareTable('name')" title="点击按名称排序" style="width: 150px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0; cursor: pointer; user-select: none;">元器件名称 <span id="cmpSort_name" class="cmp-sort-ind"></span></th>
                                 <th rowspan="2" style="width: 170px; color: #64748b; font-weight: 600; border-right: 1px solid #e2e8f0;">规格型号 / 制造商</th>
                                 <th colspan="4" style="text-align: center; background: #eff6ff; color: #1e40af; font-weight: 700; border-right: 1px solid #bfdbfe; padding: 6px 10px;" id="thProjATitle">
                                     【基准项目 A】配置
@@ -182,17 +191,17 @@
                                 <th colspan="4" style="text-align: center; background: #f0fdf4; color: #166534; font-weight: 700; border-right: 1px solid #bbf7d0; padding: 6px 10px;" id="thProjBTitle">
                                     【比对项目 B】配置
                                 </th>
-                                <th rowspan="2" style="width: 95px; text-align: center; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0;">数量差额</th>
+                                <th rowspan="2" onclick="sortCompareTable('qty_diff')" title="点击按数量差额排序" style="width: 95px; text-align: center; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0; cursor: pointer; user-select: none;">数量差额 <span id="cmpSort_qty_diff" class="cmp-sort-ind"></span></th>
                                 <th rowspan="2" style="color: #1e293b; font-weight: 700; min-width: 220px;">具体差异说明</th>
                             </tr>
                             <tr style="border-bottom: 2px solid var(--border); font-size: 11px;">
                                 <!-- A subheaders -->
-                                <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 75px; text-align: right; border-right: 1px solid #e2e8f0;">数量</th>
+                                <th onclick="sortCompareTable('a_qty')" title="点击按A数量排序" style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 75px; text-align: right; border-right: 1px solid #e2e8f0; cursor: pointer; user-select: none;">数量 <span id="cmpSort_a_qty" class="cmp-sort-ind"></span></th>
                                 <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 65px; text-align: center; border-right: 1px solid #e2e8f0;">层级</th>
                                 <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 85px; border-right: 1px solid #e2e8f0;">图号</th>
                                 <th style="background: #f8fbff; color: #1e40af; padding: 4px 8px; width: 85px; border-right: 1px solid #bfdbfe;">Sheet</th>
                                 <!-- B subheaders -->
-                                <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 75px; text-align: right; border-right: 1px solid #e2e8f0;">数量</th>
+                                <th onclick="sortCompareTable('b_qty')" title="点击按B数量排序" style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 75px; text-align: right; border-right: 1px solid #e2e8f0; cursor: pointer; user-select: none;">数量 <span id="cmpSort_b_qty" class="cmp-sort-ind"></span></th>
                                 <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 65px; text-align: center; border-right: 1px solid #e2e8f0;">层级</th>
                                 <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 85px; border-right: 1px solid #e2e8f0;">图号</th>
                                 <th style="background: #f6fef9; color: #166534; padding: 4px 8px; width: 85px; border-right: 1px solid #bbf7d0;">Sheet</th>

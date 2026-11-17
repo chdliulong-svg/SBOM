@@ -1,24 +1,46 @@
 import io
+import re
 import time
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from .database import get_db
 from .config import config
-from .exporter import format_pipe_multiline
+from .exporter import format_pipe_multiline, build_bom_file_title
 from .time_utils import beijing_now_str
 
 def parse_float_qty(val):
-    """Safely parse a quantity value to float."""
+    """Safely parse a quantity value to float (supports pipe/newline separated numbers)."""
     if val is None:
         return 0.0
     s = str(val).strip()
     if not s:
         return 0.0
+    if any(sep in s for sep in ('|', '｜', '\n')):
+        parts = [p.strip() for p in re.split(r'[|｜\n]+', s) if p.strip()]
+        total = 0.0
+        for p in parts:
+            try:
+                total += float(p)
+            except (ValueError, TypeError):
+                pass
+        return total
     try:
         return float(s)
     except (ValueError, TypeError):
         return 0.0
+
+def normalize_material_key(mat_no):
+    """Normalize material_no as the primary matching key (trim spaces & case-insensitive)."""
+    if not mat_no:
+        return ''
+    return re.sub(r'[\s\u3000]+', '', str(mat_no)).upper()
+
+def normalize_unit_for_compare(unit):
+    u = (unit or 'PC').strip().upper()
+    if u in ('PCS', 'PC', '个', '件') and u == 'PCS':
+        return 'PC'
+    return u
 
 def format_qty_display(val):
     """Format float quantity into clean integer or rounded string."""
@@ -32,29 +54,53 @@ def format_qty_display(val):
     except Exception:
         return str(val)
 
-def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
+def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all', compare_mode='material'):
     """
-    Compares two engineering projects' BOMs (Project A vs Project B).
-    Supports all-subsystems aggregation or specific subsystem filtering.
-    Returns a comprehensive structured diff result.
+    Compares two engineering projects' BOMs (Project A vs Project B) primarily by material_no.
+    compare_mode:
+      - 'material' (default): Matches & diffs strictly by material_no + aggregated qty + unit;
+        secondary fields (level, drawing_no, subsystems/Sheet, notes, substitute) are recorded
+        as reference minor_changes without triggering false 'modified' status.
+      - 'strict': Also flags differences in level, drawing_no, subsystems/Sheet, notes, substitute.
     """
+    mode = (compare_mode or 'material').strip().lower()
+    if mode not in ('material', 'strict'):
+        mode = 'material'
+
     conn = get_db()
     cursor = conn.cursor()
 
     try:
-        # 1. Fetch Project A & B metadata
-        cursor.execute('SELECT * FROM projects WHERE id = ?', (proj_a_id,))
-        proj_a = cursor.fetchone()
-        cursor.execute('SELECT * FROM projects WHERE id = ?', (proj_b_id,))
-        proj_b = cursor.fetchone()
+        # 1. Fetch Project A & B metadata (including root_model for canonical title)
+        def _fetch_project_meta(pid):
+            cursor.execute('''
+                SELECT p.*,
+                       (
+                           SELECT m.spec_model
+                           FROM bom_items b2
+                           JOIN subsystems s2 ON b2.subsystem_id = s2.id
+                           LEFT JOIN materials m ON b2.material_no = m.material_no
+                           WHERE s2.project_id = p.id AND b2.level_num = 1 AND m.spec_model IS NOT NULL AND m.spec_model != ''
+                           ORDER BY b2.row_num ASC
+                           LIMIT 1
+                       ) AS root_model
+                FROM projects p
+                WHERE p.id = ?
+            ''', (pid,))
+            return cursor.fetchone()
+
+        proj_a = _fetch_project_meta(proj_a_id)
+        proj_b = _fetch_project_meta(proj_b_id)
 
         if not proj_a:
             raise ValueError(f"基准项目 (ID: {proj_a_id}) 不存在或已被删除")
         if not proj_b:
             raise ValueError(f"比对项目 (ID: {proj_b_id}) 不存在或已被删除")
 
-        proj_a_name = proj_a['system_name'] or proj_a['name'] or proj_a['code'] or f"项目-{proj_a_id}"
-        proj_b_name = proj_b['system_name'] or proj_b['name'] or proj_b['code'] or f"项目-{proj_b_id}"
+        proj_a_dict = dict(proj_a)
+        proj_b_dict = dict(proj_b)
+        proj_a_name = build_bom_file_title(proj_a_dict) or proj_a_dict.get('system_name') or proj_a_dict.get('name') or proj_a_dict.get('code') or f"项目-{proj_a_id}"
+        proj_b_name = build_bom_file_title(proj_b_dict) or proj_b_dict.get('system_name') or proj_b_dict.get('name') or proj_b_dict.get('code') or f"项目-{proj_b_id}"
 
         # 2. Fetch subsystems for each project
         cursor.execute('SELECT id, name, sort_order FROM subsystems WHERE project_id = ? ORDER BY sort_order, id', (proj_a_id,))
@@ -123,14 +169,16 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
             ''', target_subs_b)
             items_b = [dict(r) for r in cursor.fetchall()]
 
-        # 5. Group by material_no
+        # 5. Group by normalized material_no (primary key)
         def group_items_by_mat(raw_items):
             group = {}
             for it in raw_items:
                 mat_no = (it['material_no'] or '').strip()
                 if not mat_no:
                     continue
-                mat_key = mat_no.lower()
+                mat_key = normalize_material_key(mat_no)
+                if not mat_key:
+                    continue
                 if mat_key not in group:
                     group[mat_key] = {
                         'material_no': mat_no,
@@ -148,6 +196,7 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                         'image_path': it.get('image_path') or '',
                         'manual_path': it.get('manual_path') or '',
                         'subsystems': [],
+                        'row_refs': [],
                         'rows': []
                     }
 
@@ -157,6 +206,7 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                 sub_name = it['subsystem_name'] or '默认'
                 if sub_name not in entry['subsystems']:
                     entry['subsystems'].append(sub_name)
+                entry['row_refs'].append(f"{sub_name} 第{it['row_num']}行 ×{format_qty_display(qty_f)}")
 
                 # Track highest-priority level (smaller number = higher level)
                 if it['level_num'] and it['level_num'] < entry['level_num']:
@@ -217,6 +267,7 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                 'status': 'same',       # 'added', 'removed', 'modified', 'same'
                 'status_label': '一致',
                 'diff_changes': [],
+                'minor_changes': [],
                 'qty_diff': 0.0,
                 'qty_diff_text': '0',
                 'a': None,
@@ -235,7 +286,8 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                     'subsystems': info_a['subsystems'],
                     'notes': info_a['notes'],
                     'substitute': info_a['substitute'],
-                    'occurrences_count': len(info_a['rows'])
+                    'occurrences_count': len(info_a['rows']),
+                    'row_refs': info_a['row_refs']
                 }
 
             if in_b:
@@ -250,7 +302,8 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                     'subsystems': info_b['subsystems'],
                     'notes': info_b['notes'],
                     'substitute': info_b['substitute'],
-                    'occurrences_count': len(info_b['rows'])
+                    'occurrences_count': len(info_b['rows']),
+                    'row_refs': info_b['row_refs']
                 }
 
             # Classify diff
@@ -281,17 +334,18 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                 })
 
             else:
-                # In both A and B -> Compare attributes
-                changes = []
+                # In both A and B -> Primary basis: material_no + aggregated qty + normalized unit
+                primary_changes = []
+                minor_changes = []
 
-                # 1. Quantity comparison
+                # 1. Quantity comparison (PRIMARY)
                 diff_q = info_b['total_qty'] - info_a['total_qty']
                 if abs(diff_q) > 1e-4:
                     sign = '+' if diff_q > 0 else ''
                     q_text = f"{sign}{format_qty_display(diff_q)}"
                     diff_entry['qty_diff'] = diff_q
                     diff_entry['qty_diff_text'] = q_text
-                    changes.append({
+                    primary_changes.append({
                         'type': 'qty',
                         'field': '数量',
                         'desc': f"数量不同: A ({format_qty_display(info_a['total_qty'])} {info_a['unit']}) → B ({format_qty_display(info_b['total_qty'])} {info_b['unit']}) [差额: {q_text}]"
@@ -300,67 +354,74 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
                     diff_entry['qty_diff'] = 0.0
                     diff_entry['qty_diff_text'] = '0'
 
-                # 2. Level comparison
-                if info_a['level_num'] != info_b['level_num']:
-                    changes.append({
-                        'type': 'level',
-                        'field': '层级',
-                        'desc': f"层级不同: A ({info_a['level_str']} {info_a['level_num']}级) → B ({info_b['level_str']} {info_b['level_num']}级)"
-                    })
-
-                # 3. Unit comparison
-                if info_a['unit'].lower() != info_b['unit'].lower():
-                    changes.append({
+                # 2. Unit comparison (PRIMARY, normalize PC/PCS)
+                if normalize_unit_for_compare(info_a['unit']) != normalize_unit_for_compare(info_b['unit']):
+                    primary_changes.append({
                         'type': 'unit',
                         'field': '单位',
                         'desc': f"单位不同: A ({info_a['unit']}) → B ({info_b['unit']})"
                     })
 
-                # 4. Drawing No comparison
+                # 3. Level comparison (SECONDARY)
+                if info_a['level_num'] != info_b['level_num']:
+                    minor_changes.append({
+                        'type': 'level',
+                        'field': '层级',
+                        'desc': f"层级不同: A ({info_a['level_str']} {info_a['level_num']}级) → B ({info_b['level_str']} {info_b['level_num']}级)"
+                    })
+
+                # 4. Drawing No comparison (SECONDARY)
                 dwg_a = (info_a['drawing_no'] or '').replace('/', '').strip()
                 dwg_b = (info_b['drawing_no'] or '').replace('/', '').strip()
                 if dwg_a != dwg_b:
-                    changes.append({
+                    minor_changes.append({
                         'type': 'drawing_no',
                         'field': '图号',
                         'desc': f"图纸代号不同: A ({info_a['drawing_no'] or '/'}) → B ({info_b['drawing_no'] or '/'})"
                     })
 
-                # 5. Subsystems (Sheets) distribution comparison
+                # 5. Subsystems (Sheets) distribution comparison (SECONDARY)
                 set_a = set(info_a['subsystems'])
                 set_b = set(info_b['subsystems'])
                 if set_a != set_b:
-                    changes.append({
+                    minor_changes.append({
                         'type': 'subsystems',
                         'field': '子系统',
                         'desc': f"所属Sheet不同: A [{', '.join(info_a['subsystems'])}] → B [{', '.join(info_b['subsystems'])}]"
                     })
 
-                # 6. Notes comparison
+                # 6. Notes comparison (SECONDARY)
                 if info_a['notes'] != info_b['notes'] and (info_a['notes'] or info_b['notes']):
-                    changes.append({
+                    minor_changes.append({
                         'type': 'notes',
                         'field': '备注',
                         'desc': f"技术备注不同: A [{info_a['notes'] or '-'}] → B [{info_b['notes'] or '-'}]"
                     })
 
-                # 7. Substitute comparison
+                # 7. Substitute comparison (SECONDARY)
                 if info_a['substitute'] != info_b['substitute'] and (info_a['substitute'] or info_b['substitute']):
-                    changes.append({
+                    minor_changes.append({
                         'type': 'substitute',
                         'field': '替代件',
                         'desc': f"替代物料不同: A [{info_a['substitute'] or '-'}] → B [{info_b['substitute'] or '-'}]"
                     })
 
-                if changes:
+                if mode == 'strict':
+                    all_changes = primary_changes + minor_changes
+                    diff_entry['minor_changes'] = []
+                else:
+                    all_changes = primary_changes
+                    diff_entry['minor_changes'] = minor_changes
+
+                if all_changes:
                     count_modified += 1
                     diff_entry['status'] = 'modified'
-                    diff_entry['status_label'] = '属性差异'
-                    diff_entry['diff_changes'] = changes
+                    diff_entry['status_label'] = '数量差异' if mode == 'material' else '属性差异'
+                    diff_entry['diff_changes'] = all_changes
                 else:
                     count_same += 1
                     diff_entry['status'] = 'same'
-                    diff_entry['status_label'] = '完全一致'
+                    diff_entry['status_label'] = '物料一致' if mode == 'material' else '完全一致'
                     diff_entry['diff_changes'] = []
 
             diff_items.append(diff_entry)
@@ -369,13 +430,16 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
         status_rank = {'modified': 1, 'added': 2, 'removed': 3, 'same': 4}
         diff_items.sort(key=lambda x: (status_rank.get(x['status'], 9), x['material_no'].lower()))
 
-        # 8. Compute total quantities
+        # 8. Compute total quantities & material overlap rate
         total_qty_a = sum(parse_float_qty(it['qty']) for it in items_a)
         total_qty_b = sum(parse_float_qty(it['qty']) for it in items_b)
+        common_count = count_modified + count_same
+        overlap_rate = round((common_count / len(diff_items)) * 100, 1) if diff_items else 100.0
 
         result = {
             'success': True,
             'compare_time': beijing_now_str(),
+            'compare_mode': mode,
             'subsystem_filter': sub_filter,
             'all_subsystem_names': all_sub_names,
             'project_a': {
@@ -402,6 +466,8 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
             },
             'summary': {
                 'total_unique': len(diff_items),
+                'common_materials': common_count,
+                'overlap_rate': overlap_rate,
                 'added': count_added,
                 'removed': count_removed,
                 'modified': count_modified,
@@ -467,10 +533,14 @@ def generate_comparison_excel(result):
     ws_sum = wb.create_sheet(title="比对概况与统计")
     ws_sum.views.sheetView[0].showGridLines = True
 
+    compare_mode = result.get('compare_mode', 'material')
+    is_material_mode = (compare_mode != 'strict')
+    mode_label = "以物料号与单机用量为主 (推荐)" if is_material_mode else "严格比对 (含Sheet/层级/图号/备注)"
+
     # Title
     ws_sum['A2'] = "工程项目 Service BOM 比对分析报告"
     ws_sum['A2'].font = font_title
-    ws_sum['A3'] = f"生成时间: {result['compare_time']}    |    比对范围: {filter_label}"
+    ws_sum['A3'] = f"生成时间: {result['compare_time']}    |    比对范围: {filter_label}    |    比对依据: {mode_label}"
     ws_sum['A3'].font = font_sub
 
     # Table 1: Project Metadata
@@ -516,13 +586,19 @@ def generate_comparison_excel(result):
         cell.border = thin_border
     ws_sum.row_dimensions[17].height = 24
 
+    mod_title = "🟡 数量/单位差异 (≠)" if is_material_mode else "🟡 属性/数量差异 (≠)"
+    mod_desc = "两项目共有物料，单机用量或计量单位存在差异" if is_material_mode else "两项目均存在，但数量、层级、图号或分布有差异"
+    same_title = "⚪ 物料一致 (=)" if is_material_mode else "⚪ 完全一致物料 (=)"
+    same_desc = "两项目共有物料，且数量与单位一致（Sheet/层级/备注等参考差异不计入差异项）" if is_material_mode else "两项目在数量、层级、图号等属性上完全相同"
+
     stat_rows = [
         ("🟢 目标项目新增 (+)", summary['added'], f"仅在【{proj_b['display_name']}】中存在的物料", added_fill, font_green),
         ("🔴 目标项目减少 (-)", summary['removed'], f"仅在【{proj_a['display_name']}】中存在的物料 (目标项目缺失)", removed_fill, font_red),
-        ("🟡 属性/数量差异 (≠)", summary['modified'], "两项目均存在，但数量、层级、图号或分布有差异", modified_fill, font_yellow),
-        ("⚪ 完全一致物料 (=)", summary['same'], "两项目在数量、层级、图号等属性上完全相同", None, font_normal),
-        ("📊 总差异物料项", summary['diff_total'], "新增 + 减少 + 属性差异项之和", None, font_bold),
-        ("📋 涉及物料总种类", summary['total_unique'], "两项目并集涉及的全部物料种类数", None, font_bold)
+        (mod_title, summary['modified'], mod_desc, modified_fill, font_yellow),
+        (same_title, summary['same'], same_desc, None, font_normal),
+        ("📊 总差异物料项", summary['diff_total'], "新增 + 减少 + 差异项之和", None, font_bold),
+        ("📋 涉及物料总种类", summary['total_unique'], "两项目并集涉及的全部物料种类数", None, font_bold),
+        ("🔗 共有物料 / 重合率", f"{summary.get('common_materials', 0)} 种 ({summary.get('overlap_rate', 0)}%)", "两项目按物料号匹配的交集种类及重合比例", None, font_bold)
     ]
     for r_idx, (cat, cnt, desc, f_fill, f_font) in enumerate(stat_rows, start=18):
         c1 = ws_sum.cell(row=r_idx, column=1, value=cat)
@@ -563,73 +639,89 @@ def generate_comparison_excel(result):
         cell.border = thin_border
     ws_diff.row_dimensions[1].height = 28
 
+    def _format_changes_desc(it, include_minor_fallback=False):
+        parts = [c['desc'] for c in it.get('diff_changes', [])]
+        minor_list = it.get('minor_changes', [])
+        if minor_list:
+            minor_txt = "; ".join(c['desc'] for c in minor_list)
+            parts.append(f"[次要参考差异: {minor_txt}]")
+        if parts:
+            return "; ".join(parts)
+        if include_minor_fallback:
+            return "物料号与用量完全一致" if is_material_mode else "两项目完全一致"
+        return "-"
+
+    def _write_comparison_sheet_rows(target_ws, row_items, use_zebra=False, include_minor_fallback=False):
+        for row_idx, it in enumerate(row_items, start=2):
+            st = it['status']
+            row_fill = None
+            st_font = font_normal
+            if st == 'added':
+                row_fill = added_fill
+                st_font = font_green
+            elif st == 'removed':
+                row_fill = removed_fill
+                st_font = font_red
+            elif st == 'modified':
+                row_fill = modified_fill
+                st_font = font_yellow
+            elif use_zebra and row_idx % 2 == 1:
+                row_fill = zebra_fill
+
+            ia = it['a'] or {}
+            ib = it['b'] or {}
+            changes_desc = _format_changes_desc(it, include_minor_fallback=include_minor_fallback)
+
+            row_data = [
+                row_idx - 1,
+                it['status_label'],
+                it['material_no'],
+                it['name'] or '-',
+                it['spec_model'] or '-',
+                it['manufacturer'] or '-',
+                ia.get('total_qty_str', '-'),
+                ia.get('unit', '-'),
+                f"{ia.get('level_str', '')} {ia.get('level_num', '')}级" if ia.get('level_num') else '-',
+                ia.get('drawing_no', '-'),
+                ", ".join(ia.get('subsystems', [])) if ia.get('subsystems') else '-',
+                ib.get('total_qty_str', '-'),
+                ib.get('unit', '-'),
+                f"{ib.get('level_str', '')} {ib.get('level_num', '')}级" if ib.get('level_num') else '-',
+                ib.get('drawing_no', '-'),
+                ", ".join(ib.get('subsystems', [])) if ib.get('subsystems') else '-',
+                it['qty_diff_text'],
+                changes_desc
+            ]
+
+            max_lines_in_row = 1
+            for col_idx, raw_val in enumerate(row_data, start=1):
+                val = format_pipe_multiline(raw_val)
+                cell = target_ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.font = font_normal
+                cell.border = thin_border
+                if row_fill:
+                    cell.fill = row_fill
+
+                is_multiline = isinstance(val, str) and '\n' in val
+                if is_multiline:
+                    lines_count = len(val.split('\n'))
+                    if lines_count > max_lines_in_row:
+                        max_lines_in_row = lines_count
+
+                if col_idx in [1, 2, 7, 8, 9, 10, 12, 13, 14, 15, 17]:
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=is_multiline)
+                else:
+                    cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=is_multiline)
+
+                if col_idx == 2:
+                    cell.font = st_font
+                elif col_idx == 3:
+                    cell.font = font_mono
+
+            target_ws.row_dimensions[row_idx].height = max(20, max_lines_in_row * 18)
+
     diff_only_items = [it for it in items if it['status'] in ['added', 'removed', 'modified']]
-
-    for row_idx, it in enumerate(diff_only_items, start=2):
-        st = it['status']
-        row_fill = None
-        st_font = font_normal
-        if st == 'added':
-            row_fill = added_fill
-            st_font = font_green
-        elif st == 'removed':
-            row_fill = removed_fill
-            st_font = font_red
-        elif st == 'modified':
-            row_fill = modified_fill
-            st_font = font_yellow
-
-        ia = it['a'] or {}
-        ib = it['b'] or {}
-        changes_desc = "; ".join(c['desc'] for c in it['diff_changes']) or '-'
-
-        row_data = [
-            row_idx - 1,
-            it['status_label'],
-            it['material_no'],
-            it['name'] or '-',
-            it['spec_model'] or '-',
-            it['manufacturer'] or '-',
-            ia.get('total_qty_str', '-'),
-            ia.get('unit', '-'),
-            f"{ia.get('level_str', '')} {ia.get('level_num', '')}级" if ia.get('level_num') else '-',
-            ia.get('drawing_no', '-'),
-            ", ".join(ia.get('subsystems', [])) if ia.get('subsystems') else '-',
-            ib.get('total_qty_str', '-'),
-            ib.get('unit', '-'),
-            f"{ib.get('level_str', '')} {ib.get('level_num', '')}级" if ib.get('level_num') else '-',
-            ib.get('drawing_no', '-'),
-            ", ".join(ib.get('subsystems', [])) if ib.get('subsystems') else '-',
-            it['qty_diff_text'],
-            changes_desc
-        ]
-
-        max_lines_in_row = 1
-        for col_idx, raw_val in enumerate(row_data, start=1):
-            val = format_pipe_multiline(raw_val)
-            cell = ws_diff.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = font_normal
-            cell.border = thin_border
-            if row_fill:
-                cell.fill = row_fill
-
-            is_multiline = isinstance(val, str) and '\n' in val
-            if is_multiline:
-                lines_count = len(val.split('\n'))
-                if lines_count > max_lines_in_row:
-                    max_lines_in_row = lines_count
-
-            if col_idx in [1, 2, 7, 8, 9, 10, 12, 13, 14, 15, 17]:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=is_multiline)
-            else:
-                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=is_multiline)
-
-            if col_idx == 2:
-                cell.font = st_font
-            elif col_idx == 3:
-                cell.font = font_mono
-
-        ws_diff.row_dimensions[row_idx].height = max(20, max_lines_in_row * 18)
+    _write_comparison_sheet_rows(ws_diff, diff_only_items, use_zebra=False, include_minor_fallback=False)
 
     # Auto column width for ws_diff
     diff_widths = {
@@ -655,73 +747,7 @@ def generate_comparison_excel(result):
         cell.border = thin_border
     ws_all.row_dimensions[1].height = 28
 
-    for row_idx, it in enumerate(items, start=2):
-        st = it['status']
-        row_fill = None
-        st_font = font_normal
-        if st == 'added':
-            row_fill = added_fill
-            st_font = font_green
-        elif st == 'removed':
-            row_fill = removed_fill
-            st_font = font_red
-        elif st == 'modified':
-            row_fill = modified_fill
-            st_font = font_yellow
-        elif row_idx % 2 == 1:
-            row_fill = zebra_fill
-
-        ia = it['a'] or {}
-        ib = it['b'] or {}
-        changes_desc = "; ".join(c['desc'] for c in it['diff_changes']) if it['diff_changes'] else '两项目完全一致'
-
-        row_data = [
-            row_idx - 1,
-            it['status_label'],
-            it['material_no'],
-            it['name'] or '-',
-            it['spec_model'] or '-',
-            it['manufacturer'] or '-',
-            ia.get('total_qty_str', '-'),
-            ia.get('unit', '-'),
-            f"{ia.get('level_str', '')} {ia.get('level_num', '')}级" if ia.get('level_num') else '-',
-            ia.get('drawing_no', '-'),
-            ", ".join(ia.get('subsystems', [])) if ia.get('subsystems') else '-',
-            ib.get('total_qty_str', '-'),
-            ib.get('unit', '-'),
-            f"{ib.get('level_str', '')} {ib.get('level_num', '')}级" if ib.get('level_num') else '-',
-            ib.get('drawing_no', '-'),
-            ", ".join(ib.get('subsystems', [])) if ib.get('subsystems') else '-',
-            it['qty_diff_text'],
-            changes_desc
-        ]
-
-        max_lines_in_row = 1
-        for col_idx, raw_val in enumerate(row_data, start=1):
-            val = format_pipe_multiline(raw_val)
-            cell = ws_all.cell(row=row_idx, column=col_idx, value=val)
-            cell.font = font_normal
-            cell.border = thin_border
-            if row_fill:
-                cell.fill = row_fill
-
-            is_multiline = isinstance(val, str) and '\n' in val
-            if is_multiline:
-                lines_count = len(val.split('\n'))
-                if lines_count > max_lines_in_row:
-                    max_lines_in_row = lines_count
-
-            if col_idx in [1, 2, 7, 8, 9, 10, 12, 13, 14, 15, 17]:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=is_multiline)
-            else:
-                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=is_multiline)
-
-            if col_idx == 2:
-                cell.font = st_font
-            elif col_idx == 3:
-                cell.font = font_mono
-
-        ws_all.row_dimensions[row_idx].height = max(20, max_lines_in_row * 18)
+    _write_comparison_sheet_rows(ws_all, items, use_zebra=True, include_minor_fallback=True)
 
     for col_i, w in diff_widths.items():
         ws_all.column_dimensions[get_column_letter(col_i)].width = w
@@ -987,6 +1013,9 @@ def generate_ecn_change_description(res):
 
     proj_a_title = f"{proj_a.get('display_name', '')} (代号: {proj_a.get('code', '-')})"
     proj_b_title = f"{proj_b.get('display_name', '')} (代号: {proj_b.get('code', '-')})"
+    compare_mode = res.get('compare_mode', 'material')
+    mode_label = "以物料号与单机用量为主 (推荐)" if compare_mode != 'strict' else "严格比对 (含Sheet/层级/图号/备注)"
+    overlap_rate = summary.get('overlap_rate', 0)
 
     # 1. Build Markdown
     md_lines = [
@@ -1000,11 +1029,12 @@ def generate_ecn_change_description(res):
         f"- **基准机型/工程 (A)**: {proj_a_title}",
         f"- **变更目标机型/工程 (B)**: {proj_b_title}",
         f"- **涉及子系统范围**: {sub_title}",
+        f"- **比对依据模式**: {mode_label}（物料号重合率: **{overlap_rate}%**）",
         f"- **整体变更统计指标**:",
         f"  - 🟢 **新增导入零部件**: **{len(added_items)}** 种 (累计单机装配需求 **{format_qty_display(added_qty_sum)}** 件)",
         f"  - 🔴 **停用/淘汰零部件**: **{len(removed_items)}** 种 (原单机配额 **{format_qty_display(removed_qty_sum)}** 件)",
-        f"  - 🟡 **参数/规格/定额调整零部件**: **{len(modified_items)}** 种",
-        f"  - ⚪ **完全保持一致零部件**: **{len(same_items)}** 种",
+        f"  - 🟡 **{'数量/单位差异' if compare_mode != 'strict' else '参数/规格/定额调整'}零部件**: **{len(modified_items)}** 种",
+        f"  - ⚪ **{'物料一致' if compare_mode != 'strict' else '完全保持一致'}零部件**: **{len(same_items)}** 种",
         f"  - 📦 **技改增量备件申报需求**: 共涉及 **{len(procure_items)}** 种物料需向供应链发起增量采购申报，累计增量需求 **{format_qty_display(procure_total_qty)}** 件",
         f""
     ]

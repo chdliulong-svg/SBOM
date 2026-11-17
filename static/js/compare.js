@@ -7,7 +7,22 @@
         // ==========================================
         let currentCompareData = null;
         let currentCompareFilter = 'diff'; // 'diff', 'added', 'removed', 'modified', 'same', 'all'
+        let currentCompareSortField = ''; // '', 'status', 'material_no', 'name', 'a_qty', 'b_qty', 'qty_diff'
+        let currentCompareSortDir = 'asc';
         let isExecutingCompare = false;
+
+        function _getCompareParams() {
+            const selA = document.getElementById('compareProjA');
+            const selB = document.getElementById('compareProjB');
+            const selSub = document.getElementById('compareSubsystemSelect');
+            const selMode = document.getElementById('compareModeSelect');
+            return {
+                projAId: selA ? selA.value : '',
+                projBId: selB ? selB.value : '',
+                subsystem: selSub ? selSub.value : 'all',
+                mode: (selMode && selMode.value === 'strict') ? 'strict' : 'material'
+            };
+        }
 
         async function openProjectCompareModal(defaultProjAId = null, defaultProjBId = null) {
             try {
@@ -121,16 +136,9 @@
         async function executeProjectCompare() {
             if (isExecutingCompare) return;
 
-            const selA = document.getElementById('compareProjA');
-            const selB = document.getElementById('compareProjB');
-            const selSub = document.getElementById('compareSubsystemSelect');
             const spinner = document.getElementById('compareLoadingSpinner');
             const tbody = document.getElementById('compareTableBody');
-
-            if (!selA || !selB) return;
-            const projAId = selA.value;
-            const projBId = selB.value;
-            const subsystem = selSub ? selSub.value : 'all';
+            const { projAId, projBId, subsystem, mode } = _getCompareParams();
 
             if (!projAId || !projBId) {
                 alert('请先选择需要比对的两个项目！');
@@ -141,7 +149,7 @@
             if (spinner) spinner.style.display = 'flex';
 
             try {
-                const url = `/api/projects/compare?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}`;
+                const url = `/api/projects/compare?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}&mode=${encodeURIComponent(mode)}`;
                 const res = await safeFetchJson(url);
 
                 if (!res || !res.success) {
@@ -170,6 +178,7 @@
                     currentCompareFilter = 'all';
                 }
                 updateCompareFilterPillsUI();
+                updateCompareSortIndicators();
 
                 // Render table
                 renderCompareTable();
@@ -189,6 +198,7 @@
             const pa = res.project_a;
             const pb = res.project_b;
             const s = res.summary;
+            const isMaterialMode = (res.compare_mode !== 'strict');
 
             // Project A Card
             const elA_name = document.getElementById('compareStatA_name');
@@ -216,18 +226,35 @@
             if (elB_types) elB_types.textContent = pb.material_types_count;
             if (elB_pieces) elB_pieces.textContent = pb.total_pieces;
 
-            // Diff Metric Numbers
+            // Diff Metric Numbers & Mode Labels
             const elAdded = document.getElementById('compareStat_added');
             const elRemoved = document.getElementById('compareStat_removed');
             const elModified = document.getElementById('compareStat_modified');
             const elSame = document.getElementById('compareStat_same');
+            const elModTitle = document.getElementById('compareStatModifiedTitle');
+            const elModSub = document.getElementById('compareStatModifiedSub');
+            const elSameTitle = document.getElementById('compareStatSameTitle');
+            const elSameSub = document.getElementById('compareStatSameSub');
 
             if (elAdded) elAdded.textContent = `+${s.added}`;
             if (elRemoved) elRemoved.textContent = `-${s.removed}`;
             if (elModified) elModified.textContent = s.modified;
             if (elSame) elSame.textContent = s.same;
 
-            // Pill counts
+            if (elModTitle) elModTitle.textContent = isMaterialMode ? '🟡 数量/单位差异 (≠)' : '🟡 属性/数量差异 (≠)';
+            if (elModSub) elModSub.textContent = isMaterialMode ? '同物料号用量或单位变化' : '数量/层级/图号/备注变化';
+            if (elSameTitle) elSameTitle.textContent = isMaterialMode ? '⚪ 物料一致 (=)' : '⚪ 完全一致 (=)';
+            if (elSameSub) {
+                const overlapTxt = (s.overlap_rate !== undefined) ? `物料号重合率 ${s.overlap_rate}% (共有 ${s.common_materials || 0} 种)` : '无任何变化物料';
+                elSameSub.textContent = overlapTxt;
+            }
+
+            // Pill counts & Labels
+            const pModLabel = document.getElementById('pillLabel_modified');
+            const pSameLabel = document.getElementById('pillLabel_same');
+            if (pModLabel) pModLabel.textContent = isMaterialMode ? '🟡 数量/单位差异' : '🟡 属性差异';
+            if (pSameLabel) pSameLabel.textContent = isMaterialMode ? '⚪ 物料一致' : '⚪ 完全一致';
+
             const pDiff = document.getElementById('pillCount_diff');
             const pAdded = document.getElementById('pillCount_added');
             const pRemoved = document.getElementById('pillCount_removed');
@@ -241,6 +268,37 @@
             if (pModified) pModified.textContent = s.modified;
             if (pSame) pSame.textContent = s.same;
             if (pAll) pAll.textContent = s.total_unique;
+        }
+
+        function sortCompareTable(field) {
+            if (currentCompareSortField === field) {
+                if (currentCompareSortDir === 'asc') {
+                    currentCompareSortDir = 'desc';
+                } else {
+                    currentCompareSortField = '';
+                    currentCompareSortDir = 'asc';
+                }
+            } else {
+                currentCompareSortField = field;
+                currentCompareSortDir = (field === 'qty_diff' || field === 'a_qty' || field === 'b_qty') ? 'desc' : 'asc';
+            }
+            updateCompareSortIndicators();
+            renderCompareTable();
+        }
+
+        function updateCompareSortIndicators() {
+            const fields = ['status', 'material_no', 'name', 'qty_diff', 'a_qty', 'b_qty'];
+            fields.forEach(f => {
+                const el = document.getElementById(`cmpSort_${f}`);
+                if (!el) return;
+                if (currentCompareSortField === f) {
+                    el.textContent = currentCompareSortDir === 'asc' ? '▲' : '▼';
+                    el.style.color = '#2563eb';
+                } else {
+                    el.textContent = '⇅';
+                    el.style.color = '#94a3b8';
+                }
+            });
         }
 
         function setCompareFilter(filterKey) {
@@ -274,7 +332,11 @@
                 return;
             }
 
-            const searchQ = (document.getElementById('compareSearchInput')?.value || '').trim().toLowerCase();
+            const rawSearch = (document.getElementById('compareSearchInput')?.value || '').trim().toLowerCase();
+            // Support comma/semicolon/newline-separated batch material list (OR), or space-separated multi-term narrowing (AND)
+            const hasListSep = /[,;，；\n]/.test(rawSearch);
+            const listTokens = hasListSep ? rawSearch.split(/[,;，；\s\n]+/).filter(Boolean) : [];
+            const andTokens = (!hasListSep && rawSearch) ? rawSearch.split(/\s+/).filter(Boolean) : [];
             const filter = currentCompareFilter;
 
             let filtered = currentCompareData.items.filter(it => {
@@ -285,21 +347,49 @@
                 if (filter === 'modified' && it.status !== 'modified') return false;
                 if (filter === 'same' && it.status !== 'same') return false;
 
-                // 2. Keyword Search
-                if (searchQ) {
+                // 2. Keyword / Batch Material Search
+                if (rawSearch) {
                     const text = [
                         it.material_no,
                         it.name,
                         it.description,
                         it.spec_model,
                         it.manufacturer,
-                        ...(it.diff_changes || []).map(c => c.desc)
+                        ...(it.diff_changes || []).map(c => c.desc),
+                        ...(it.minor_changes || []).map(c => c.desc)
                     ].filter(Boolean).join(' ').toLowerCase();
-                    if (!text.includes(searchQ)) return false;
+
+                    if (listTokens.length > 0) {
+                        if (!listTokens.some(tok => text.includes(tok))) return false;
+                    } else if (andTokens.length > 0) {
+                        if (!andTokens.every(tok => text.includes(tok))) return false;
+                    }
                 }
 
                 return true;
             });
+
+            if (currentCompareSortField) {
+                const statusRank = { added: 1, removed: 2, modified: 3, same: 4 };
+                const mul = currentCompareSortDir === 'asc' ? 1 : -1;
+                filtered = filtered.slice().sort((x, y) => {
+                    let cmp = 0;
+                    if (currentCompareSortField === 'status') {
+                        cmp = (statusRank[x.status] || 9) - (statusRank[y.status] || 9);
+                    } else if (currentCompareSortField === 'material_no') {
+                        cmp = String(x.material_no || '').localeCompare(String(y.material_no || ''), 'zh-CN');
+                    } else if (currentCompareSortField === 'name') {
+                        cmp = String(x.name || '').localeCompare(String(y.name || ''), 'zh-CN');
+                    } else if (currentCompareSortField === 'a_qty') {
+                        cmp = (x.a?.total_qty || 0) - (y.a?.total_qty || 0);
+                    } else if (currentCompareSortField === 'b_qty') {
+                        cmp = (x.b?.total_qty || 0) - (y.b?.total_qty || 0);
+                    } else if (currentCompareSortField === 'qty_diff') {
+                        cmp = (x.qty_diff || 0) - (y.qty_diff || 0);
+                    }
+                    return cmp !== 0 ? cmp * mul : String(x.material_no || '').localeCompare(String(y.material_no || ''));
+                });
+            }
 
             if (filtered.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="15" style="padding: 36px; text-align: center; color: #94a3b8; font-size: 13px;">当前筛选条件下未找到匹配的物料记录</td></tr>`;
@@ -308,6 +398,15 @@
                 }
                 return;
             }
+
+            const isMaterialMode = (currentCompareData.compare_mode !== 'strict');
+
+            const _renderOccBadge = (groupObj) => {
+                const cnt = groupObj.occurrences_count || 0;
+                if (cnt <= 1) return '';
+                const refs = (groupObj.row_refs || []).join('\n');
+                return `<span title="同物料号跨多行自动汇总数量：\n${escapeHtml(refs)}" style="display:inline-block; margin-left:4px; background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; border-radius:4px; padding:0 4px; font-size:10px; font-weight:600; cursor:help;">合并${cnt}行</span>`;
+            };
 
             const rowsHtml = filtered.map((it, idx) => {
                 const st = it.status;
@@ -321,10 +420,10 @@
                     badgeHtml = `<span class="badge-diff-removed">- 目标减少</span>`;
                     trBg = 'background: #fef2f2;';
                 } else if (st === 'modified') {
-                    badgeHtml = `<span class="badge-diff-modified">≠ 属性差异</span>`;
+                    badgeHtml = `<span class="badge-diff-modified">${escapeHtml('≠ ' + (it.status_label || (isMaterialMode ? '数量差异' : '属性差异')))}</span>`;
                     trBg = 'background: #fffbeb;';
                 } else {
-                    badgeHtml = `<span class="badge-diff-same">= 完全一致</span>`;
+                    badgeHtml = `<span class="badge-diff-same">${escapeHtml('= ' + (it.status_label || (isMaterialMode ? '物料一致' : '完全一致')))}</span>`;
                     trBg = idx % 2 === 1 ? 'background: #f8fafc;' : '';
                 }
 
@@ -339,7 +438,7 @@
                     qtyDiffHtml = `<span style="color: #b91c1c; font-weight: 700; font-family: monospace;">${escapeHtml(it.qty_diff_text)}</span>`;
                 }
 
-                // Diff changes badges
+                // Diff changes badges + minor reference changes
                 let changesHtml = '';
                 if (it.diff_changes && it.diff_changes.length > 0) {
                     changesHtml = it.diff_changes.map(c => {
@@ -355,18 +454,25 @@
                         }
                         return `<span style="display: inline-block; background: ${cBg}; color: ${cColor}; border: 1px solid ${cBorder}; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin: 2px 4px 2px 0;">${escapeHtml(c.desc)}</span>`;
                     }).join('');
-                } else {
-                    changesHtml = `<span style="color: #94a3b8; font-size: 11px;">两项目配置一致</span>`;
+                }
+                if (it.minor_changes && it.minor_changes.length > 0) {
+                    const minorHtml = it.minor_changes.map(c =>
+                        `<span style="display: inline-block; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; padding: 1px 5px; border-radius: 4px; font-size: 11px; margin: 2px 4px 2px 0;" title="仅属性分布参考差异，不计入物料核心差异">${escapeHtml('参考: ' + c.desc)}</span>`
+                    ).join('');
+                    changesHtml += minorHtml;
+                }
+                if (!changesHtml) {
+                    changesHtml = `<span style="color: #94a3b8; font-size: 11px;">${isMaterialMode ? '物料号与单机用量一致' : '两项目配置一致'}</span>`;
                 }
 
                 // Group A Cells
-                const aQty = ia.exists ? `<b style="font-family: monospace;">${escapeHtml(ia.total_qty_str)}</b> <span style="font-size: 11px; color: #64748b;">${escapeHtml(ia.unit)}</span>` : '<span style="color: #cbd5e1;">-</span>';
+                const aQty = ia.exists ? `<b style="font-family: monospace;">${escapeHtml(ia.total_qty_str)}</b> <span style="font-size: 11px; color: #64748b;">${escapeHtml(ia.unit)}</span>${_renderOccBadge(ia)}` : '<span style="color: #cbd5e1;">-</span>';
                 const aLvl = ia.exists ? `<span style="font-size: 11px; font-weight: 500;">${escapeHtml(ia.level_str || '')} ${ia.level_num ? ia.level_num + '级' : ''}</span>` : '<span style="color: #cbd5e1;">-</span>';
                 const aDwg = ia.exists ? (formatPipeMultilineHtml(ia.drawing_no || '/') || '<span style="color: #cbd5e1;">-</span>') : '<span style="color: #cbd5e1;">-</span>';
                 const aSheet = ia.exists ? `<span class="cell-text-ellipsis" style="max-width: 80px; color: #1e40af;" title="${escapeHtml((ia.subsystems || []).join(', '))}">[${escapeHtml((ia.subsystems || []).join(','))}]</span>` : '<span style="color: #cbd5e1;">-</span>';
 
                 // Group B Cells
-                const bQty = ib.exists ? `<b style="font-family: monospace;">${escapeHtml(ib.total_qty_str)}</b> <span style="font-size: 11px; color: #64748b;">${escapeHtml(ib.unit)}</span>` : '<span style="color: #cbd5e1;">-</span>';
+                const bQty = ib.exists ? `<b style="font-family: monospace;">${escapeHtml(ib.total_qty_str)}</b> <span style="font-size: 11px; color: #64748b;">${escapeHtml(ib.unit)}</span>${_renderOccBadge(ib)}` : '<span style="color: #cbd5e1;">-</span>';
                 const bLvl = ib.exists ? `<span style="font-size: 11px; font-weight: 500;">${escapeHtml(ib.level_str || '')} ${ib.level_num ? ib.level_num + '级' : ''}</span>` : '<span style="color: #cbd5e1;">-</span>';
                 const bDwg = ib.exists ? (formatPipeMultilineHtml(ib.drawing_no || '/') || '<span style="color: #cbd5e1;">-</span>') : '<span style="color: #cbd5e1;">-</span>';
                 const bSheet = ib.exists ? `<span class="cell-text-ellipsis" style="max-width: 80px; color: #166534;" title="${escapeHtml((ib.subsystems || []).join(', '))}">[${escapeHtml((ib.subsystems || []).join(','))}]</span>` : '<span style="color: #cbd5e1;">-</span>';
@@ -377,7 +483,7 @@
                     <tr style="border-bottom: 1px solid #f1f5f9; ${trBg}">
                         <td style="padding: 6px 8px; text-align: center; color: #94a3b8; font-family: monospace; border-right: 1px solid #f1f5f9;">${idx + 1}</td>
                         <td style="padding: 6px 10px; text-align: center; border-right: 1px solid #f1f5f9;">${badgeHtml}</td>
-                        <td style="padding: 6px 10px; font-family: monospace; font-weight: 700; color: #0f172a; border-right: 1px solid #f1f5f9;">${formatPipeMultilineMatNo(it.material_no)}</td>
+                        <td style="padding: 6px 10px; font-family: monospace; font-weight: 700; color: #0f172a; border-right: 1px solid #f1f5f9; cursor: pointer;" data-mat="${escapeHtml(it.material_no)}" onclick="copyCompareMatNo(this.getAttribute('data-mat'))" title="点击复制物料号">${formatPipeMultilineMatNo(it.material_no)}</td>
                         <td style="padding: 6px 10px; font-weight: 600; color: #334155; border-right: 1px solid #f1f5f9;">
                             ${formatPipeMultilineHtml(it.name || '-')}
                         </td>
@@ -405,64 +511,41 @@
 
             if (footerSummary) {
                 const s = currentCompareData.summary;
+                const overlapTxt = (s.overlap_rate !== undefined) ? `，物料号重合率 <b>${s.overlap_rate}%</b>` : '';
                 footerSummary.innerHTML = `
-                    <span>共涉及 <b>${currentCompareData.items.length}</b> 种物料；识别差异物料 <b style="color: #d97706;">${s.diff_total}</b> 种（目标新增: <b style="color: #15803d;">+${s.added}</b>，目标减少: <b style="color: #b91c1c;">-${s.removed}</b>，属性变更: <b style="color: #b45309;">${s.modified}</b>，完全一致: <b>${s.same}</b>）；当前列表显示 <b>${filtered.length}</b> 项。</span>
+                    <span>共涉及 <b>${currentCompareData.items.length}</b> 种物料${overlapTxt}；识别差异物料 <b style="color: #d97706;">${s.diff_total}</b> 种（目标新增: <b style="color: #15803d;">+${s.added}</b>，目标减少: <b style="color: #b91c1c;">-${s.removed}</b>，${isMaterialMode ? '数量/单位差异' : '属性变更'}: <b style="color: #b45309;">${s.modified}</b>，${isMaterialMode ? '物料一致' : '完全一致'}: <b>${s.same}</b>）；当前显示 <b>${filtered.length}</b> 项。</span>
                 `;
             }
         }
 
         function exportCompareReportExcel() {
-            const selA = document.getElementById('compareProjA');
-            const selB = document.getElementById('compareProjB');
-            const selSub = document.getElementById('compareSubsystemSelect');
-            if (!selA || !selB) return;
-
-            const projAId = selA.value;
-            const projBId = selB.value;
-            const subsystem = selSub ? selSub.value : 'all';
-
+            const { projAId, projBId, subsystem, mode } = _getCompareParams();
             if (!projAId || !projBId) {
                 alert('请先选择比对项目！');
                 return;
             }
 
             showToast('正在生成并导出 BOM 对比分析报表 (.xlsx)...', 'info');
-            const url = `/api/projects/compare/export?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}`;
+            const url = `/api/projects/compare/export?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}&mode=${encodeURIComponent(mode)}`;
             window.location.href = url;
         }
 
         function exportProcurementExcel() {
-            const selA = document.getElementById('compareProjA');
-            const selB = document.getElementById('compareProjB');
-            const selSub = document.getElementById('compareSubsystemSelect');
-            if (!selA || !selB) return;
-
-            const projAId = selA.value;
-            const projBId = selB.value;
-            const subsystem = selSub ? selSub.value : 'all';
-
+            const { projAId, projBId, subsystem, mode } = _getCompareParams();
             if (!projAId || !projBId) {
                 alert('请先选择比对项目！');
                 return;
             }
 
             showToast('正在筛选新增与增量需求物料，生成采购申报清单 (.xlsx)...', 'info');
-            const url = `/api/projects/compare/export_procurement?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}`;
+            const url = `/api/projects/compare/export_procurement?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}&mode=${encodeURIComponent(mode)}`;
             window.location.href = url;
         }
 
         let currentCompareEcnData = null;
 
         async function openCompareEcnModal() {
-            const selA = document.getElementById('compareProjA');
-            const selB = document.getElementById('compareProjB');
-            const selSub = document.getElementById('compareSubsystemSelect');
-            if (!selA || !selB) return;
-
-            const projAId = selA.value;
-            const projBId = selB.value;
-            const subsystem = selSub ? selSub.value : 'all';
-
+            const { projAId, projBId, subsystem, mode } = _getCompareParams();
             if (!projAId || !projBId) {
                 alert('请先选择比对项目！');
                 return;
@@ -476,7 +559,7 @@
             if (tipEl) tipEl.textContent = '';
 
             try {
-                const res = await safeFetchJson(`/api/projects/compare/generate_ecn?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}`);
+                const res = await safeFetchJson(`/api/projects/compare/generate_ecn?source_id=${projAId}&target_id=${projBId}&subsystem=${encodeURIComponent(subsystem)}&mode=${encodeURIComponent(mode)}`);
                 if (!res || !res.success) {
                     throw new Error((res && res.error) || '生成失败');
                 }
@@ -492,21 +575,31 @@
             }
         }
 
+        function copyCompareString(text, successMsg) {
+            if (!text) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast(successMsg || '已复制至剪贴板！', 'success');
+                }).catch(() => {
+                    fallbackCopyText(text);
+                });
+            } else {
+                fallbackCopyText(text);
+            }
+        }
+
+        function copyCompareMatNo(matNo) {
+            if (!matNo || matNo === '-') return;
+            copyCompareString(matNo, `已复制物料号: ${matNo}`);
+        }
+
         function copyCompareEcnText(type) {
             if (!currentCompareEcnData) {
                 showToast('暂无生成的 ECN 内容', 'warning');
                 return;
             }
             const textToCopy = (type === 'plain') ? currentCompareEcnData.ecn_text : currentCompareEcnData.ecn_markdown;
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(textToCopy).then(() => {
-                    showToast(type === 'plain' ? '已复制纯文本 ECN 摘要至剪贴板！' : '已复制 Markdown 格式 ECN 至剪贴板！', 'success');
-                }).catch(() => {
-                    fallbackCopyText(textToCopy);
-                });
-            } else {
-                fallbackCopyText(textToCopy);
-            }
+            copyCompareString(textToCopy, type === 'plain' ? '已复制纯文本 ECN 摘要至剪贴板！' : '已复制 Markdown 格式 ECN 至剪贴板！');
         }
 
         function fallbackCopyText(text) {
