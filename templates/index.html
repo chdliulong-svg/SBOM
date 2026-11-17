@@ -275,14 +275,6 @@
                         <input id="cov-supplier" class="form-input" placeholder="例如: 盘古 或 电力电子 (可选，用于自动生成标准文件名)" oninput="updateCoverTitlePreview()">
                     </div>
                     <div class="cover-row">
-                        <label class="form-label">所属系统分类 (Category):</label>
-                        <select id="cov-category" class="form-select" onchange="onCoverCategoryChange()" title="若下方未填写部套/系统名称，保存时将自动归为【未分类】">
-                            <option value="pitch">变桨系统</option>
-                            <option value="converter">变流器系统</option>
-                            <option value="uncategorized">未分类</option>
-                        </select>
-                    </div>
-                    <div class="cover-row">
                         <label class="form-label">部套/系统名称 (System):</label>
                         <select id="cov-system" class="form-select" onchange="onCoverSystemChange()" title="选择标准部套/系统名称（选择未填写将自动归为未分类）">
                             <option value="">-- 未填写（归入未分类） --</option>
@@ -679,7 +671,7 @@
     <!-- Modular Application Scripts -->
     <script src="/static/js/core.js?v=20261117_copyfn"></script>
     <script src="/static/js/table_utils.js?v=20261116_poslock"></script>
-    <script src="/static/js/project.js?v=20261117_copyfn"></script>
+    <script src="/static/js/project.js?v=20261117_dedup"></script>
     <script>
         window.AUTO_OPEN_PROJECT_MANAGER = {{ 'true' if auto_open_project_manager else 'false' }};
         window.IS_WINDOWS_SERVER = {{ 'true' if is_windows_server else 'false' }};

@@ -41,7 +41,7 @@ function handleMainProjectSelectChange(val) {
 }
 
 function initProjectDirtyListeners() {
-    const coverFormIds = ['cov-code', 'cov-platform', 'cov-supplier', 'cov-model', 'cov-name', 'cov-category', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-form', 'cov-company'];
+    const coverFormIds = ['cov-code', 'cov-platform', 'cov-supplier', 'cov-model', 'cov-name', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-form', 'cov-company'];
     const sigIds = [
         'sig-author-name', 'sig-author-date',
         'sig-reviewer-name', 'sig-reviewer-date',
@@ -421,7 +421,6 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     }
                     
                     // Fill cover form
-                    renderCoverCategoryOptions(getProjectEffectiveCategory(data));
                     document.getElementById('cov-code').value = data.code || '';
                     if (document.getElementById('cov-platform')) document.getElementById('cov-platform').value = data.platform || '';
                     if (document.getElementById('cov-supplier')) document.getElementById('cov-supplier').value = data.supplier || '';
@@ -576,7 +575,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
             }
 
             // Cover Form inputs and save button
-            ['cov-code', 'cov-platform', 'cov-supplier', 'cov-category', 'cov-system', 'cov-model', 'cov-name', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
+            ['cov-code', 'cov-platform', 'cov-supplier', 'cov-system', 'cov-model', 'cov-name', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.disabled = isLocked;
             });
@@ -845,7 +844,6 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 const supplierEl = document.getElementById('cov-supplier');
                 const modelEl = document.getElementById('cov-model');
                 const nameEl = document.getElementById('cov-name');
-                const categoryEl = document.getElementById('cov-category');
                 const systemEl = document.getElementById('cov-system');
                 const docEl = document.getElementById('cov-doc');
                 const ecnEl = document.getElementById('cov-ecn');
@@ -854,8 +852,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
 
                 const rawSys = systemEl ? systemEl.value.trim() : (currentProjectData.system_name || '').trim();
                 const sysVal = (rawSys === '__custom__') ? '' : rawSys;
-                const chosenCat = categoryEl ? (categoryEl.value || '').trim().toLowerCase() : (currentProjectData.category || 'pitch');
-                const finalCat = sysVal ? (chosenCat || 'pitch') : 'uncategorized';
+                const finalCat = inferCoverCategory(sysVal, systemEl, currentProjectData?.category);
 
                 const payload = {
                     id: currentProjectId,
@@ -918,7 +915,6 @@ async function refreshProjectSelectOnly(selectedId = null) {
                         if (res.updated_at) currentProjectData.updated_at = res.updated_at;
                         if (res.created_at) currentProjectData.created_at = res.created_at;
                     }
-                    renderCoverCategoryOptions(getProjectEffectiveCategory(currentProjectData));
                     renderCoverSystemOptions(currentProjectData.system_name || '');
                 }
                 renderProjectHeaderSummary(currentProjectData);
@@ -945,26 +941,25 @@ async function refreshProjectSelectOnly(selectedId = null) {
             await saveCurrentProjectToDatabase();
         }
 
-        // --- 封面所属系统分类与部套/系统名称联动 ---
+        // --- 封面部套/系统名称下拉构建与自动分类推断 ---
         let lastCoverSystemValue = '';
 
-        function renderCoverCategoryOptions(selectedCat = 'pitch') {
-            const catEl = document.getElementById('cov-category');
-            if (!catEl) return;
-            const list = (allMainCategoriesCache && allMainCategoriesCache.length > 0)
-                ? allMainCategoriesCache
-                : [
-                    { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统' },
-                    { code: 'converter', name: '变流器系统', default_system_name: '变流器系统' },
-                    { code: 'uncategorized', name: '未分类', default_system_name: '' }
-                ];
-            catEl.innerHTML = list.map(c =>
-                `<option value="${escapeHtml(c.code)}">${escapeHtml(c.name)}</option>`
-            ).join('');
-            const target = (selectedCat || 'uncategorized').toLowerCase();
-            if (Array.from(catEl.options).some(o => o.value === target)) {
-                catEl.value = target;
+        function inferCoverCategory(sysVal, sysEl = null, fallbackCat = '') {
+            if (!sysVal) return 'uncategorized';
+            if (sysEl && sysEl.selectedIndex >= 0) {
+                const opt = sysEl.options[sysEl.selectedIndex];
+                const optCat = opt ? (opt.getAttribute('data-category') || '').trim().toLowerCase() : '';
+                if (optCat && optCat !== 'uncategorized') return optCat;
             }
+            const matched = (allMainCategoriesCache || []).find(c =>
+                c.code !== 'uncategorized' &&
+                ((c.default_system_name && c.default_system_name.trim() === sysVal) || (c.name && c.name.trim() === sysVal))
+            );
+            if (matched) return matched.code.toLowerCase();
+            if (sysVal.includes('变流')) return 'converter';
+            if (sysVal.includes('变桨')) return 'pitch';
+            const prev = (fallbackCat || '').trim().toLowerCase();
+            return (prev && prev !== 'uncategorized') ? prev : 'pitch';
         }
 
         function renderCoverSystemOptions(selectedSystem = '') {
@@ -1008,7 +1003,6 @@ async function refreshProjectSelectOnly(selectedId = null) {
 
         function onCoverSystemChange() {
             const sysEl = document.getElementById('cov-system');
-            const catEl = document.getElementById('cov-category');
             if (!sysEl) return;
 
             if (sysEl.value === '__custom__') {
@@ -1022,20 +1016,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 sysEl.value = trimmed;
             }
 
-            const sysVal = sysEl.value.trim();
-            lastCoverSystemValue = sysVal;
-            const selectedOpt = sysEl.options[sysEl.selectedIndex];
-            const optCat = selectedOpt ? (selectedOpt.getAttribute('data-category') || '') : '';
-
-            if (catEl) {
-                if (!sysVal) {
-                    catEl.value = 'uncategorized';
-                } else if (optCat && Array.from(catEl.options).some(o => o.value === optCat)) {
-                    catEl.value = optCat;
-                } else if (catEl.value === 'uncategorized') {
-                    catEl.value = sysVal.includes('变流') ? 'converter' : 'pitch';
-                }
-            }
+            lastCoverSystemValue = sysEl.value.trim();
             updateCoverTitlePreview();
         }
 
@@ -1043,31 +1024,11 @@ async function refreshProjectSelectOnly(selectedId = null) {
             onCoverSystemChange();
         }
 
-        function onCoverCategoryChange() {
-            const catEl = document.getElementById('cov-category');
-            const sysEl = document.getElementById('cov-system');
-            if (catEl && sysEl) {
-                if (catEl.value === 'uncategorized') {
-                    renderCoverSystemOptions('');
-                } else {
-                    const matched = (allMainCategoriesCache || []).find(c => c.code === catEl.value);
-                    const defName = (matched && (matched.default_system_name || matched.name))
-                        ? (matched.default_system_name || matched.name).trim()
-                        : (catEl.value === 'converter' ? '变流器系统' : '变桨系统');
-                    if (defName) {
-                        renderCoverSystemOptions(defName);
-                    }
-                }
-            }
-            updateCoverTitlePreview();
-        }
-
         // --- 实时更新封面与 BOM 页名称预览 ---
         function updateCoverTitlePreview() {
             const platEl = document.getElementById('cov-platform');
             const codeEl = document.getElementById('cov-code');
             const suppEl = document.getElementById('cov-supplier');
-            const catEl = document.getElementById('cov-category');
             const sysEl = document.getElementById('cov-system');
             const modEl = document.getElementById('cov-model');
 
@@ -1077,7 +1038,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
             let system = sysEl ? sysEl.value.trim() : '';
             if (system === '__custom__') system = '';
             let model = modEl ? modEl.value.trim() : '';
-            const catCode = (catEl ? catEl.value : (currentProjectData?.category || '')).toLowerCase();
+            const catCode = inferCoverCategory(system, sysEl, currentProjectData?.category);
 
             if (!model && typeof currentProjectData !== 'undefined' && currentProjectData) {
                 model = currentProjectData.model || currentProjectData.root_model || '';
@@ -1824,7 +1785,6 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     }
                     renderProjectHeaderSummary(currentProjectData);
                     renderCoverSystemOptions(newName);
-                    renderCoverCategoryOptions(res.category || getProjectEffectiveCategory(currentProjectData));
                     const covUp = document.getElementById('cov-updated-at');
                     if (covUp && currentProjectData) covUp.value = currentProjectData.updated_at || '';
                     refreshProjectSelectOnly(currentProjectId);
