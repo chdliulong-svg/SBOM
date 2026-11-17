@@ -556,6 +556,41 @@ class IsolatedAppTestCase(unittest.TestCase):
         self.assertEqual(r_cp2.status_code, 200)
         self.assertEqual(r_cp2.get_json()['display_name'], f'{orig_title}_副本_副本')
 
+    def test_14_beijing_time_utc_plus_8_consistency(self):
+        from datetime import datetime, timedelta, timezone
+        from services.time_utils import beijing_now, beijing_now_str
+        from services.database import get_db
+
+        # Verify Python helper aligns with strict UTC+8 regardless of OS TZ
+        expected_bj = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=8)
+        actual_bj = beijing_now()
+        self.assertLess(abs((actual_bj - expected_bj).total_seconds()), 5)
+
+        # Verify SQLite created_at / updated_at / locked_at & triggers all write UTC+8 matching beijing_now()
+        r_proj = self.client.post('/api/project/save', json={'code': 'BJ-TIME-01', 'system_name': '变桨系统'})
+        self.assertEqual(r_proj.status_code, 200)
+        data = r_proj.get_json()
+        pid = data['id']
+        created_dt = datetime.strptime(data['created_at'], '%Y-%m-%d %H:%M:%S')
+        updated_dt = datetime.strptime(data['updated_at'], '%Y-%m-%d %H:%M:%S')
+        self.assertLess(abs((created_dt - expected_bj).total_seconds()), 5)
+        self.assertLess(abs((updated_dt - expected_bj).total_seconds()), 5)
+
+        # Verify no 'localtime' remains in DB trigger definitions
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT name, sql FROM sqlite_master WHERE type='trigger'")
+        triggers = cur.fetchall()
+        self.assertGreaterEqual(len(triggers), 9)
+        for trg in triggers:
+            self.assertNotIn('localtime', (trg['sql'] or '').lower(), f"Trigger {trg['name']} still uses localtime")
+            self.assertIn('+8 hours', (trg['sql'] or '').lower())
+
+        # Verify freshly created project lease is NOT falsely expired
+        detail = self.client.get(f'/api/project/{pid}').get_json()
+        self.assertEqual(detail['is_locked'], 0)
+        self.assertEqual(beijing_now_str()[:10], expected_bj.strftime('%Y-%m-%d'))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

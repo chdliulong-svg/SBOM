@@ -6,6 +6,7 @@ from openpyxl.utils import get_column_letter
 from .database import get_db
 from .config import config
 from .exporter import format_pipe_multiline
+from .time_utils import beijing_now_str
 
 def parse_float_qty(val):
     """Safely parse a quantity value to float."""
@@ -374,7 +375,7 @@ def compare_projects(proj_a_id, proj_b_id, subsystem_filter='all'):
 
         result = {
             'success': True,
-            'compare_time': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'compare_time': beijing_now_str(),
             'subsystem_filter': sub_filter,
             'all_subsystem_names': all_sub_names,
             'project_a': {
@@ -829,7 +830,7 @@ def generate_procurement_excel(res):
     ws.merge_cells("A1:N1")
     ws.row_dimensions[1].height = 32
 
-    export_time = time.strftime('%Y-%m-%d %H:%M:%S')
+    export_time = beijing_now_str()
     ws['A2'] = f"基准机型: {proj_a['display_name']} ({proj_a['code']})   ->   目标技改机型: {proj_b['display_name']} ({proj_b['code']})   |   比对范围: {sub_title}   |   导出时间: {export_time}"
     ws['A2'].font = font_sub
     ws.merge_cells("A2:N2")
@@ -970,7 +971,7 @@ def generate_ecn_change_description(res):
     summary = res.get('summary', {})
     filter_sub = res.get('filter_subsystem', 'all')
     sub_title = "全部子系统 (整机汇总)" if filter_sub == 'all' else f"子系统: {filter_sub}"
-    export_time = time.strftime('%Y-%m-%d %H:%M:%S')
+    export_time = beijing_now_str()
 
     added_items = [it for it in items if it['status'] == 'added']
     removed_items = [it for it in items if it['status'] == 'removed']

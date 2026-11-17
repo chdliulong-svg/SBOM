@@ -21,6 +21,7 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from .config import DATA_DIR, config
+from .time_utils import beijing_now_str
 
 AUTH_FILE_PATH = os.path.join(DATA_DIR, 'auth.json')
 
@@ -114,8 +115,8 @@ def initialize_password():
         plain = _generate_plaintext_password()
         new_data = {
             'password_hash': generate_password_hash(plain),
-            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'created_at': beijing_now_str(),
+            'updated_at': beijing_now_str(),
             'note': '由系统首次启动自动生成，可在系统内修改口令，或在 config.ini [security] admin_password 中配置固定口令',
         }
         try:
@@ -155,7 +156,7 @@ def reset_password_file(new_password=None):
     new_password = (new_password or '').strip() or _generate_plaintext_password()
     data = _read_auth_file()
     data['password_hash'] = generate_password_hash(new_password)
-    data['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    data['updated_at'] = beijing_now_str()
     _write_auth_file(data)
     with _lock:
         _state['password_hash'] = data['password_hash']

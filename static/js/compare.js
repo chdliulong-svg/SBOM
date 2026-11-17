@@ -567,9 +567,10 @@
             if (tipEl) tipEl.textContent = '正在写入目标工程 ECN 记录...';
 
             try {
-                const nowStr = new Date().toISOString().slice(0, 10);
+                const nowStr = (typeof formatBeijingDate === 'function') ? formatBeijingDate() : new Date().toISOString().slice(0, 10);
+                const bjYear = (typeof getBeijingNowParts === 'function') ? getBeijingNowParts().year : new Date().getFullYear();
                 const postData = {
-                    ecn_no: `ECN-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+                    ecn_no: `ECN-${bjYear}-${Math.floor(1000 + Math.random() * 9000)}`,
                     change_desc: currentCompareEcnData.ecn_text.slice(0, 800),
                     changer: 'BOM对比系统自动生成',
                     change_date: nowStr

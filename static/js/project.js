@@ -137,9 +137,13 @@ function getMainFilteredProjects() {
             if (customTime) {
                 currentProjectData.updated_at = customTime;
             } else {
-                const d = new Date();
-                const pad = n => String(n).padStart(2, '0');
-                currentProjectData.updated_at = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                currentProjectData.updated_at = (typeof formatBeijingDateTime === 'function')
+                    ? formatBeijingDateTime()
+                    : (() => {
+                        const d = new Date();
+                        const pad = n => String(n).padStart(2, '0');
+                        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                    })();
             }
             renderProjectHeaderSummary(currentProjectData);
             const covUp = document.getElementById('cov-updated-at');
@@ -1188,7 +1192,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
             }
             document.getElementById('ecnModalChanger').value = defaultChanger;
 
-            const today = new Date().toISOString().split('T')[0];
+            const today = (typeof formatBeijingDate === 'function') ? formatBeijingDate() : new Date().toISOString().split('T')[0];
             document.getElementById('ecnModalChangeDate').value = today;
             document.getElementById('ecnModalChangeDesc').value = '';
 

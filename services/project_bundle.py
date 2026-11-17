@@ -7,6 +7,7 @@ from datetime import datetime
 from .database import get_db
 from .config import config
 from .file_utils import sanitize_asset_name, safe_path_under, IMAGES_DIR, MANUALS_DIR
+from .time_utils import beijing_now_iso
 
 def export_project_data(project_id):
     """
@@ -94,7 +95,7 @@ def export_project_data(project_id):
     bundle = {
         'format_version': '1.0',
         'generator': 'Wind Turbine Service BOM System',
-        'exported_at': datetime.now().isoformat(),
+        'exported_at': beijing_now_iso(),
         'project': {
             'code': project_info.get('code') or '',
             'name': project_info.get('name') or '',
@@ -390,7 +391,7 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
         project_id = int(target_project_id)
         # Update project info
         cursor.execute('''
-        UPDATE projects SET code = ?, name = ?, system_name = ?, category = ?, platform = ?, supplier = ?, model = ?, file_suffix = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
+        UPDATE projects SET code = ?, name = ?, system_name = ?, category = ?, platform = ?, supplier = ?, model = ?, file_suffix = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', '+8 hours')
         WHERE id = ?
         ''', (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company, project_id))
 
@@ -412,7 +413,7 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
 
         cursor.execute('''
         INSERT INTO projects (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'), datetime('now', '+8 hours'))
         ''', (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 

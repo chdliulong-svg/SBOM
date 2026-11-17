@@ -159,7 +159,7 @@ def init_db():
         is_active INTEGER DEFAULT 1,
         is_system INTEGER DEFAULT 0,
         description TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+        created_at TIMESTAMP DEFAULT (datetime('now', '+8 hours'))
     )
     ''')
 
@@ -189,8 +189,8 @@ def init_db():
         is_locked INTEGER DEFAULT 1,
         locked_by TEXT DEFAULT '',
         locked_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
-        updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')),
+        created_at TIMESTAMP DEFAULT (datetime('now', '+8 hours')),
+        updated_at TIMESTAMP DEFAULT (datetime('now', '+8 hours')),
         platform TEXT DEFAULT '',
         supplier TEXT DEFAULT '',
         model TEXT DEFAULT '',
@@ -291,7 +291,7 @@ def init_db():
         drawing_no TEXT DEFAULT '/',
         notes TEXT DEFAULT '',
         substitute TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT (datetime('now', '+8 hours')),
         FOREIGN KEY (parent_material_no) REFERENCES materials(material_no),
         FOREIGN KEY (child_material_no) REFERENCES materials(material_no)
     )
@@ -347,9 +347,9 @@ def init_db():
         cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT ''")
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_materials_category ON materials(category)')
     
-    # 补齐已有历史数据的创建时间与修改时间
-    cursor.execute("UPDATE projects SET created_at = datetime('now', 'localtime') WHERE created_at IS NULL OR created_at = ''")
-    cursor.execute("UPDATE projects SET updated_at = COALESCE(created_at, datetime('now', 'localtime')) WHERE updated_at IS NULL OR updated_at = ''")
+    # 补齐已有历史数据的创建时间与修改时间（统一采用北京时间 UTC+8）
+    cursor.execute("UPDATE projects SET created_at = datetime('now', '+8 hours') WHERE created_at IS NULL OR created_at = ''")
+    cursor.execute("UPDATE projects SET updated_at = COALESCE(created_at, datetime('now', '+8 hours')) WHERE updated_at IS NULL OR updated_at = ''")
     cursor.execute("UPDATE projects SET category = 'uncategorized' WHERE TRIM(COALESCE(system_name, '')) = ''")
     cursor.execute("UPDATE projects SET category = 'pitch' WHERE category IS NULL OR category = ''")
 
@@ -362,17 +362,29 @@ def init_db():
         target_id TEXT DEFAULT '',
         detail TEXT DEFAULT '',
         client_ip TEXT DEFAULT '',
-        created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
+        created_at TIMESTAMP DEFAULT (datetime('now', '+8 hours'))
     )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_operation_logs_created ON operation_logs(created_at DESC)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action)')
     conn.commit()
 
-    # 自动维护 projects.updated_at 的数据库级触发器
-    cursor.execute('DROP TRIGGER IF EXISTS trg_projects_update_touch')
+    # 自动维护 projects.updated_at 的数据库级触发器（强制重建以统一采用北京时间 datetime('now', '+8 hours')）
+    for trg_name in (
+        'trg_projects_update_touch',
+        'trg_subsystems_insert_touch',
+        'trg_subsystems_update_touch',
+        'trg_subsystems_delete_touch',
+        'trg_bom_items_insert_touch',
+        'trg_bom_items_update_touch',
+        'trg_bom_items_delete_touch',
+        'trg_signatures_touch',
+        'trg_ecn_records_touch',
+    ):
+        cursor.execute(f'DROP TRIGGER IF EXISTS {trg_name}')
+
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_projects_update_touch
+    CREATE TRIGGER trg_projects_update_touch
     AFTER UPDATE ON projects
     FOR EACH ROW
     WHEN (
@@ -389,77 +401,77 @@ def init_db():
         OLD.company IS NOT NEW.company
     ) AND OLD.updated_at IS NEW.updated_at
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.id;
+        UPDATE projects SET updated_at = datetime('now', '+8 hours') WHERE id = NEW.id;
     END;
     ''')
 
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_subsystems_insert_touch
+    CREATE TRIGGER trg_subsystems_insert_touch
     AFTER INSERT ON subsystems
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+        UPDATE projects SET updated_at = datetime('now', '+8 hours') WHERE id = NEW.project_id;
     END;
     ''')
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_subsystems_update_touch
+    CREATE TRIGGER trg_subsystems_update_touch
     AFTER UPDATE ON subsystems
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+        UPDATE projects SET updated_at = datetime('now', '+8 hours') WHERE id = NEW.project_id;
     END;
     ''')
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_subsystems_delete_touch
+    CREATE TRIGGER trg_subsystems_delete_touch
     AFTER DELETE ON subsystems
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = OLD.project_id;
+        UPDATE projects SET updated_at = datetime('now', '+8 hours') WHERE id = OLD.project_id;
     END;
     ''')
 
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_bom_items_insert_touch
+    CREATE TRIGGER trg_bom_items_insert_touch
     AFTER INSERT ON bom_items
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime')
+        UPDATE projects SET updated_at = datetime('now', '+8 hours')
         WHERE id = (SELECT project_id FROM subsystems WHERE id = NEW.subsystem_id);
     END;
     ''')
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_bom_items_update_touch
+    CREATE TRIGGER trg_bom_items_update_touch
     AFTER UPDATE ON bom_items
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime')
+        UPDATE projects SET updated_at = datetime('now', '+8 hours')
         WHERE id = (SELECT project_id FROM subsystems WHERE id = NEW.subsystem_id);
     END;
     ''')
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_bom_items_delete_touch
+    CREATE TRIGGER trg_bom_items_delete_touch
     AFTER DELETE ON bom_items
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime')
+        UPDATE projects SET updated_at = datetime('now', '+8 hours')
         WHERE id = (SELECT project_id FROM subsystems WHERE id = OLD.subsystem_id);
     END;
     ''')
 
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_signatures_touch
+    CREATE TRIGGER trg_signatures_touch
     AFTER UPDATE ON signatures
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+        UPDATE projects SET updated_at = datetime('now', '+8 hours') WHERE id = NEW.project_id;
     END;
     ''')
     cursor.execute('''
-    CREATE TRIGGER IF NOT EXISTS trg_ecn_records_touch
+    CREATE TRIGGER trg_ecn_records_touch
     AFTER UPDATE ON ecn_records
     FOR EACH ROW
     BEGIN
-        UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = NEW.project_id;
+        UPDATE projects SET updated_at = datetime('now', '+8 hours') WHERE id = NEW.project_id;
     END;
     ''')
     conn.commit()
@@ -583,7 +595,7 @@ def init_db():
                 is_locked INTEGER DEFAULT 1,
                 locked_by TEXT DEFAULT '',
                 locked_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT (datetime('now', '+8 hours')),
                 platform TEXT DEFAULT ''
             )
             ''')
@@ -742,7 +754,7 @@ def touch_project_updated(project_id, cursor=None):
         cursor = conn.cursor()
         need_commit = True
     try:
-        cursor.execute("UPDATE projects SET updated_at = datetime('now', 'localtime') WHERE id = ?", (project_id,))
+        cursor.execute("UPDATE projects SET updated_at = datetime('now', '+8 hours') WHERE id = ?", (project_id,))
         if need_commit:
             conn.commit()
     except Exception as ex:

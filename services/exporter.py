@@ -13,6 +13,7 @@ from openpyxl.utils.units import pixels_to_EMU
 from PIL import Image as PILImage
 from .database import get_db, find_template_path
 from .config import config
+from .time_utils import beijing_now
 from services.logging_setup import get_logger
 
 logger = get_logger('sbom.exporter')
@@ -244,7 +245,7 @@ def export_project_sbom(project_id, output_path, embed_manuals=False, manual_rel
     # A7: 公司名称
     ws_cover['A7'].value = project['company'] or '上海电气风电集团股份有限公司'
     # Row 8: 年 / 月 (C8=年, E8=月)
-    now = datetime.now()
+    now = beijing_now()
     ws_cover['C8'].value = now.year
     ws_cover['E8'].value = now.month
     # A11: 表单编号

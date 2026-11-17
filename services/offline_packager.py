@@ -18,6 +18,7 @@ import re
 from datetime import datetime
 from .database import get_db
 from .exporter import export_project_sbom
+from .time_utils import beijing_now_str
 from services.logging_setup import get_logger
 
 logger = get_logger('sbom.offline_packager')
@@ -40,7 +41,7 @@ def build_offline_html(project_info, materials_summary, items_list):
     proj_title = project_info.get('system_name') or project_info.get('name') or project_info.get('code') or f'{cat_name} Service BOM'
     proj_code = project_info.get('code') or '-'
     doc_no = project_info.get('doc_no') or '-'
-    export_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    export_time = beijing_now_str()
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -502,7 +503,7 @@ def generate_offline_package(project_id):
     offline_html = build_offline_html(project_info, {}, html_items)
 
     # Build README text
-    timestamp_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    timestamp_str = beijing_now_str()
     readme_text = f"""========================================================================
 {project_info.get("category_name") or ("变流器系统" if project_info.get("category") == "converter" else "变桨系统")}备件 Service BOM 现场离线运维工程资料包
 ========================================================================
@@ -539,7 +540,7 @@ def generate_offline_package(project_id):
     # Assemble ZIP directly to disk file (零内存开销，彻底防止局域网并发导出时 OOM 崩溃)
     out_dir = os.path.join(BASE_DIR, 'exports')
     os.makedirs(out_dir, exist_ok=True)
-    zip_filename = f"SBOM_离线运维资料包_{safe_code}_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    zip_filename = f"SBOM_离线运维资料包_{safe_code}_{safe_name}_{beijing_now_str('%Y%m%d_%H%M%S')}.zip"
     zip_path = os.path.join(out_dir, zip_filename)
 
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:

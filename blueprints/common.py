@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from flask import has_request_context, request
 from services.database import get_db
+from services.time_utils import beijing_now
 
 from services.file_utils import (
     BASE_DIR,
@@ -53,7 +54,7 @@ def check_and_expire_lease(cursor, project_row):
     try:
         t_str = str(locked_at_str).split('.')[0]
         locked_time = datetime.strptime(t_str, '%Y-%m-%d %H:%M:%S')
-        now = datetime.now()
+        now = beijing_now()
         if (now - locked_time).total_seconds() > 180:
             cursor.execute("UPDATE projects SET is_locked = 1, locked_by = '', locked_at = NULL WHERE id = ?", (project_row['id'],))
             if hasattr(cursor, 'connection') and cursor.connection:

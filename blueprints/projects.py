@@ -20,6 +20,7 @@ from services.offline_packager import generate_offline_package
 from services.backup_manager import create_backup_snapshot
 from services.logging_setup import get_logger, new_error_id
 from services.file_utils import safe_path_under, safe_upload_temp_name
+from services.time_utils import beijing_now_str
 from services.project_bundle import (
     create_project_bundle_file,
     inspect_saved_project_file,
@@ -178,7 +179,7 @@ def heartbeat_project_api(project_id):
                 'locked_by': curr_user,
                 'error': f'编辑权已被 [{curr_user}] 接管'
             })
-        cursor.execute("UPDATE projects SET locked_at = datetime('now', 'localtime') WHERE id = ?", (project_id,))
+        cursor.execute("UPDATE projects SET locked_at = datetime('now', '+8 hours') WHERE id = ?", (project_id,))
         conn.commit()
         return jsonify({'success': True, 'renewed': True, 'taken_over': False, 'locked_by': curr_user or client_tag})
     return jsonify({'success': True, 'renewed': False, 'taken_over': False, 'is_locked': curr_locked})
@@ -216,7 +217,7 @@ def unlock_project_api(project_id):
         with write_transaction(conn):
             cursor.execute('''
                 UPDATE projects 
-                SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime')
+                SET is_locked = 0, locked_by = ?, locked_at = datetime('now', '+8 hours')
                 WHERE id = ?
             ''', (client_tag, project_id))
 
@@ -315,7 +316,7 @@ def save_project():
                 cursor.execute('''
                 UPDATE projects SET
                     code=?, name=?, system_name=?, category=?, platform=?, supplier=?, model=?, doc_no=?, ecn_no=?, form_no=?, company=?,
-                    updated_at=datetime('now', 'localtime')
+                    updated_at=datetime('now', '+8 hours')
                 WHERE id=?
                 ''', (code, name, system_name, category, platform, supplier, model,
                       data.get('doc_no', ''), data.get('ecn_no', ''),
@@ -334,7 +335,7 @@ def save_project():
                 client_tag = get_client_identity()
                 cursor.execute('''
                 INSERT INTO projects (code, name, system_name, category, platform, supplier, model, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', 'localtime'), datetime('now', 'localtime'), datetime('now', 'localtime'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now', '+8 hours'), datetime('now', '+8 hours'), datetime('now', '+8 hours'))
                 ''', (code, name, system_name, category, (data.get('platform') or '').strip(), supplier, model,
                       data.get('doc_no', ''), data.get('ecn_no', ''),
                       data.get('form_no', config.form_no_default), data.get('company', config.company_default),
@@ -401,7 +402,7 @@ def rename_project():
         final_suffix = (data.get('file_suffix') or '').strip() if 'file_suffix' in data else ''
 
         cursor.execute('''
-        UPDATE projects SET name = ?, system_name = ?, code = ?, category = ?, file_suffix = ?, updated_at = datetime('now', 'localtime') WHERE id = ?
+        UPDATE projects SET name = ?, system_name = ?, code = ?, category = ?, file_suffix = ?, updated_at = datetime('now', '+8 hours') WHERE id = ?
         ''', (final_name, new_system_name, final_code, final_category, final_suffix, project_id))
         cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
         p_time = cursor.fetchone()
@@ -498,7 +499,7 @@ def copy_project():
 
         cursor.execute('''
             INSERT INTO projects (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'), datetime('now', '+8 hours'))
         ''', (user_code, user_name, user_system_name, user_category, orig_platform, orig_supplier, orig_model, new_file_suffix,
               orig_dict.get('doc_no') or '', orig_dict.get('ecn_no') or '',
               orig_dict.get('form_no') or config.form_no_default, orig_dict.get('company') or config.company_default))
@@ -531,7 +532,7 @@ def copy_project():
             ''', (new_project_id, e['ecn_no'] or '', e['change_pos'] or '', e['change_desc'] or '', e['changer'] or '', e['change_date'] or ''))
 
         client_tag = get_client_identity()
-        cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, new_project_id))
+        cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', '+8 hours') WHERE id = ?", (client_tag, new_project_id))
 
         copied_display = build_bom_file_title({
             **orig_dict,
@@ -698,7 +699,7 @@ def batch_export_bundle():
                 logger.error("Error packaging project %s for batch export: %s", p['id'], e)
 
     zip_buffer.seek(0)
-    zip_filename = f"Service_BOM_Projects_Batch_{time.strftime('%Y%m%d_%H%M%S')}.zip"
+    zip_filename = f"Service_BOM_Projects_Batch_{beijing_now_str('%Y%m%d_%H%M%S')}.zip"
     return send_file(
         zip_buffer,
         mimetype='application/zip',
@@ -1248,7 +1249,7 @@ def execute_open_project_api():
             conn = get_db()
             cursor = conn.cursor()
             client_tag = get_client_identity()
-            cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, opened_id))
+            cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', '+8 hours') WHERE id = ?", (client_tag, opened_id))
             conn.commit()
             record_operation_log('open_project_file', 'project', opened_id, {'action': action, 'file': temp_filename})
 
@@ -1532,7 +1533,7 @@ def export_excel(project_id):
             zip_disk_name = f"{safe_name}_含技术手册_{unique_tag}.zip"
             zip_path = os.path.join(EXPORT_DIR, zip_disk_name)
 
-            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now_str = beijing_now_str()
             readme_content = f"""========================================================================
 {cat_title} Service BOM 导出资料包（含技术手册）查阅说明
 ========================================================================

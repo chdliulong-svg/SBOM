@@ -16,12 +16,14 @@ import re
 import json
 import zipfile
 import sqlite3
+import time
 import datetime
 import shutil
 import threading
 from flask import g, has_request_context
 from .database import get_db, _create_connection
 from .config import PROJECT_ROOT, config
+from .time_utils import beijing_now
 
 BACKUP_DIR = os.path.join(PROJECT_ROOT, 'backups')
 ASSETS_DIR = os.path.join(PROJECT_ROOT, 'assets')
@@ -154,7 +156,7 @@ def create_backup_snapshot(reason='manual', note='', max_keep=MAX_KEEP_DB):
     返回快照元数据记录（kind='db'）。
     """
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    now = datetime.datetime.now()
+    now = beijing_now()
     timestamp_str = now.strftime('%Y%m%d_%H%M%S')
     clean_reason = re.sub(r'[^a-zA-Z0-9_]', '_', reason)[:25]
     filename = f"snapshot_{timestamp_str}_{clean_reason}.db"
@@ -214,7 +216,7 @@ def create_asset_archive(reason='manual', note='', standalone=True):
     if file_count == 0:
         return None
 
-    now = datetime.datetime.now()
+    now = beijing_now()
     timestamp_str = now.strftime('%Y%m%d_%H%M%S')
     clean_reason = re.sub(r'[^a-zA-Z0-9_]', '_', reason)[:25]
     filename = f"assets_{timestamp_str}_{clean_reason}.zip"
@@ -308,7 +310,7 @@ def ensure_daily_backup():
         pass
 
     try:
-        today = datetime.datetime.now().strftime('%Y-%m-%d')
+        today = beijing_now().strftime('%Y-%m-%d')
         with _manifest_lock:
             manifest = load_manifest()
             for item in manifest:
@@ -322,7 +324,7 @@ def ensure_daily_backup():
             os.close(fd)
         except FileExistsError:
             try:
-                if (datetime.datetime.now().timestamp() - os.path.getmtime(lock_file)) < 180:
+                if (time.time() - os.path.getmtime(lock_file)) < 180:
                     return None
                 os.remove(lock_file)
                 fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

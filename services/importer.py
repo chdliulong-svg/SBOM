@@ -123,7 +123,7 @@ def _import_excel_sbom_inner(conn, cursor, excel_path, category='', platform='')
         # Insert project
         cursor.execute('''
         INSERT INTO projects (code, name, system_name, category, platform, doc_no, ecn_no, form_no, company, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'), datetime('now', '+8 hours'))
         ''', (project_code, project_name, system_name, final_category, (platform or ''), doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 

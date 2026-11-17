@@ -9,6 +9,7 @@ Service BOM - 统一日志基础设施
 import os
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 
 from .config import LOG_DIR
@@ -31,6 +32,7 @@ def setup_logging(level=logging.INFO):
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    fmt.converter = lambda sec: (datetime.fromtimestamp(sec, timezone.utc) + timedelta(hours=8)).timetuple()
 
     file_handler = RotatingFileHandler(
         os.path.join(LOG_DIR, 'app.log'),

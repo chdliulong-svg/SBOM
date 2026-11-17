@@ -154,6 +154,35 @@
         }
 
 
+        // 统一北京时间 (UTC+8) 格式化工具，不依赖浏览器本地时区
+        function getBeijingNowParts(tsMs = Date.now()) {
+            const bj = new Date(tsMs + 8 * 3600000);
+            const pad = n => String(n).padStart(2, '0');
+            return {
+                year: String(bj.getUTCFullYear()),
+                month: pad(bj.getUTCMonth() + 1),
+                day: pad(bj.getUTCDate()),
+                hour: pad(bj.getUTCHours()),
+                minute: pad(bj.getUTCMinutes()),
+                second: pad(bj.getUTCSeconds())
+            };
+        }
+
+        function formatBeijingDateTime(tsMs = Date.now()) {
+            const p = getBeijingNowParts(tsMs);
+            return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+        }
+
+        function formatBeijingDate(tsMs = Date.now()) {
+            const p = getBeijingNowParts(tsMs);
+            return `${p.year}-${p.month}-${p.day}`;
+        }
+
+        function formatBeijingCompactTimestamp(tsMs = Date.now()) {
+            const p = getBeijingNowParts(tsMs);
+            return `${p.year}${p.month}${p.day}_${p.hour}${p.minute}`;
+        }
+
         function openModal(id) { document.getElementById(id).classList.add('show'); }
         function closeModal(id) {
             document.getElementById(id).classList.remove('show');
