@@ -17,7 +17,7 @@ def _safe_sst(sst, raw_val):
     return raw_val or ''
 
 
-def import_excel_sbom(excel_path, category='pitch', platform=''):
+def import_excel_sbom(excel_path, category='', platform=''):
     """
     Imports a complete SBOM Excel workbook into the database and extracts media assets.
     """
@@ -36,7 +36,7 @@ def import_excel_sbom(excel_path, category='pitch', platform=''):
                 pass
 
 
-def _import_excel_sbom_inner(conn, cursor, excel_path, category='pitch', platform=''):
+def _import_excel_sbom_inner(conn, cursor, excel_path, category='', platform=''):
     with zipfile.ZipFile(excel_path, 'r') as z:
         # Load shared strings
         sst = []
@@ -116,14 +116,15 @@ def _import_excel_sbom_inner(conn, cursor, excel_path, category='pitch', platfor
                             form_no = val
 
         if not system_name:
-            base_title = os.path.splitext(os.path.basename(excel_path))[0]
-            system_name = f"{project_code} 系统 SBOM" if project_code else f"{base_title} SBOM"
+            final_category = 'uncategorized'
+        else:
+            final_category = (category or ('converter' if '变流' in system_name else 'pitch')).strip().lower()
 
         # Insert project
         cursor.execute('''
         INSERT INTO projects (code, name, system_name, category, platform, doc_no, ecn_no, form_no, company, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (project_code, project_name, system_name, (category or 'pitch'), (platform or ''), doc_no, ecn_no, form_no, company))
+        ''', (project_code, project_name, system_name, final_category, (platform or ''), doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 
         # 2. Parse 签字页与更改页 (Signatures & ECN Records for V2)

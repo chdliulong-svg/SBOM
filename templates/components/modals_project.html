@@ -271,10 +271,14 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label" style="font-size: 13px;">
-                            <span>部套/系统名称 (System) <span style="color: #ef4444;">*</span>:</span>
+                        <label class="form-label" style="font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>部套/系统名称 (System):</span>
+                            <span style="font-size: 11px; color: #64748b; font-weight: normal;">留空时将自动归入「未分类」</span>
                         </label>
-                        <input id="new-proj-system" class="form-input" style="font-size: 13px; padding: 7px 10px;" value="变桨系统" placeholder="例如: 变桨系统 或 变流器系统" autocomplete="off" oninput="updateNewProjectModalPreview()" onkeydown="if(event.key==='Enter') submitNewProject()">
+                        <input id="new-proj-system" class="form-input" style="font-size: 13px; padding: 7px 10px;" value="变桨系统" placeholder="例如: 变桨系统 或 变流器系统（留空则自动归入“未分类”）" autocomplete="off" oninput="onNewProjectSystemInput()" onkeydown="if(event.key==='Enter') submitNewProject()">
+                        <div id="new-proj-uncat-hint" style="display: none; margin-top: 4px; font-size: 11.5px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 4px 8px;">
+                            当前未填写部套/系统名称，创建后将自动归入【未分类】。
+                        </div>
                     </div>
 
                     <!-- 动态生成预览卡片 -->

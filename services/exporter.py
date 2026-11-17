@@ -58,7 +58,7 @@ def clean_subsystem_part_name(system_name, supplier="", code="", platform="", mo
     从可能带有冗余前缀后缀的文本中提取纯净的部套/零部件名称。
     例如 '变桨轴承润滑系统'、'变流器系统'、'机侧变流器'、'变桨系统SBOM_电力电子' -> '变桨系统' / '变流器系统'
     """
-    fallback = default_part_name or '变桨轴承润滑系统'
+    fallback = '变桨轴承润滑系统' if default_part_name is None else default_part_name
     s = (system_name or '').strip().strip('_ -')
     if not s:
         return fallback
@@ -108,9 +108,15 @@ def extract_project_components(project, sub=None, level1_model=None):
     sub = sub or {}
 
     category = (project.get('category') or '').strip().lower()
-    default_fallback_name = '变流器系统' if category == 'converter' else ('变桨系统' if category == 'pitch' else '变桨轴承润滑系统')
-    if '变流' in (project.get('system_name') or '') or '变流' in (project.get('name') or ''):
+    raw_sys_explicit = (project.get('system_name') or '').strip()
+    if category == 'uncategorized' and not raw_sys_explicit:
+        default_fallback_name = ''
+    elif category == 'converter' or '变流' in raw_sys_explicit or '变流' in (project.get('name') or ''):
         default_fallback_name = '变流器系统'
+    elif category == 'pitch':
+        default_fallback_name = '变桨系统'
+    else:
+        default_fallback_name = ''
 
     code = (project.get('code') or '').strip()
     platform = (project.get('platform') or '').strip()
@@ -123,7 +129,7 @@ def extract_project_components(project, sub=None, level1_model=None):
             sub_supplier = sname[:-4].strip()
 
     supplier = sub_supplier or (project.get('supplier') or '').strip()
-    raw_sys = (project.get('system_name') or '').strip() or ((project.get('name') or '').strip() if project.get('name') != '风力发电机组' else '') or default_fallback_name
+    raw_sys = raw_sys_explicit or ((project.get('name') or '').strip() if project.get('name') != '风力发电机组' else '') or default_fallback_name
 
     if not supplier:
         m = re.search(r'SBOM[_\s]*(.*?)$', raw_sys, flags=re.IGNORECASE)
@@ -154,12 +160,15 @@ def build_cover_file_title(project, level1_model=None):
 def build_bom_file_title(project, sub=None, level1_model=None):
     """
     生成 BOM 清单页的文件名（Cell I2），格式为：
-    平台/机型 + 供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）
+    平台/机型 + 供应商名称 + 部套名称 + SBOM + 型号（若无型号可省略）+ 可选副本后缀
     例如：EW6.25-220盘古变桨轴承润滑系统SBOM_40116237600
     """
+    if project and not isinstance(project, dict):
+        project = dict(project)
     prefix_plat_code, supplier, part_name, model = extract_project_components(project, sub=sub, level1_model=level1_model)
     model_suffix = f"_{model}" if model else ""
-    return f"{prefix_plat_code}{supplier}{part_name}SBOM{model_suffix}"
+    file_suffix = ((project or {}).get('file_suffix') or '').strip()
+    return f"{prefix_plat_code}{supplier}{part_name}SBOM{model_suffix}{file_suffix}"
 
 
 def export_project_sbom(project_id, output_path, embed_manuals=False, manual_relative_dir='manuals'):

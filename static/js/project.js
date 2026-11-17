@@ -6,9 +6,17 @@ let currentMainPlatform = 'all';
 let allMainProjectsCache = [];
 let allMainCategoriesCache = [
     { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统', icon: '' },
-    { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' }
+    { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' },
+    { code: 'uncategorized', name: '未分类', default_system_name: '', icon: '' }
 ];
 let isProjectMetadataDirty = false;
+
+function getProjectEffectiveCategory(p) {
+    if (!p) return 'uncategorized';
+    const sys = (p.system_name || '').trim();
+    if (!sys) return 'uncategorized';
+    return (p.category || 'pitch').toLowerCase();
+}
 
 function setProjectDirty(dirty) {
     isProjectMetadataDirty = !!dirty && !!(currentProjectData && currentProjectData.is_locked != 1);
@@ -33,7 +41,7 @@ function handleMainProjectSelectChange(val) {
 }
 
 function initProjectDirtyListeners() {
-    const coverFormIds = ['cov-code', 'cov-platform', 'cov-supplier', 'cov-model', 'cov-name', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-form', 'cov-company'];
+    const coverFormIds = ['cov-code', 'cov-platform', 'cov-supplier', 'cov-model', 'cov-name', 'cov-category', 'cov-system', 'cov-doc', 'cov-ecn', 'cov-form', 'cov-company'];
     const sigIds = [
         'sig-author-name', 'sig-author-date',
         'sig-reviewer-name', 'sig-reviewer-date',
@@ -55,7 +63,7 @@ function initProjectDirtyListeners() {
 function getMainFilteredProjects() {
     let list = allMainProjectsCache || [];
     if (currentMainCategory && currentMainCategory !== 'all') {
-        list = list.filter(p => (p.category || 'pitch').toLowerCase() === currentMainCategory.toLowerCase());
+        list = list.filter(p => getProjectEffectiveCategory(p) === currentMainCategory.toLowerCase());
     }
     if (currentMainPlatform && currentMainPlatform !== 'all') {
         list = list.filter(p => ((p.platform || '').trim()) === currentMainPlatform);
@@ -149,14 +157,15 @@ function renderMainCategoryNav() {
     if (!allMainCategoriesCache || allMainCategoriesCache.length === 0) {
         allMainCategoriesCache = [
             { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统', icon: '' },
-            { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' }
+            { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' },
+            { code: 'uncategorized', name: '未分类', default_system_name: '', icon: '' }
         ];
     }
 
     const total = allMainProjectsCache.length;
     const counts = {};
     allMainProjectsCache.forEach(p => {
-        const cat = (p.category || 'pitch').toLowerCase();
+        const cat = getProjectEffectiveCategory(p);
         counts[cat] = (counts[cat] || 0) + 1;
     });
 
@@ -197,7 +206,7 @@ function renderMainPlatformOptions() {
     // 仅基于当前选中的大分类统计可用机型平台
     const catProjects = (currentMainCategory === 'all')
         ? allMainProjectsCache
-        : allMainProjectsCache.filter(p => (p.category || 'pitch').toLowerCase() === currentMainCategory.toLowerCase());
+        : allMainProjectsCache.filter(p => getProjectEffectiveCategory(p) === currentMainCategory.toLowerCase());
 
     const platformCounts = {};
     catProjects.forEach(p => {
@@ -273,7 +282,7 @@ async function switchMainCategory(catCode) {
 
     const catFiltered = (currentMainCategory === 'all')
         ? allMainProjectsCache
-        : allMainProjectsCache.filter(p => (p.category || 'pitch').toLowerCase() === currentMainCategory);
+        : allMainProjectsCache.filter(p => getProjectEffectiveCategory(p) === currentMainCategory);
     const currentInCat = catFiltered.some(p => p.id == currentProjectId);
     if (!currentInCat && !confirmDiscardProjectChanges()) {
         currentMainCategory = prevCat;
@@ -412,12 +421,13 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     }
                     
                     // Fill cover form
+                    renderCoverCategoryOptions(getProjectEffectiveCategory(data));
                     document.getElementById('cov-code').value = data.code || '';
                     if (document.getElementById('cov-platform')) document.getElementById('cov-platform').value = data.platform || '';
                     if (document.getElementById('cov-supplier')) document.getElementById('cov-supplier').value = data.supplier || '';
                     if (document.getElementById('cov-model')) document.getElementById('cov-model').value = data.model || '';
                     document.getElementById('cov-name').value = data.name || '风力发电机组';
-                    document.getElementById('cov-system').value = data.system_name || '';
+                    renderCoverSystemOptions(data.system_name || '');
                     document.getElementById('cov-doc').value = data.doc_no || '';
                     document.getElementById('cov-ecn').value = data.ecn_no || '';
                     document.getElementById('cov-form').value = data.form_no || '';
@@ -566,7 +576,7 @@ async function refreshProjectSelectOnly(selectedId = null) {
             }
 
             // Cover Form inputs and save button
-            ['cov-code', 'cov-platform', 'cov-supplier', 'cov-system', 'cov-model', 'cov-name', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
+            ['cov-code', 'cov-platform', 'cov-supplier', 'cov-category', 'cov-system', 'cov-model', 'cov-name', 'cov-doc', 'cov-ecn', 'cov-company'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.disabled = isLocked;
             });
@@ -835,11 +845,17 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 const supplierEl = document.getElementById('cov-supplier');
                 const modelEl = document.getElementById('cov-model');
                 const nameEl = document.getElementById('cov-name');
+                const categoryEl = document.getElementById('cov-category');
                 const systemEl = document.getElementById('cov-system');
                 const docEl = document.getElementById('cov-doc');
                 const ecnEl = document.getElementById('cov-ecn');
                 const formEl = document.getElementById('cov-form');
                 const companyEl = document.getElementById('cov-company');
+
+                const rawSys = systemEl ? systemEl.value.trim() : (currentProjectData.system_name || '').trim();
+                const sysVal = (rawSys === '__custom__') ? '' : rawSys;
+                const chosenCat = categoryEl ? (categoryEl.value || '').trim().toLowerCase() : (currentProjectData.category || 'pitch');
+                const finalCat = sysVal ? (chosenCat || 'pitch') : 'uncategorized';
 
                 const payload = {
                     id: currentProjectId,
@@ -848,9 +864,9 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     supplier: supplierEl ? supplierEl.value.trim() : (currentProjectData.supplier || ''),
                     model: modelEl ? modelEl.value.trim() : (currentProjectData.model || ''),
                     name: (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : (nameEl ? '' : (currentProjectData.name || '风力发电机组')),
-                    system_name: systemEl ? systemEl.value.trim() : (currentProjectData.system_name || ''),
+                    system_name: sysVal,
 
-                    category: (currentProjectData.category || 'pitch'),
+                    category: finalCat,
                     doc_no: docEl ? docEl.value.trim() : (currentProjectData.doc_no || ''),
                     ecn_no: ecnEl ? ecnEl.value.trim() : (currentProjectData.ecn_no || ''),
                     form_no: (formEl && formEl.value.trim()) ? formEl.value.trim() : (formEl ? '' : (currentProjectData.form_no || 'FDJL-JS-037')),
@@ -898,9 +914,12 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 if (currentProjectData) {
                     Object.assign(currentProjectData, payload);
                     if (res) {
+                        if (res.category) currentProjectData.category = res.category;
                         if (res.updated_at) currentProjectData.updated_at = res.updated_at;
                         if (res.created_at) currentProjectData.created_at = res.created_at;
                     }
+                    renderCoverCategoryOptions(getProjectEffectiveCategory(currentProjectData));
+                    renderCoverSystemOptions(currentProjectData.system_name || '');
                 }
                 renderProjectHeaderSummary(currentProjectData);
                 const covUp = document.getElementById('cov-updated-at');
@@ -926,11 +945,129 @@ async function refreshProjectSelectOnly(selectedId = null) {
             await saveCurrentProjectToDatabase();
         }
 
+        // --- 封面所属系统分类与部套/系统名称联动 ---
+        let lastCoverSystemValue = '';
+
+        function renderCoverCategoryOptions(selectedCat = 'pitch') {
+            const catEl = document.getElementById('cov-category');
+            if (!catEl) return;
+            const list = (allMainCategoriesCache && allMainCategoriesCache.length > 0)
+                ? allMainCategoriesCache
+                : [
+                    { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统' },
+                    { code: 'converter', name: '变流器系统', default_system_name: '变流器系统' },
+                    { code: 'uncategorized', name: '未分类', default_system_name: '' }
+                ];
+            catEl.innerHTML = list.map(c =>
+                `<option value="${escapeHtml(c.code)}">${escapeHtml(c.name)}</option>`
+            ).join('');
+            const target = (selectedCat || 'uncategorized').toLowerCase();
+            if (Array.from(catEl.options).some(o => o.value === target)) {
+                catEl.value = target;
+            }
+        }
+
+        function renderCoverSystemOptions(selectedSystem = '') {
+            const sysEl = document.getElementById('cov-system');
+            if (!sysEl) return;
+
+            const list = (allMainCategoriesCache && allMainCategoriesCache.length > 0)
+                ? allMainCategoriesCache
+                : [
+                    { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统' },
+                    { code: 'converter', name: '变流器系统', default_system_name: '变流器系统' },
+                    { code: 'uncategorized', name: '未分类', default_system_name: '' }
+                ];
+
+            const optionMap = new Map();
+            list.forEach(c => {
+                const code = (c.code || '').toLowerCase();
+                if (code === 'uncategorized') return;
+                const sysName = (c.default_system_name || c.name || '').trim();
+                if (sysName && !optionMap.has(sysName)) {
+                    optionMap.set(sysName, code);
+                }
+            });
+
+            const curVal = (selectedSystem || '').trim();
+            if (curVal && curVal !== '__custom__' && !optionMap.has(curVal)) {
+                const inferredCat = curVal.includes('变流') ? 'converter' : (curVal.includes('变桨') ? 'pitch' : '');
+                optionMap.set(curVal, inferredCat);
+            }
+
+            let html = '<option value="" data-category="uncategorized">-- 未填写（归入未分类） --</option>';
+            optionMap.forEach((catCode, sysName) => {
+                html += `<option value="${escapeHtml(sysName)}" data-category="${escapeHtml(catCode)}">${escapeHtml(sysName)}</option>`;
+            });
+            html += '<option value="__custom__">+ 自定义其他名称...</option>';
+
+            sysEl.innerHTML = html;
+            sysEl.value = (curVal && curVal !== '__custom__') ? curVal : '';
+            lastCoverSystemValue = sysEl.value;
+        }
+
+        function onCoverSystemChange() {
+            const sysEl = document.getElementById('cov-system');
+            const catEl = document.getElementById('cov-category');
+            if (!sysEl) return;
+
+            if (sysEl.value === '__custom__') {
+                const customInput = prompt('请输入自定义的部套/系统名称（留空则归为未分类）:', lastCoverSystemValue || '');
+                if (customInput === null) {
+                    sysEl.value = lastCoverSystemValue || '';
+                    return;
+                }
+                const trimmed = customInput.trim();
+                renderCoverSystemOptions(trimmed);
+                sysEl.value = trimmed;
+            }
+
+            const sysVal = sysEl.value.trim();
+            lastCoverSystemValue = sysVal;
+            const selectedOpt = sysEl.options[sysEl.selectedIndex];
+            const optCat = selectedOpt ? (selectedOpt.getAttribute('data-category') || '') : '';
+
+            if (catEl) {
+                if (!sysVal) {
+                    catEl.value = 'uncategorized';
+                } else if (optCat && Array.from(catEl.options).some(o => o.value === optCat)) {
+                    catEl.value = optCat;
+                } else if (catEl.value === 'uncategorized') {
+                    catEl.value = sysVal.includes('变流') ? 'converter' : 'pitch';
+                }
+            }
+            updateCoverTitlePreview();
+        }
+
+        function onCoverSystemInput() {
+            onCoverSystemChange();
+        }
+
+        function onCoverCategoryChange() {
+            const catEl = document.getElementById('cov-category');
+            const sysEl = document.getElementById('cov-system');
+            if (catEl && sysEl) {
+                if (catEl.value === 'uncategorized') {
+                    renderCoverSystemOptions('');
+                } else {
+                    const matched = (allMainCategoriesCache || []).find(c => c.code === catEl.value);
+                    const defName = (matched && (matched.default_system_name || matched.name))
+                        ? (matched.default_system_name || matched.name).trim()
+                        : (catEl.value === 'converter' ? '变流器系统' : '变桨系统');
+                    if (defName) {
+                        renderCoverSystemOptions(defName);
+                    }
+                }
+            }
+            updateCoverTitlePreview();
+        }
+
         // --- 实时更新封面与 BOM 页名称预览 ---
         function updateCoverTitlePreview() {
             const platEl = document.getElementById('cov-platform');
             const codeEl = document.getElementById('cov-code');
             const suppEl = document.getElementById('cov-supplier');
+            const catEl = document.getElementById('cov-category');
             const sysEl = document.getElementById('cov-system');
             const modEl = document.getElementById('cov-model');
 
@@ -938,18 +1075,24 @@ async function refreshProjectSelectOnly(selectedId = null) {
             const code = codeEl ? codeEl.value.trim() : '';
             const supplier = suppEl ? suppEl.value.trim() : '';
             let system = sysEl ? sysEl.value.trim() : '';
+            if (system === '__custom__') system = '';
             let model = modEl ? modEl.value.trim() : '';
+            const catCode = (catEl ? catEl.value : (currentProjectData?.category || '')).toLowerCase();
 
             if (!model && typeof currentProjectData !== 'undefined' && currentProjectData) {
                 model = currentProjectData.model || currentProjectData.root_model || '';
             }
 
-            const partName = cleanSubsystemPartName(system, supplier, code, platform, model);
+            const defaultFallback = (!system || catCode === 'uncategorized') ? '' : (catCode === 'converter' ? '变流器系统' : '变桨系统');
+            const partName = cleanSubsystemPartName(system, supplier, code, platform, model, defaultFallback);
             const modelSuffix = model ? `_${model}` : '';
             const coverTitle = `${supplier}${partName}SBOM${modelSuffix}`;
 
             const prefixPlatCode = code || platform || 'EW-DEFAULT';
-            const bomTitle = `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}`;
+            const fileSuffix = (typeof currentProjectData !== 'undefined' && currentProjectData && currentProjectData.file_suffix)
+                ? currentProjectData.file_suffix.trim()
+                : '';
+            const bomTitle = `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}${fileSuffix}`;
 
             const prevCov = document.getElementById('cov-preview-cover');
             const prevBom = document.getElementById('cov-preview-bom');
@@ -1449,22 +1592,24 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     const res = await safeFetchJson('/api/categories');
                     const categories = (res && res.categories) ? res.categories : [
                         { code: 'pitch', name: '变桨系统', default_system_name: '变桨系统', icon: '' },
-                        { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' }
+                        { code: 'converter', name: '变流器系统', default_system_name: '变流器系统', icon: '' },
+                        { code: 'uncategorized', name: '未分类', default_system_name: '', icon: '' }
                     ];
                     catEl.innerHTML = categories.map(c => 
-                        `<option value="${escapeHtml(c.code)}" data-default="${escapeHtml(c.default_system_name || c.name)}">${escapeHtml(c.name)}</option>`
+                        `<option value="${escapeHtml(c.code)}" data-default="${escapeHtml(c.default_system_name || '')}">${escapeHtml(c.name)}</option>`
                     ).join('');
                     const defaultCat = (currentMainCategory !== 'all') ? currentMainCategory : 'pitch';
                     catEl.value = defaultCat;
                     const selectedOpt = catEl.options[catEl.selectedIndex];
-                    const defName = selectedOpt ? selectedOpt.getAttribute('data-default') : (defaultCat === 'converter' ? '变流器系统' : '变桨系统');
-                    if (sysEl) sysEl.value = defName || '变桨系统';
+                    const defName = selectedOpt ? (selectedOpt.getAttribute('data-default') || '') : (defaultCat === 'converter' ? '变流器系统' : (defaultCat === 'uncategorized' ? '' : '变桨系统'));
+                    if (sysEl) sysEl.value = (defaultCat === 'uncategorized') ? '' : defName;
                 } catch (e) {
                     console.warn("加载系统分类失败", e);
                     if (sysEl) sysEl.value = '变桨系统';
                 }
             }
 
+            syncNewProjectUncatState();
             updateNewProjectModalPreview();
             openModal('newProjectModal');
             setTimeout(() => {
@@ -1473,24 +1618,59 @@ async function refreshProjectSelectOnly(selectedId = null) {
             }, 100);
         }
 
+        function syncNewProjectUncatState() {
+            const catEl = document.getElementById('new-proj-category');
+            const sysEl = document.getElementById('new-proj-system');
+            const hintEl = document.getElementById('new-proj-uncat-hint');
+            if (!sysEl) return;
+            const sysVal = sysEl.value.trim();
+            if (hintEl) hintEl.style.display = sysVal ? 'none' : 'block';
+            if (catEl && !sysVal) {
+                if (Array.from(catEl.options).some(o => o.value === 'uncategorized')) {
+                    catEl.value = 'uncategorized';
+                }
+            }
+        }
+
+        function onNewProjectSystemInput() {
+            const catEl = document.getElementById('new-proj-category');
+            const sysEl = document.getElementById('new-proj-system');
+            const sysVal = sysEl ? sysEl.value.trim() : '';
+            if (catEl) {
+                if (!sysVal) {
+                    if (Array.from(catEl.options).some(o => o.value === 'uncategorized')) {
+                        catEl.value = 'uncategorized';
+                    }
+                } else if (catEl.value === 'uncategorized') {
+                    catEl.value = sysVal.includes('变流') ? 'converter' : 'pitch';
+                }
+            }
+            syncNewProjectUncatState();
+            updateNewProjectModalPreview();
+        }
+
         function onNewProjectCategoryChange() {
             const catEl = document.getElementById('new-proj-category');
             const sysEl = document.getElementById('new-proj-system');
             if (!catEl || !sysEl) return;
-            const selectedOpt = catEl.options[catEl.selectedIndex];
-            const defName = selectedOpt ? selectedOpt.getAttribute('data-default') : '';
-            if (defName) {
-                sysEl.value = defName;
+            if (catEl.value === 'uncategorized') {
+                sysEl.value = '';
             } else {
-                sysEl.value = catEl.value === 'converter' ? '变流器系统' : '变桨系统';
+                const selectedOpt = catEl.options[catEl.selectedIndex];
+                const defName = selectedOpt ? (selectedOpt.getAttribute('data-default') || '') : '';
+                if (defName) {
+                    sysEl.value = defName;
+                } else {
+                    sysEl.value = catEl.value === 'converter' ? '变流器系统' : '变桨系统';
+                }
             }
+            syncNewProjectUncatState();
             updateNewProjectModalPreview();
         }
 
         function updateNewProjectModalPreview() {
             const catEl = document.getElementById('new-proj-category');
             const category = (catEl ? catEl.value.trim().toLowerCase() : 'pitch');
-            const defaultPart = category === 'converter' ? '变流器系统' : '变桨系统';
 
             const codeEl = document.getElementById('new-proj-code');
             const platEl = document.getElementById('new-proj-platform');
@@ -1501,14 +1681,18 @@ async function refreshProjectSelectOnly(selectedId = null) {
             const code = codeEl ? codeEl.value.trim() : '';
             const platform = platEl ? platEl.value.trim() : '';
             const supplier = suppEl ? suppEl.value.trim() : '';
-            const system = sysEl ? sysEl.value.trim() : defaultPart;
+            const system = sysEl ? sysEl.value.trim() : '';
             const model = modEl ? modEl.value.trim() : '';
 
+            const defaultPart = (!system || category === 'uncategorized') ? '' : (category === 'converter' ? '变流器系统' : '变桨系统');
             const partName = cleanSubsystemPartName(system, supplier, code, platform, model, defaultPart);
             const modelSuffix = model ? `_${model}` : '';
             const coverTitle = `${supplier}${partName}SBOM${modelSuffix}`;
             const prefixPlatCode = code || platform || 'EW-DEFAULT';
-            const bomTitle = `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}`;
+            const fileSuffix = (typeof currentProjectData !== 'undefined' && currentProjectData && currentProjectData.file_suffix)
+                ? currentProjectData.file_suffix.trim()
+                : '';
+            const bomTitle = `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}${fileSuffix}`;
 
             const prevCov = document.getElementById('new-proj-preview-cover');
             const prevBom = document.getElementById('new-proj-preview-bom');
@@ -1533,15 +1717,14 @@ async function refreshProjectSelectOnly(selectedId = null) {
             }
 
             const catEl = document.getElementById('new-proj-category');
-            const category = (catEl ? catEl.value.trim().toLowerCase() : 'pitch');
-            const defaultPart = category === 'converter' ? '变流器系统' : '变桨系统';
-
             const platEl = document.getElementById('new-proj-platform');
             const platform = platEl ? platEl.value.trim() : '';
             const suppEl = document.getElementById('new-proj-supplier');
             const supplier = suppEl ? suppEl.value.trim() : '';
             const sysEl = document.getElementById('new-proj-system');
-            const system_name = (sysEl && sysEl.value.trim()) ? sysEl.value.trim() : defaultPart;
+            const system_name = sysEl ? sysEl.value.trim() : '';
+            const rawCat = (catEl ? catEl.value.trim().toLowerCase() : 'pitch');
+            const category = system_name ? (rawCat || 'pitch') : 'uncategorized';
             const modEl = document.getElementById('new-proj-model');
             const model = modEl ? modEl.value.trim() : '';
 
@@ -1562,7 +1745,8 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 });
                 if (res && res.success) {
                     closeModal('newProjectModal');
-                    showToast(`新项目 "${system_name}" 创建成功！`, 'success');
+                    const toastTitle = system_name || `${code}（未分类）`;
+                    showToast(`新项目 "${toastTitle}" 创建成功！`, 'success');
                     loadProjects(res.id);
                 } else {
                     alert((res && res.error) || '创建项目失败，请重试');
@@ -1639,8 +1823,8 @@ async function refreshProjectSelectOnly(selectedId = null) {
                         if (res && res.updated_at) currentProjectData.updated_at = res.updated_at;
                     }
                     renderProjectHeaderSummary(currentProjectData);
-                    const covSys = document.getElementById('cov-system');
-                    if (covSys) covSys.value = newName;
+                    renderCoverSystemOptions(newName);
+                    renderCoverCategoryOptions(res.category || getProjectEffectiveCategory(currentProjectData));
                     const covUp = document.getElementById('cov-updated-at');
                     if (covUp && currentProjectData) covUp.value = currentProjectData.updated_at || '';
                     refreshProjectSelectOnly(currentProjectId);
@@ -1666,8 +1850,9 @@ async function refreshProjectSelectOnly(selectedId = null) {
                 alert('请先选择或打开一个项目！');
                 return;
             }
-            const displayName = (currentProjectData.system_name && currentProjectData.system_name !== '风力发电机组') ? currentProjectData.system_name : ((currentProjectData.name && currentProjectData.name !== '风力发电机组') ? currentProjectData.name : currentProjectData.code);
-            const defaultCopyName = `${displayName}_副本`;
+            const formattedTitle = (typeof formatProjectDisplayName === 'function' ? formatProjectDisplayName(currentProjectData) : '')
+                || ((currentProjectData.system_name && currentProjectData.system_name !== '风力发电机组') ? currentProjectData.system_name : ((currentProjectData.name && currentProjectData.name !== '风力发电机组') ? currentProjectData.name : currentProjectData.code));
+            const defaultCopyName = `${formattedTitle}_副本`;
             document.getElementById('copy-proj-name').value = defaultCopyName;
             openModal('copyProjectModal');
             setTimeout(() => {
@@ -1703,13 +1888,12 @@ async function refreshProjectSelectOnly(selectedId = null) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         id: currentProjectId,
-                        name: '风力发电机组',
-                        system_name: newName
+                        copy_name: newName
                     })
                 });
                 if (res && res.success) {
                     closeModal('copyProjectModal');
-                    showToast(res.message || `项目已成功复制为 "${newName}"！`, 'success');
+                    showToast(res.message || `项目已成功复制为 "${res.display_name || newName}"！`, 'success');
                     loadProjects(res.id);
                 } else {
                     alert((res && res.error) || '复制项目失败');

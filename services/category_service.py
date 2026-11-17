@@ -74,13 +74,17 @@ def get_category(code: str):
 
 
 def get_category_default_system_name(category_code: str) -> str:
-    """根据分类代码快速获取其新建工程时的默认部套/系统名称。"""
-    cat = get_category(category_code)
-    if cat and cat.get('default_system_name'):
-        return cat['default_system_name'].strip()
-    if cat and cat.get('name'):
-        return cat['name'].strip()
-    return '变桨系统' if category_code == 'pitch' else '变流器系统' if category_code == 'converter' else '部套系统'
+    """根据分类代码快速获取其新建工程时的默认部套/系统名称。未分类返回空字符串。"""
+    cat_code = (category_code or '').strip().lower()
+    if cat_code == 'uncategorized':
+        return ''
+    cat = get_category(cat_code)
+    if cat:
+        if cat.get('default_system_name'):
+            return cat['default_system_name'].strip()
+        if cat.get('name'):
+            return cat['name'].strip()
+    return '变桨系统' if cat_code == 'pitch' else '变流器系统' if cat_code == 'converter' else '部套系统'
 
 
 def create_category(code: str, name: str, short_name: str = '', default_system_name: str = '',

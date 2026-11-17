@@ -99,9 +99,11 @@ def export_project_data(project_id):
             'code': project_info.get('code') or '',
             'name': project_info.get('name') or '',
             'system_name': project_info.get('system_name') or '',
+            'category': (project_info.get('category') or ('pitch' if (project_info.get('system_name') or '').strip() else 'uncategorized')),
             'platform': project_info.get('platform') or '',
             'supplier': project_info.get('supplier') or '',
             'model': project_info.get('model') or '',
+            'file_suffix': project_info.get('file_suffix') or '',
             'doc_no': project_info.get('doc_no') or '',
             'ecn_no': project_info.get('ecn_no') or '',
             'form_no': project_info.get('form_no') or config.form_no_default,
@@ -130,17 +132,22 @@ def create_project_bundle_file(project_id, bundle_format='sbom'):
     system_name = (proj.get('system_name') or '').strip()
     name = (proj.get('name') or '').strip()
     code = (proj.get('code') or '').strip()
+    file_suffix = (proj.get('file_suffix') or '').strip()
 
-    if system_name and system_name != '风力发电机组':
-        raw_name = system_name
+    from .exporter import build_bom_file_title
+    bom_title = build_bom_file_title(proj)
+    if bom_title:
+        raw_name = bom_title
+    elif system_name and system_name != '风力发电机组':
+        raw_name = f"{system_name}{file_suffix}"
     elif name and name != '风力发电机组':
-        raw_name = name
+        raw_name = f"{name}{file_suffix}"
     elif system_name:
-        raw_name = system_name
+        raw_name = f"{system_name}{file_suffix}"
     elif code:
-        raw_name = code
+        raw_name = f"{code}{file_suffix}"
     else:
-        raw_name = 'Service_BOM'
+        raw_name = f"Service_BOM{file_suffix}"
 
     safe_name = "".join(c for c in raw_name if c not in r'\/:*?"<>|').strip() or "Service_BOM"
 
@@ -301,10 +308,15 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
     proj = bundle_data.get('project', {})
     name = (proj.get('name') or proj.get('code') or '已打开项目').strip()
     code = (proj.get('code') or name).strip()
-    system_name = (proj.get('system_name') or name).strip()
+    system_name = (proj.get('system_name') or '').strip()
+    if not system_name:
+        category = 'uncategorized'
+    else:
+        category = (proj.get('category') or ('converter' if '变流' in system_name else 'pitch')).strip().lower()
     platform = (proj.get('platform') or '').strip()
     supplier = (proj.get('supplier') or '').strip()
     model = (proj.get('model') or '').strip()
+    file_suffix = (proj.get('file_suffix') or '').strip()
     doc_no = proj.get('doc_no', '')
     ecn_no = proj.get('ecn_no', '')
     form_no = proj.get('form_no') or config.form_no_default
@@ -378,9 +390,9 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
         project_id = int(target_project_id)
         # Update project info
         cursor.execute('''
-        UPDATE projects SET code = ?, name = ?, system_name = ?, platform = ?, supplier = ?, model = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
+        UPDATE projects SET code = ?, name = ?, system_name = ?, category = ?, platform = ?, supplier = ?, model = ?, file_suffix = ?, doc_no = ?, ecn_no = ?, form_no = ?, company = ?, updated_at = datetime('now', 'localtime')
         WHERE id = ?
-        ''', (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, project_id))
+        ''', (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company, project_id))
 
         # Clear existing project details to be replaced
         cursor.execute('DELETE FROM signatures WHERE project_id = ?', (project_id,))
@@ -393,14 +405,15 @@ def import_project_from_file(file_path, action='new', target_project_id=None):
 
     else:
         # Create as new project (preserve code as-is; if system_name already exists, add disambiguation note)
-        cursor.execute('SELECT id FROM projects WHERE system_name = ?', (system_name,))
-        if cursor.fetchone():
-            system_name = f"{system_name} (已导入)"
+        if system_name:
+            cursor.execute('SELECT id FROM projects WHERE system_name = ?', (system_name,))
+            if cursor.fetchone():
+                system_name = f"{system_name} (已导入)"
 
         cursor.execute('''
-        INSERT INTO projects (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (code, name, system_name, platform, supplier, model, doc_no, ecn_no, form_no, company))
+        INSERT INTO projects (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company))
         project_id = cursor.lastrowid
 
     # 3. Insert signatures

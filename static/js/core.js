@@ -180,8 +180,8 @@
         }
 
         // 纯净部套名称提取辅助工具
-        function cleanSubsystemPartName(systemName, supplier = '', code = '', platform = '', model = '', defaultPartName = '') {
-            const fallback = defaultPartName || '变桨系统';
+        function cleanSubsystemPartName(systemName, supplier = '', code = '', platform = '', model = '', defaultPartName = '变桨系统') {
+            const fallback = (defaultPartName === undefined || defaultPartName === null) ? '变桨系统' : defaultPartName;
             let s = (systemName || '').trim().replace(/^[_\s-]+|[_\s-]+$/g, '');
             if (!s) return fallback;
 
@@ -253,14 +253,19 @@
             }
 
             const category = (p.category || '').toLowerCase();
-            let defaultPart = '变流器系统';
-            if (category === 'pitch' || (!category && !rawSys.includes('变流'))) {
+            let defaultPart = '';
+            if (category === 'uncategorized') {
+                defaultPart = '';
+            } else if (category === 'pitch' || (!category && rawSys && !rawSys.includes('变流'))) {
                 defaultPart = '变桨系统';
+            } else if (category === 'converter' || rawSys.includes('变流')) {
+                defaultPart = '变流器系统';
             }
             const partName = cleanSubsystemPartName(rawSys, supplier, code, platform, model, defaultPart);
             const modelSuffix = model ? `_${model}` : '';
+            const fileSuffix = (p.file_suffix || '').trim();
 
-            return `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}`;
+            return `${prefixPlatCode}${supplier}${partName}SBOM${modelSuffix}${fileSuffix}`;
         }
         // ==========================================
         function formatPipeMultilineHtml(val, isCentered = false) {

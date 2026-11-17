@@ -165,7 +165,7 @@ def import_excel():
     if not file.filename or not file.filename.lower().endswith('.xlsx'):
         return jsonify({'error': '请上传有效的 .xlsx 文件'}), 400
 
-    category = (request.form.get('category') or 'pitch').strip() or 'pitch'
+    category = (request.form.get('category') or '').strip().lower()
     platform = (request.form.get('platform') or '').strip()
 
     temp_filename = safe_upload_temp_name('sbom_import', file.filename, default_ext='.xlsx')

@@ -219,7 +219,10 @@ function filterAndRenderProjectManagerTable() {
 
     // 1.5 系统分类过滤
     if (catFilter !== 'all') {
-        list = list.filter(p => (p.category || 'pitch').toLowerCase() === catFilter);
+        list = list.filter(p => {
+            const pCat = (p.system_name && p.system_name.trim()) ? (p.category || 'pitch').toLowerCase() : 'uncategorized';
+            return pCat === catFilter;
+        });
     }
 
     // 2. 平台过滤
@@ -350,13 +353,15 @@ function renderProjectManagerTable(projects) {
                 <td class="col-center" style="width: 50px; color: #94a3b8; font-size: 12px;">${idx + 1}</td>
                 <td style="min-width: 105px;">
                     ${(() => {
-                        const catCode = (p.category || 'pitch').toLowerCase();
-                        const catName = p.category_name || (catCode === 'converter' ? '变流器系统' : '变桨系统');
-                        const catStyle = catCode === 'converter' 
-                            ? 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a;' 
-                            : (catCode === 'pitch' 
-                                ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;' 
-                                : 'background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;');
+                        const catCode = (p.system_name && p.system_name.trim()) ? (p.category || 'pitch').toLowerCase() : 'uncategorized';
+                        const catName = catCode === 'uncategorized'
+                            ? '未分类'
+                            : (p.category_name || (catCode === 'converter' ? '变流器系统' : '变桨系统'));
+                        const catStyle = catCode === 'converter'
+                            ? 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a;'
+                            : (catCode === 'pitch'
+                                ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;'
+                                : 'background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;');
                         return `<span class="pm-cat-badge" style="display: inline-flex; align-items: center; gap: 4px; ${catStyle} padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;">${escapeHtml(catName)}</span>`;
                     })()}
                 </td>
@@ -615,24 +620,24 @@ async function toggleProjectLockFromManager(projectId, currentLocked) {
 
 // 5. 快速复制工程
 function quickCopyProjectFromManager(projectId, curCode, curName, curSysName) {
-    const defSys = curSysName ? `${curSysName}_副本` : `${curCode}_副本`;
-    const newSys = prompt(`【复制工程】\n请输入复制出的新工程系统名称：`, defSys);
-    if (!newSys || !newSys.trim()) return;
-
-    const newCode = prompt(`请输入新工程机型代号 (如: ${curCode}-V2)：`, curCode);
-    if (!newCode || !newCode.trim()) return;
+    const proj = (allProjectsData || []).find(p => p.id == projectId);
+    const origFileName = (proj && typeof formatProjectDisplayName === 'function')
+        ? formatProjectDisplayName(proj)
+        : (curSysName || curCode || curName || '未命名工程');
+    const defCopyName = `${origFileName}_副本`;
+    const newCopyName = prompt(`【复制工程】\n请输入复制后的新工程文件名称：`, defCopyName);
+    if (!newCopyName || !newCopyName.trim()) return;
 
     safeFetchJson('/api/project/copy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             id: projectId,
-            code: newCode.trim(),
-            system_name: newSys.trim()
+            copy_name: newCopyName.trim()
         })
     }).then(res => {
         if (res && res.success) {
-            showToast(`已成功复制新工程【${newSys.trim()}】！`, 'success');
+            showToast(res.message || `已成功复制新工程【${res.display_name || newCopyName.trim()}】！`, 'success');
             loadProjectManagerData(true);
             if (typeof refreshProjectSelectOnly === 'function') refreshProjectSelectOnly();
         } else {
@@ -649,7 +654,7 @@ function quickRenameProjectFromManager(projectId, curCode, curName, curSysName) 
     if (newCode === null) return;
     const finalCode = newCode.trim() || curCode;
 
-    const newSys = prompt(`2/2 请输入新的工程系统名称:`, curSysName || curName);
+    const newSys = prompt(`2/2 请输入新的部套/系统名称（留空则自动归入“未分类”）:`, curSysName || '');
     if (newSys === null) return;
     const finalSys = newSys.trim();
 

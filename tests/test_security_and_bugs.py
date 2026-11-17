@@ -392,7 +392,7 @@ class IsolatedAppTestCase(unittest.TestCase):
 
         with open(os.path.join(PROJECT_ROOT, 'static', 'js', 'project.js'), 'r', encoding='utf-8') as f:
             proj_js = f.read()
-        self.assertEqual(proj_js.count("category: (currentProjectData.category || 'pitch'),"), 1)
+        self.assertEqual(proj_js.count("category: finalCat,"), 1)
         self.assertIn('res.taken_over', proj_js)
 
     def test_11_bom_position_lock_prevents_sorting_and_moving(self):
@@ -465,6 +465,96 @@ class IsolatedAppTestCase(unittest.TestCase):
         self.assertEqual(r_mv_b.status_code, 200)
         after_unlck = self.client.get(f'/api/subsystem/{sub_id}/items').get_json()
         self.assertEqual([it['material_no'] for it in after_unlck], ['ASM-0', 'PART-B', 'PART-Z', 'PART-M', 'PART-A'])
+
+    def test_12_empty_system_name_routes_to_uncategorized(self):
+        # 1. Categories include built-in 'uncategorized' (未分类) with empty default_system_name
+        r_cats = self.client.get('/api/categories')
+        self.assertEqual(r_cats.status_code, 200)
+        cats = {c['code']: c for c in r_cats.get_json()['categories']}
+        self.assertIn('uncategorized', cats)
+        self.assertEqual(cats['uncategorized']['name'], '未分类')
+
+        # 2. Creating a project without system_name routes to 'uncategorized' even if category='pitch' was sent
+        r_new = self.client.post('/api/project/save', json={
+            'code': 'EW6.25-UNCAT',
+            'system_name': '',
+            'category': 'pitch',
+            'platform': 'WL'
+        })
+        self.assertEqual(r_new.status_code, 200)
+        d = r_new.get_json()
+        self.assertEqual(d['system_name'], '')
+        self.assertEqual(d['category'], 'uncategorized')
+
+        detail = self.client.get(f"/api/project/{d['id']}").get_json()
+        self.assertEqual(detail['category'], 'uncategorized')
+        self.assertEqual(detail['category_name'], '未分类')
+
+        # Verify exporter doesn't fabricate '变桨系统' when uncategorized & system_name empty
+        from services.exporter import build_bom_file_title
+        self.assertEqual(build_bom_file_title(detail), 'EW6.25-UNCATSBOM')
+
+        # 3. Updating a project with non-empty system_name allows classification, clearing system_name moves back to uncategorized
+        r_upd1 = self.client.post('/api/project/save', json={
+            'id': d['id'],
+            'code': 'EW6.25-UNCAT',
+            'system_name': '变流器系统',
+            'category': 'converter'
+        })
+        self.assertEqual(r_upd1.status_code, 200)
+        self.assertEqual(r_upd1.get_json()['category'], 'converter')
+
+        r_upd2 = self.client.post('/api/project/save', json={
+            'id': d['id'],
+            'code': 'EW6.25-UNCAT',
+            'system_name': '   ',
+            'category': 'converter'
+        })
+        self.assertEqual(r_upd2.status_code, 200)
+        self.assertEqual(r_upd2.get_json()['category'], 'uncategorized')
+        self.assertEqual(r_upd2.get_json()['system_name'], '')
+
+        # 4. Rename clearing system_name also routes to 'uncategorized'
+        r_ren = self.client.post('/api/project/rename', json={
+            'id': d['id'],
+            'code': 'EW6.25-UNCAT2',
+            'system_name': ''
+        })
+        self.assertEqual(r_ren.status_code, 200)
+        self.assertEqual(r_ren.get_json()['category'], 'uncategorized')
+
+    def test_13_copy_project_appends_copy_suffix_to_filename(self):
+        from services.exporter import build_bom_file_title
+        r_proj = self.client.post('/api/project/save', json={
+            'code': 'EW6.25-202',
+            'platform': 'WL',
+            'supplier': '电力电子',
+            'system_name': '变桨系统',
+            'category': 'pitch',
+            'model': 'WPPC-120-C'
+        })
+        self.assertEqual(r_proj.status_code, 200)
+        pid = r_proj.get_json()['id']
+        orig_detail = self.client.get(f'/api/project/{pid}').get_json()
+        orig_title = build_bom_file_title(orig_detail)
+        self.assertEqual(orig_title, 'EW6.25-202电力电子变桨系统SBOM_WPPC-120-C')
+
+        # 1. Copy via copy_name = orig_title + '_副本' keeps system_name & category intact and puts '_副本' on filename
+        r_cp = self.client.post('/api/project/copy', json={'id': pid, 'copy_name': f'{orig_title}_副本'})
+        self.assertEqual(r_cp.status_code, 200)
+        cp_res = r_cp.get_json()
+        self.assertEqual(cp_res['system_name'], '变桨系统')
+        self.assertEqual(cp_res['category'], 'pitch')
+        self.assertEqual(cp_res['file_suffix'], '_副本')
+        self.assertEqual(cp_res['display_name'], f'{orig_title}_副本')
+
+        cp_detail = self.client.get(f"/api/project/{cp_res['id']}").get_json()
+        self.assertEqual(build_bom_file_title(cp_detail), 'EW6.25-202电力电子变桨系统SBOM_WPPC-120-C_副本')
+
+        # 2. Direct copy without parameters also appends '_副本'
+        r_cp2 = self.client.post('/api/project/copy', json={'id': cp_res['id']})
+        self.assertEqual(r_cp2.status_code, 200)
+        self.assertEqual(r_cp2.get_json()['display_name'], f'{orig_title}_副本_副本')
 
 
 if __name__ == '__main__':

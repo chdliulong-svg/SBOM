@@ -56,8 +56,8 @@ def get_projects():
     cursor.execute(f'''
         SELECT 
             p.*,
-            COALESCE(c.name, '变桨系统') AS category_name,
-            COALESCE(c.short_name, '变桨') AS category_short_name,
+            COALESCE(c.name, CASE WHEN p.category = 'uncategorized' THEN '未分类' ELSE '变桨系统' END) AS category_name,
+            COALESCE(c.short_name, CASE WHEN p.category = 'uncategorized' THEN '未分类' ELSE '变桨' END) AS category_short_name,
             COALESCE(c.icon, '') AS category_icon,
             COUNT(DISTINCT s.id) AS subsystem_count,
             COUNT(b.id) AS item_count,
@@ -89,8 +89,8 @@ def get_project_detail(project_id):
     cursor.execute('''
         SELECT 
             p.*,
-            COALESCE(c.name, '变桨系统') AS category_name,
-            COALESCE(c.short_name, '变桨') AS category_short_name,
+            COALESCE(c.name, CASE WHEN p.category = 'uncategorized' THEN '未分类' ELSE '变桨系统' END) AS category_name,
+            COALESCE(c.short_name, CASE WHEN p.category = 'uncategorized' THEN '未分类' ELSE '变桨' END) AS category_short_name,
             COALESCE(c.icon, '') AS category_icon,
             (
                 SELECT m.spec_model
@@ -276,6 +276,7 @@ def save_project():
 
     code = (data.get('code') or '').strip()
     name = (data.get('name') or '').strip()
+    has_sys_key = 'system_name' in data
     system_name = (data.get('system_name') or '').strip()
     supplier = (data.get('supplier') or '').strip()
     model = (data.get('model') or '').strip()
@@ -286,8 +287,6 @@ def save_project():
 
     if not name:
         name = '风力发电机组'
-    if not system_name:
-        system_name = code if code else (name if name != '风力发电机组' else '未命名项目')
     if not code:
         code = system_name if system_name else 'EW-DEFAULT'
 
@@ -301,11 +300,17 @@ def save_project():
         with write_transaction(conn):
             cursor = conn.cursor()
             if project_id:
-                category = raw_category
-                if not category:
-                    cursor.execute('SELECT category FROM projects WHERE id = ?', (project_id,))
-                    existing_proj = cursor.fetchone()
-                    category = (existing_proj['category'] if existing_proj and existing_proj['category'] else '') or 'pitch'
+                cursor.execute('SELECT category, system_name FROM projects WHERE id = ?', (project_id,))
+                existing_proj = cursor.fetchone()
+                if not has_sys_key and existing_proj:
+                    system_name = (existing_proj['system_name'] or '').strip()
+
+                if not system_name:
+                    category = 'uncategorized'
+                else:
+                    category = raw_category
+                    if not category:
+                        category = (existing_proj['category'] if existing_proj and existing_proj['category'] else '') or 'pitch'
                 platform = (data.get('platform') or '').strip()
                 cursor.execute('''
                 UPDATE projects SET
@@ -317,12 +322,15 @@ def save_project():
                       data.get('form_no', config.form_no_default), data.get('company', config.company_default),
                       project_id))
             else:
-                category = raw_category
-                if not category:
-                    if '变流' in system_name or '变流' in name:
-                        category = 'converter'
-                    else:
-                        category = 'pitch'
+                if not system_name:
+                    category = 'uncategorized'
+                else:
+                    category = raw_category
+                    if not category:
+                        if '变流' in system_name or '变流' in name:
+                            category = 'converter'
+                        else:
+                            category = 'pitch'
                 client_tag = get_client_identity()
                 cursor.execute('''
                 INSERT INTO projects (code, name, system_name, category, platform, supplier, model, doc_no, ecn_no, form_no, company, is_locked, locked_by, locked_at, created_at, updated_at)
@@ -366,10 +374,11 @@ def save_project():
 def rename_project():
     data = request.json or {}
     project_id = data.get('id')
-    new_system_name = (data.get('system_name') or data.get('name') or '').strip()
+    has_sys_key = 'system_name' in data
+    new_system_name = (data.get('system_name') if has_sys_key else (data.get('name') or '')).strip()
     new_code = (data.get('code') or '').strip()
 
-    if not project_id or not new_system_name:
+    if not project_id or (not new_system_name and not new_code):
         return jsonify({'error': '缺少项目ID或新名称'}), 400
 
     is_ok, err_msg = check_project_unlocked(project_id=project_id)
@@ -388,20 +397,23 @@ def rename_project():
         final_name = custom_product_name or proj['name'] or '风力发电机组'
 
         final_code = new_code or proj['code']
+        final_category = (proj['category'] or 'pitch') if new_system_name else 'uncategorized'
+        final_suffix = (data.get('file_suffix') or '').strip() if 'file_suffix' in data else ''
 
         cursor.execute('''
-        UPDATE projects SET name = ?, system_name = ?, code = ?, updated_at = datetime('now', 'localtime') WHERE id = ?
-        ''', (final_name, new_system_name, final_code, project_id))
+        UPDATE projects SET name = ?, system_name = ?, code = ?, category = ?, file_suffix = ?, updated_at = datetime('now', 'localtime') WHERE id = ?
+        ''', (final_name, new_system_name, final_code, final_category, final_suffix, project_id))
         cursor.execute("SELECT created_at, updated_at FROM projects WHERE id = ?", (project_id,))
         p_time = cursor.fetchone()
         conn.commit()
-        record_operation_log('rename_project', 'project', project_id, {'system_name': new_system_name, 'code': final_code})
+        record_operation_log('rename_project', 'project', project_id, {'system_name': new_system_name, 'code': final_code, 'category': final_category})
         return jsonify({
             'success': True,
             'id': project_id,
             'name': final_name,
             'system_name': new_system_name,
             'code': final_code,
+            'category': final_category,
             'created_at': p_time['created_at'] if p_time else '',
             'updated_at': p_time['updated_at'] if p_time else ''
         })
@@ -430,34 +442,66 @@ def copy_project():
         if not orig:
             return jsonify({'success': False, 'error': '原项目不存在或已被删除'}), 404
 
+        orig_dict = dict(orig)
+        cursor.execute('''
+            SELECT m.spec_model
+            FROM bom_items b2
+            JOIN subsystems s2 ON b2.subsystem_id = s2.id
+            LEFT JOIN materials m ON b2.material_no = m.material_no
+            WHERE s2.project_id = ? AND b2.level_num = 1 AND m.spec_model IS NOT NULL AND m.spec_model != ''
+            ORDER BY b2.row_num ASC
+            LIMIT 1
+        ''', (project_id,))
+        rm_row = cursor.fetchone()
+        orig_dict['root_model'] = rm_row['spec_model'] if rm_row else ''
+
         user_name = (data.get('name') or '').strip()
-        user_system_name = (data.get('system_name') or '').strip()
+        copy_name = (data.get('copy_name') or '').strip()
+        explicit_sys_name = (data.get('system_name') or '').strip() if 'system_name' in data else None
         user_code = (data.get('code') or '').strip()
 
-        orig_name = orig['name'] or '风力发电机组'
-        orig_system_name = orig['system_name'] or ''
-        orig_code = orig['code'] or ''
+        orig_name = orig_dict.get('name') or '风力发电机组'
+        orig_system_name = orig_dict.get('system_name') or ''
+        orig_code = orig_dict.get('code') or ''
+        orig_suffix = (orig_dict.get('file_suffix') or '').strip()
 
         user_name = orig_name or '风力发电机组'
-
-        if not user_system_name:
-            user_system_name = f"{orig_system_name}_副本" if orig_system_name else f"{orig_code}_副本"
-
         if not user_code:
             user_code = orig_code
 
-        orig_platform = orig['platform'] if 'platform' in orig.keys() else ''
-        orig_supplier = orig['supplier'] if 'supplier' in orig.keys() else ''
-        orig_model = orig['model'] if 'model' in orig.keys() else ''
-        orig_category = orig['category'] if 'category' in orig.keys() else 'pitch'
+        orig_platform = orig_dict.get('platform') or ''
+        orig_supplier = orig_dict.get('supplier') or ''
+        orig_model = orig_dict.get('model') or ''
+        orig_category = orig_dict.get('category') or ('pitch' if orig_system_name else 'uncategorized')
         user_category = (data.get('category') or orig_category or 'pitch').strip().lower()
 
+        base_title = build_bom_file_title({**orig_dict, 'code': user_code, 'file_suffix': ''})
+        if copy_name:
+            if base_title and copy_name.startswith(base_title):
+                user_system_name = orig_system_name
+                new_file_suffix = copy_name[len(base_title):].strip() or '_副本'
+            elif copy_name.endswith('_副本'):
+                user_system_name = orig_system_name
+                new_file_suffix = '_副本'
+            else:
+                user_system_name = copy_name
+                new_file_suffix = ''
+        elif explicit_sys_name is not None:
+            user_system_name = explicit_sys_name
+            new_file_suffix = (data.get('file_suffix') or '').strip()
+        else:
+            user_system_name = orig_system_name
+            new_file_suffix = f"{orig_suffix}_副本"
+
+        if not (user_system_name or '').strip():
+            user_category = 'uncategorized'
+
         cursor.execute('''
-            INSERT INTO projects (code, name, system_name, category, platform, supplier, model, doc_no, ecn_no, form_no, company, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
-        ''', (user_code, user_name, user_system_name, user_category, orig_platform or '', orig_supplier or '', orig_model or '',
-              orig['doc_no'] or '', orig['ecn_no'] or '',
-              orig['form_no'] or config.form_no_default, orig['company'] or config.company_default))
+            INSERT INTO projects (code, name, system_name, category, platform, supplier, model, file_suffix, doc_no, ecn_no, form_no, company, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+        ''', (user_code, user_name, user_system_name, user_category, orig_platform, orig_supplier, orig_model, new_file_suffix,
+              orig_dict.get('doc_no') or '', orig_dict.get('ecn_no') or '',
+              orig_dict.get('form_no') or config.form_no_default, orig_dict.get('company') or config.company_default))
         new_project_id = cursor.lastrowid
 
         cursor.execute('SELECT * FROM subsystems WHERE project_id = ? ORDER BY sort_order, id', (project_id,))
@@ -489,6 +533,14 @@ def copy_project():
         client_tag = get_client_identity()
         cursor.execute("UPDATE projects SET is_locked = 0, locked_by = ?, locked_at = datetime('now', 'localtime') WHERE id = ?", (client_tag, new_project_id))
 
+        copied_display = build_bom_file_title({
+            **orig_dict,
+            'code': user_code,
+            'name': user_name,
+            'system_name': user_system_name,
+            'category': user_category,
+            'file_suffix': new_file_suffix
+        })
         conn.commit()
         return jsonify({
             'success': True,
@@ -496,7 +548,10 @@ def copy_project():
             'name': user_name,
             'system_name': user_system_name,
             'code': user_code,
-            'message': f'项目已成功完整复制为【{user_system_name}】！'
+            'category': user_category,
+            'file_suffix': new_file_suffix,
+            'display_name': copied_display,
+            'message': f'项目已成功完整复制为【{copied_display}】！'
         })
     except Exception:
         try:

@@ -163,10 +163,11 @@ def init_db():
     )
     ''')
 
-    # 预置核心系统分类（变桨系统、变流器系统）
+    # 预置核心系统分类（变桨系统、变流器系统、未分类）
     default_categories = [
         ('pitch', '变桨系统', '变桨', '变桨系统', '', 1, 1, 1, '风电机组变桨系统备件管理'),
-        ('converter', '变流器系统', '变流器', '变流器系统', '', 2, 1, 1, '风电机组变流器系统备件管理')
+        ('converter', '变流器系统', '变流器', '变流器系统', '', 2, 1, 1, '风电机组变流器系统备件管理'),
+        ('uncategorized', '未分类', '未分类', '', '', 999, 1, 1, '未填写部套/系统名称的工程项目自动归入此分类')
     ]
     for cat in default_categories:
         cursor.execute('''
@@ -193,7 +194,8 @@ def init_db():
         platform TEXT DEFAULT '',
         supplier TEXT DEFAULT '',
         model TEXT DEFAULT '',
-        category TEXT DEFAULT 'pitch'
+        category TEXT DEFAULT 'pitch',
+        file_suffix TEXT DEFAULT ''
     )
     ''')
 
@@ -323,11 +325,13 @@ def init_db():
         cursor.execute("ALTER TABLE projects ADD COLUMN model TEXT DEFAULT ''")
     if 'category' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN category TEXT DEFAULT 'pitch'")
-        cursor.execute("UPDATE projects SET category = 'pitch' WHERE category IS NULL OR category = ''")
+        cursor.execute("UPDATE projects SET category = CASE WHEN TRIM(COALESCE(system_name, '')) = '' THEN 'uncategorized' ELSE 'pitch' END WHERE category IS NULL OR category = ''")
     if 'created_at' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN created_at TIMESTAMP")
     if 'updated_at' not in proj_cols:
         cursor.execute("ALTER TABLE projects ADD COLUMN updated_at TIMESTAMP")
+    if 'file_suffix' not in proj_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN file_suffix TEXT DEFAULT ''")
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_projects_category ON projects(category)')
 
     # Migration for subsystems: add supplier column if not present
@@ -346,6 +350,7 @@ def init_db():
     # 补齐已有历史数据的创建时间与修改时间
     cursor.execute("UPDATE projects SET created_at = datetime('now', 'localtime') WHERE created_at IS NULL OR created_at = ''")
     cursor.execute("UPDATE projects SET updated_at = COALESCE(created_at, datetime('now', 'localtime')) WHERE updated_at IS NULL OR updated_at = ''")
+    cursor.execute("UPDATE projects SET category = 'uncategorized' WHERE TRIM(COALESCE(system_name, '')) = ''")
     cursor.execute("UPDATE projects SET category = 'pitch' WHERE category IS NULL OR category = ''")
 
     # Audit log table for critical write operations
